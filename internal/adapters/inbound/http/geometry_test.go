@@ -58,6 +58,19 @@ func TestSetLocationGeometry(t *testing.T) {
 		ts.do(http.MethodPut, "/locations/WH1-STOR-AMB-A07-03-02-B/geometry", body).assertProblem(t, http.StatusNotFound, "location-slot-not-found")
 	})
 
+	t.Run("400 for a null geometry coordinate, not a silent zero", func(t *testing.T) {
+		ts := newTestServer(t)
+		ts.seedStorageAisle()
+		ts.seedSlot("WH1-STOR-AMB-A07-03-02-B", "PalletRack")
+
+		body := map[string]any{
+			"position":   map[string]any{"xM": 1.0, "yM": 2.0, "zM": nil},
+			"dimensions": map[string]any{"widthM": 1.2, "depthM": 0.9, "heightM": 2.0},
+		}
+		ts.do(http.MethodPut, "/locations/WH1-STOR-AMB-A07-03-02-B/geometry", body).
+			assertProblem(t, http.StatusBadRequest, "missing-geometry-field")
+	})
+
 	t.Run("422 for zero dimensions", func(t *testing.T) {
 		ts := newTestServer(t)
 		ts.seedStorageAisle()
@@ -106,6 +119,19 @@ func TestSetAisleGeometry(t *testing.T) {
 			},
 		}
 		ts.do(http.MethodPut, "/zones/WH1-STOR-AMB/aisles/A07/geometry", body).assertProblem(t, http.StatusNotFound, "aisle-not-found")
+	})
+
+	t.Run("422, never 500, for coincident centreline endpoints", func(t *testing.T) {
+		ts := newTestServer(t)
+		ts.seedStorageAisle()
+		body := map[string]any{
+			"centreline": map[string]any{
+				"start": map[string]any{"xM": 5.0, "yM": 1.0, "zM": 0.0},
+				"end":   map[string]any{"xM": 5.0, "yM": 1.0, "zM": 0.0},
+			},
+		}
+		ts.do(http.MethodPut, "/zones/WH1-STOR-AMB/aisles/A07/geometry", body).
+			assertProblem(t, http.StatusUnprocessableEntity, "segment-start-end-equal")
 	})
 }
 
@@ -193,6 +219,21 @@ func TestRegisterFixedStructure(t *testing.T) {
 			"label": "?",
 		}
 		ts.do(http.MethodPost, "/sites/WH1/structures", body).assertProblem(t, http.StatusUnprocessableEntity, "unknown-fixed-structure-kind")
+	})
+
+	t.Run("400 for a null footprint dimension, not a silent zero", func(t *testing.T) {
+		ts := newTestServer(t)
+		ts.seedSite()
+		body := map[string]any{
+			"kind": "Wall",
+			"footprint": map[string]any{
+				"origin": map[string]any{"xM": 10.0, "yM": 20.0, "zM": 0.0},
+				"size":   map[string]any{"widthM": 1.0, "depthM": nil, "heightM": 3.0},
+			},
+			"label": "North wall",
+		}
+		ts.do(http.MethodPost, "/sites/WH1/structures", body).
+			assertProblem(t, http.StatusBadRequest, "missing-geometry-field")
 	})
 }
 

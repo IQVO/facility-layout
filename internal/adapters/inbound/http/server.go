@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -286,6 +287,10 @@ func (s *Server) handleRegisterAisle(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
+	if req.SequenceHint == nil {
+		writeError(w, r, errMissingSequenceHint)
+		return
+	}
 
 	direction, err := shared.ParseDirection(req.Direction)
 	if err != nil {
@@ -294,7 +299,7 @@ func (s *Server) handleRegisterAisle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	zoneID := chi.URLParam(r, "zoneId")
-	registered, err := s.RegisterAisle.Execute(r.Context(), zoneID, req.AisleCode, req.SequenceHint, direction)
+	registered, err := s.RegisterAisle.Execute(r.Context(), zoneID, req.AisleCode, *req.SequenceHint, direction)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -544,13 +549,19 @@ func (s *Server) handleImportFacilityLayout(w http.ResponseWriter, r *http.Reque
 // --------------------------------------------- "draw the warehouse" reads --
 
 func (s *Server) handleGetSiteLayout(w http.ResponseWriter, r *http.Request) {
+	format := r.URL.Query().Get("format")
+	if format != "" && format != "json" && format != "svg" {
+		writeProblem(w, http.StatusBadRequest, problemInfo{"invalid-layout-format", "Layout format must be json or svg"}, "layout format must be \"json\" or \"svg\", got "+strconv.Quote(format), r.URL.Path)
+		return
+	}
+
 	layout, err := s.GetSiteLayout.Execute(r.Context(), chi.URLParam(r, "siteCode"))
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
 
-	if r.URL.Query().Get("format") == "svg" {
+	if format == "svg" {
 		w.Header().Set("Content-Type", "image/svg+xml")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(renderLayoutSVG(layout)))

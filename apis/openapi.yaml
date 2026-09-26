@@ -408,6 +408,8 @@ paths:
                 <svg xmlns="http://www.w3.org/2000/svg" width="640" height="240" viewBox="0 0 640 240">
                   <title>WH1 facility layout</title>
                 </svg>
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -743,6 +745,7 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /zones/{zoneId}/aisles/{aisleCode}/geometry:
     put:
       operationId: setAisleGeometry
       summary: Set an aisle's travel centreline
@@ -1311,6 +1314,7 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /locations/{locationCode}/geometry:
     put:
       operationId: setLocationGeometry
       summary: Set a location slot's physical geometry
@@ -1446,6 +1450,7 @@ paths:
           description: The seven-segment LocationCode to travel from.
           schema:
             type: string
+            pattern: "^[A-Z0-9]+(-[A-Z0-9]+){6}$"
           example: WH1-STOR-AMB-A07-01-01-A
         - name: to
           in: query
@@ -1453,6 +1458,7 @@ paths:
           description: The seven-segment LocationCode to travel to.
           schema:
             type: string
+            pattern: "^[A-Z0-9]+(-[A-Z0-9]+){6}$"
           example: WH1-STOR-AMB-A09-03-01-A
       responses:
         "200":
@@ -1508,7 +1514,8 @@ components:
     BadRequest:
       description: >
         Malformed input: a body that is not valid JSON, a location code that
-        is not seven `[A-Z0-9]` segments, or a missing required identifier.
+        is not seven `[A-Z0-9]` segments, a missing required identifier, or
+        a query parameter outside its documented enum.
       content:
         application/problem+json:
           schema:
@@ -1644,6 +1651,31 @@ components:
           description: Maximum volume in cubic metres.
           example: 2.4
 
+    ResolvedCapacity:
+      type: object
+      description: >
+        A capacity envelope as it appears on a READ model. Identical to
+        Capacity except that both dimensions may be 0: a LocationType (and a
+        slot of that type) whose role does not require capacity — Dock,
+        Yard, WorkCenter, QC, Shipping — legitimately reports 0/0, the
+        service's way of saying "this location holds nothing by design".
+        Requests still use Capacity, whose dimensions are strictly positive
+        wherever a capacity is supplied at all.
+      required: [maxWeightKg, maxVolumeM3]
+      properties:
+        maxWeightKg:
+          type: number
+          format: double
+          minimum: 0
+          description: Maximum weight in kilograms.
+          example: 1200
+        maxVolumeM3:
+          type: number
+          format: double
+          minimum: 0
+          description: Maximum volume in cubic metres.
+          example: 2.4
+
     Coordinates:
       type: object
       description: >
@@ -1761,8 +1793,11 @@ components:
           $ref: "#/components/schemas/TemperatureClass"
         hazmat:
           type: boolean
+          nullable: true
           default: false
-          description: Whether this zone is rated for hazardous materials.
+          description: >
+            Whether this zone is rated for hazardous materials. JSON null is
+            accepted and means the same as false (the default).
           example: false
 
     Point3D:
@@ -1824,11 +1859,17 @@ components:
       properties:
         id:
           type: string
-          description: Caller-supplied opaque id. A UUID is minted when omitted.
+          nullable: true
+          description: >
+            Caller-supplied opaque id. A UUID is minted when omitted or null;
+            an empty string is treated the same as omitted.
           example: STR-1
         kind: { $ref: "#/components/schemas/FixedStructureKind" }
         footprint: { $ref: "#/components/schemas/Rect" }
-        label: { type: string, example: North wall }
+        label:
+          type: string
+          minLength: 1
+          example: North wall
 
     SetLocationGeometryRequest:
       type: object
@@ -1838,9 +1879,10 @@ components:
         dimensions: { $ref: "#/components/schemas/Dimensions" }
         pickSequence:
           type: integer
-          format: int32
+          format: int64
+          nullable: true
           minimum: 0
-          description: Optional explicit pick-path override for this slot.
+          description: Optional explicit pick-path override for this slot. JSON null is treated as omitted.
           example: 42
 
     SetAisleGeometryRequest:
@@ -1868,7 +1910,7 @@ components:
           example: A07
         sequenceHint:
           type: integer
-          format: int32
+          format: int64
           minimum: 0
           description: Walk-order position. Lower comes earlier on the route.
           example: 7
@@ -1892,7 +1934,7 @@ components:
           example: A07
         sequenceHint:
           type: integer
-          format: int32
+          format: int64
           minimum: 0
           description: Walk-order position for travel-path optimization.
           example: 7
@@ -2042,11 +2084,11 @@ components:
           $ref: "#/components/schemas/LocationRole"
         defaultCapacity:
           allOf:
-            - $ref: "#/components/schemas/Capacity"
+            - $ref: "#/components/schemas/ResolvedCapacity"
           description: >
             Required for a role whose RequiresCapacity() is true (Storage,
-            Staging, Drop, Consolidation). Omitted/zero for Dock, Yard,
-            WorkCenter, QC, Shipping.
+            Staging, Drop, Consolidation). Reported as 0/0 for Dock, Yard,
+            WorkCenter, QC, Shipping, which need no capacity envelope.
 
     RegisterLocationTypeRequest:
       type: object
@@ -2070,13 +2112,16 @@ components:
 
     ZonePredicate:
       type: object
+      minProperties: 1
       description: >
         Selects the zones a PlacementRule applies to. Every field set must
-        match (AND); unset fields are wildcards; at least one must be set.
+        match (AND); unset fields are wildcards; at least one must be set —
+        an empty predicate constrains nothing and is rejected with 422.
       properties:
         zoneCode:
           type: string
-          description: Match only zones with this zone code.
+          minLength: 1
+          description: Match only zones with this zone code. An empty string is not a predicate — it is rejected like an absent one.
           example: HAZ
         temperatureClass:
           $ref: "#/components/schemas/TemperatureClass"
@@ -2175,7 +2220,7 @@ components:
           description: Set only when role is WorkCenter (ADR-0016).
           example: [Pack, VAS]
         capacity:
-          $ref: "#/components/schemas/Capacity"
+          $ref: "#/components/schemas/ResolvedCapacity"
         status:
           $ref: "#/components/schemas/Status"
         position:
@@ -2188,7 +2233,7 @@ components:
           description: The slot's physical footprint, when set (ADR-0017). Absent until SetLocationGeometry is called.
         pickSequence:
           type: integer
-          format: int32
+          format: int64
           minimum: 0
           description: Explicit pick-path override, when set (ADR-0017).
           example: 42
@@ -2285,7 +2330,7 @@ components:
           example: A07
         sequenceHint:
           type: integer
-          format: int32
+          format: int64
           minimum: 0
           description: Used only if the Aisle is created by this row.
           example: 7
@@ -2399,7 +2444,7 @@ components:
           example: A07
         sequenceHint:
           type: integer
-          format: int32
+          format: int64
           description: Walk-order position.
           example: 7
         direction:
@@ -2508,7 +2553,7 @@ components:
           example: "03"
         sequenceHint:
           type: integer
-          format: int32
+          format: int64
           example: 7
 
     GridPosition:
