@@ -1,0 +1,9 @@
+inventory-storage	check_availability
+inventory-storage	get_bin_occupancy
+inventory-storage	revoke_reservation
+facility-layout	estimate_travel_distance
+facility-layout	get_site_layout
+facility-layout	get_zone_grid
+facility-layout	get_zone_travel_graph
+facility-layout	list_functional_locations
+facility-layout	list_sites
