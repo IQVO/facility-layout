@@ -12,6 +12,14 @@ var (
 	// ErrInvalidDimensions is returned when a Dimensions envelope has a
 	// non-positive width, depth, or height.
 	ErrInvalidDimensions = errors.New("width, depth, and height must all be greater than zero")
+	// ErrSegmentEndpointsNotReal is returned when a Segment is built from a
+	// zero point — a centreline anchored at the frame's origin placeholder
+	// carries no location information.
+	ErrSegmentEndpointsNotReal = errors.New("segment endpoints must both be real points")
+	// ErrSegmentStartEndEqual is returned when a Segment's two endpoints
+	// coincide — a centreline with no length carries no travel-distance
+	// information.
+	ErrSegmentStartEndEqual = errors.New("segment start and end must differ")
 )
 
 // Point3D is a position in the site's local coordinate frame, in metres,
@@ -119,10 +127,10 @@ type Segment struct {
 // length carries no travel-distance information.
 func NewSegment(start, end Point3D) (Segment, error) {
 	if start.IsZero() || end.IsZero() {
-		return Segment{}, errors.New("segment endpoints must both be real points")
+		return Segment{}, ErrSegmentEndpointsNotReal
 	}
 	if start.xM == end.xM && start.yM == end.yM && start.zM == end.zM {
-		return Segment{}, errors.New("segment start and end must differ")
+		return Segment{}, ErrSegmentStartEndEqual
 	}
 	return Segment{start: start, end: end, set: true}, nil
 }

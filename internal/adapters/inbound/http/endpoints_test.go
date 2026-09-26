@@ -192,6 +192,15 @@ func TestAislesEndpoints(t *testing.T) {
 		}).assertProblem(t, http.StatusUnprocessableEntity, "negative-sequence-hint")
 	})
 
+	t.Run("rejects a missing sequence hint with 400, not a silent 0", func(t *testing.T) {
+		ts := newTestServer(t)
+		ts.seedSite()
+		ts.seedZone("STOR", "AMB", "Ambient", false)
+		ts.do(http.MethodPost, "/zones/WH1-STOR-AMB/aisles", map[string]any{
+			"aisleCode": "A07", "direction": "TwoWay",
+		}).assertProblem(t, http.StatusBadRequest, "missing-sequence-hint")
+	})
+
 	t.Run("rejects a duplicate aisle with 409", func(t *testing.T) {
 		ts := newTestServer(t)
 		ts.seedSite()

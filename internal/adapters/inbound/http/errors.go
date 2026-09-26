@@ -62,6 +62,8 @@ func statusFor(err error) int {
 		errors.Is(err, shared.ErrUnknownStatus),
 		errors.Is(err, shared.ErrInvalidZ),
 		errors.Is(err, shared.ErrInvalidDimensions),
+		errors.Is(err, shared.ErrSegmentEndpointsNotReal),
+		errors.Is(err, shared.ErrSegmentStartEndEqual),
 		errors.Is(err, placement.ErrUnknownEffect),
 		errors.Is(err, placement.ErrEmptyPredicate),
 		errors.Is(err, placement.ErrUnknownLocationRole),
@@ -108,7 +110,9 @@ func statusFor(err error) int {
 		errors.Is(err, aisle.ErrCrossAisleEmptyFromAisle),
 		errors.Is(err, aisle.ErrCrossAisleEmptyToAisle),
 		errors.Is(err, aisle.ErrCrossAisleEmptyBay),
-		errors.Is(err, usecases.ErrEmptyImport):
+		errors.Is(err, usecases.ErrEmptyImport),
+		errors.Is(err, errMissingGeometryField),
+		errors.Is(err, errMissingSequenceHint):
 		return http.StatusBadRequest
 
 	default:
@@ -216,6 +220,10 @@ func problemFor(err error) problemInfo {
 		return problemInfo{"invalid-z", "Z coordinate must not be negative"}
 	case errors.Is(err, shared.ErrInvalidDimensions):
 		return problemInfo{"invalid-dimensions", "Width, depth, and height must all be greater than zero"}
+	case errors.Is(err, shared.ErrSegmentEndpointsNotReal):
+		return problemInfo{"segment-endpoints-not-real", "Centreline endpoints must both be real points"}
+	case errors.Is(err, shared.ErrSegmentStartEndEqual):
+		return problemInfo{"segment-start-end-equal", "Centreline start and end must differ"}
 	case errors.Is(err, slot.ErrNegativePickSequence):
 		return problemInfo{"negative-pick-sequence", "Pick sequence must not be negative"}
 	case errors.Is(err, structure.ErrUnknownKind):
@@ -269,6 +277,10 @@ func problemFor(err error) problemInfo {
 		return problemInfo{"empty-cross-aisle-bay", "Cross-aisle requires a bay"}
 	case errors.Is(err, usecases.ErrEmptyImport):
 		return problemInfo{"empty-import", "Facility layout import must contain at least one row"}
+	case errors.Is(err, errMissingGeometryField):
+		return problemInfo{"missing-geometry-field", "Geometry coordinates and dimensions must be numbers, not null"}
+	case errors.Is(err, errMissingSequenceHint):
+		return problemInfo{"missing-sequence-hint", "Aisle sequenceHint is required"}
 
 	default:
 		return problemInfo{"internal-error", "An unexpected internal error occurred"}

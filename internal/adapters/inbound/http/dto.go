@@ -18,8 +18,12 @@ type registerZoneRequest struct {
 }
 
 type registerAisleRequest struct {
-	AisleCode    string `json:"aisleCode"`
-	SequenceHint int    `json:"sequenceHint"`
+	AisleCode string `json:"aisleCode"`
+	// SequenceHint is a pointer so an omitted or null field is
+	// distinguishable from a genuine 0 — encoding/json would otherwise
+	// coerce both to 0 and the required-field violation would be silently
+	// accepted.
+	SequenceHint *int   `json:"sequenceHint"`
 	Direction    string `json:"direction"`
 }
 
@@ -77,19 +81,22 @@ type importRowRequest struct {
 }
 
 // point3DRequest is a position in the site's local coordinate frame, in
-// metres (ADR-0017).
+// metres (ADR-0017). Fields are pointers so a JSON null or an omitted
+// coordinate is distinguishable from a genuine 0 — encoding/json would
+// otherwise coerce null to 0 and the contract violation would be silently
+// accepted.
 type point3DRequest struct {
-	XM float64 `json:"xM"`
-	YM float64 `json:"yM"`
-	ZM float64 `json:"zM"`
+	XM *float64 `json:"xM"`
+	YM *float64 `json:"yM"`
+	ZM *float64 `json:"zM"`
 }
 
 // dimensionsRequest is a rectangular footprint's extent, in metres
-// (ADR-0017).
+// (ADR-0017). Pointers for the same reason as point3DRequest.
 type dimensionsRequest struct {
-	WidthM  float64 `json:"widthM"`
-	DepthM  float64 `json:"depthM"`
-	HeightM float64 `json:"heightM"`
+	WidthM  *float64 `json:"widthM"`
+	DepthM  *float64 `json:"depthM"`
+	HeightM *float64 `json:"heightM"`
 }
 
 // geometryRequest is a slot's position + footprint, submitted together

@@ -94,6 +94,31 @@ jobs:
       - name: Run BDD (godog/Gherkin) acceptance tests
         run: go test ./... -run TestFeatures -v
 
+  # Property-based contract testing: boots the service with its in-memory
+  # adapters and generates valid AND invalid requests for every operation
+  # in apis/openapi.yaml, asserting response conformance (status codes,
+  # content types, response schemas; positive data accepted, negative data
+  # rejected). Catches spec/implementation drift the example-based suites
+  # (unit, httptest, BDD) cannot see. Same invocation as `make contract`.
+  # ============================================================
+  # CLASSIFICATION: CONTRACT TESTING (OpenAPI / Schemathesis)
+  # ============================================================
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.13"
+      - name: Install Schemathesis (pinned)
+        run: python3 -m pip install "schemathesis==4.28.0"
+      - name: Contract tests (Schemathesis over apis/openapi.yaml)
+        run: ./scripts/contract-test.sh
+
   # ============================================================
   # CLASSIFICATION: INTEGRATION TESTING
   # ============================================================
@@ -416,7 +441,7 @@ jobs:
   docker-publish:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [lint, test, bdd, integration, mutation-fast, vuln, api-lint, arch-test]
+    needs: [lint, test, bdd, contract, integration, mutation-fast, vuln, api-lint, arch-test]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read

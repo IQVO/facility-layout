@@ -320,4 +320,9 @@ func TestGetSiteLayoutAsSVG(t *testing.T) {
 		newTestServer(t).do(http.MethodGet, "/sites/NOPE/layout?format=svg", nil).
 			assertProblem(t, http.StatusNotFound, "site-not-found")
 	})
+
+	t.Run("rejects a format outside the documented enum with 400", func(t *testing.T) {
+		seedDrawableSite(t).do(http.MethodGet, "/sites/WH1/layout?format=AAA", nil).
+			assertProblem(t, http.StatusBadRequest, "invalid-layout-format")
+	})
 }

@@ -1,6 +1,8 @@
 package http
 
 import (
+	"errors"
+
 	"github.com/claudioed/facility-layout/internal/application/usecases"
 	"github.com/claudioed/facility-layout/internal/domain/aisle"
 	"github.com/claudioed/facility-layout/internal/domain/placement"
@@ -163,12 +165,12 @@ func toImportRow(row importRowRequest) usecases.ImportRow {
 		out.MaxVolumeM3 = row.CapacityOverride.MaxVolumeM3
 	}
 	if row.Geometry != nil {
-		out.XM = &row.Geometry.Position.XM
-		out.YM = &row.Geometry.Position.YM
-		out.ZM = &row.Geometry.Position.ZM
-		out.WidthM = &row.Geometry.Dimensions.WidthM
-		out.DepthM = &row.Geometry.Dimensions.DepthM
-		out.HeightM = &row.Geometry.Dimensions.HeightM
+		out.XM = row.Geometry.Position.XM
+		out.YM = row.Geometry.Position.YM
+		out.ZM = row.Geometry.Position.ZM
+		out.WidthM = row.Geometry.Dimensions.WidthM
+		out.DepthM = row.Geometry.Dimensions.DepthM
+		out.HeightM = row.Geometry.Dimensions.HeightM
 	}
 	return out
 }
@@ -281,14 +283,31 @@ func toFixedStructureResponse(f *structure.FixedStructure) fixedStructureRespons
 	}
 }
 
+// errMissingGeometryField reports a null or omitted coordinate/dimension in
+// a geometry DTO. Both are schema violations (the fields are required
+// numbers), but encoding/json would silently coerce null to the zero value,
+// so the DTOs use pointers and this error turns the coercion into a 400.
+var errMissingGeometryField = errors.New("geometry coordinates and dimensions are required and must be numbers, not null")
+
+// errMissingSequenceHint reports an omitted or null sequenceHint on aisle
+// registration — required by the contract, but encoding/json would coerce
+// the absence to 0 and silently accept the request.
+var errMissingSequenceHint = errors.New("aisle sequenceHint is required")
+
 // fromPoint3DRequest maps a point3DRequest DTO to a domain Point3D.
 func fromPoint3DRequest(req point3DRequest) (shared.Point3D, error) {
-	return shared.NewPoint3D(req.XM, req.YM, req.ZM)
+	if req.XM == nil || req.YM == nil || req.ZM == nil {
+		return shared.Point3D{}, errMissingGeometryField
+	}
+	return shared.NewPoint3D(*req.XM, *req.YM, *req.ZM)
 }
 
 // fromDimensionsRequest maps a dimensionsRequest DTO to a domain Dimensions.
 func fromDimensionsRequest(req dimensionsRequest) (shared.Dimensions, error) {
-	return shared.NewDimensions(req.WidthM, req.DepthM, req.HeightM)
+	if req.WidthM == nil || req.DepthM == nil || req.HeightM == nil {
+		return shared.Dimensions{}, errMissingGeometryField
+	}
+	return shared.NewDimensions(*req.WidthM, *req.DepthM, *req.HeightM)
 }
 
 // fromSegmentRequest maps a segmentRequest DTO to a domain Segment.
