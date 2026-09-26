@@ -168,6 +168,30 @@ func TestEstimateTravelDistance(t *testing.T) {
 		assertErrorIs(t, err, travel.ErrNoRoute)
 	})
 
+	t.Run("skips a decommissioned cross-aisle when building the graph", func(t *testing.T) {
+		h := newHarness(t)
+		seedThreeAisleZone(h)
+		if _, err := h.registerCrossAisle.Execute(h.ctx(), "WH1-STOR-AMB", "A07", "A08", "02"); err != nil {
+			t.Fatalf("seed cross-aisle: %v", err)
+		}
+		c, err := h.crossAisles.FindByAisles(h.ctx(), "WH1-STOR-AMB", "A07", "A08", "02")
+		if err != nil || c == nil {
+			t.Fatalf("seeding: cross-aisle not found (%v)", err)
+		}
+		if err := c.Decommission(); err != nil {
+			t.Fatalf("decommission: %v", err)
+		}
+		if err := h.crossAisles.Save(h.ctx(), c); err != nil {
+			t.Fatalf("save: %v", err)
+		}
+
+		// A09 is OneWay and A07/A08 connect only through the now-retired
+		// cross-aisle, so no route exists once it is skipped.
+		_, err = h.estimateTravelDistance.Execute(h.ctx(),
+			mustCode(t, "WH1-STOR-AMB-A07-01-01-A"), mustCode(t, "WH1-STOR-AMB-A08-03-01-A"))
+		assertErrorIs(t, err, travel.ErrNoRoute)
+	})
+
 	t.Run("uses real aisle centreline geometry when set", func(t *testing.T) {
 		h := newHarness(t)
 		seedThreeAisleZone(h)
