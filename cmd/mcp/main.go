@@ -25,6 +25,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	inboundmcp "github.com/claudioed/facility-layout/internal/adapters/inbound/mcp"
+	"github.com/claudioed/facility-layout/internal/adapters/outbound/bootretry"
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/memory"
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/postgres"
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/telemetry"
@@ -173,12 +174,27 @@ func buildAdapters(databaseURL, migrationsPath string, logger *slog.Logger) (ada
 		}, noop, nil
 	}
 
-	if err := postgres.RunMigrations(databaseURL, migrationsPath); err != nil {
+	// Retried, because in this fleet EVERY injected pod's first outbound TCP
+	// dial is reset ~10s after the app starts (Istio native sidecars). A
+	// single attempt turns that known, transient condition into
+	// CrashLoopBackOff; the retry still refuses to boot once the budget is
+	// exhausted, reporting the real underlying error.
+	if err := bootretry.Retry(context.Background(), logger, "run migrations", func() error {
+		return postgres.RunMigrations(databaseURL, migrationsPath)
+	}); err != nil {
 		return adapterSet{}, noop, err
 	}
 
 	pool, err := postgres.NewPool(context.Background(), databaseURL)
 	if err != nil {
+		return adapterSet{}, noop, err
+	}
+	// pgxpool does not itself dial until first use, so without this the
+	// first real failure would surface inside a request instead of at boot.
+	if err := bootretry.Retry(context.Background(), logger, "ping database", func() error {
+		return pool.Ping(context.Background())
+	}); err != nil {
+		pool.Close()
 		return adapterSet{}, noop, err
 	}
 

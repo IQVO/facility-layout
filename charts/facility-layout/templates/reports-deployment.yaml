@@ -56,6 +56,12 @@ spec:
             - name: ENVIRONMENT
               value: {{ .Values.environment | quote }}
             {{- end }}
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
           livenessProbe:
             httpGet:
               path: /healthz

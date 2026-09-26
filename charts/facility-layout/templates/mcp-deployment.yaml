@@ -70,6 +70,12 @@ spec:
             {{- range .Values.mcp.extraEnv }}
             - {{ toYaml . | nindent 14 | trim }}
             {{- end }}
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
           livenessProbe:
             httpGet:
               path: /healthz
