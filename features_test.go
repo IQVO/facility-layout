@@ -325,6 +325,48 @@ func (w *world) iRequestTheGridOfZone(ctx context.Context, zoneID string) error 
 	return w.record(ctx, http.MethodGet, "/zones/"+zoneID+"/grid", nil)
 }
 
+func (w *world) iRequestTheSlot(ctx context.Context, locationCode string) error {
+	return w.record(ctx, http.MethodGet, "/locations/"+locationCode, nil)
+}
+
+func (w *world) iRequestTheClassificationOf(ctx context.Context, locationCode string) error {
+	return w.record(ctx, http.MethodGet, "/locations/"+locationCode+"/classification", nil)
+}
+
+func (w *world) iListTheSites(ctx context.Context) error {
+	return w.record(ctx, http.MethodGet, "/sites", nil)
+}
+
+func (w *world) iListTheZonesOfSite(ctx context.Context, siteCode string) error {
+	return w.record(ctx, http.MethodGet, "/sites/"+siteCode+"/zones", nil)
+}
+
+func (w *world) iListTheAislesOfZone(ctx context.Context, zoneID string) error {
+	return w.record(ctx, http.MethodGet, "/zones/"+zoneID+"/aisles", nil)
+}
+
+func (w *world) iListTheLocationTypes(ctx context.Context) error {
+	return w.record(ctx, http.MethodGet, "/location-types", nil)
+}
+
+func (w *world) iListThePlacementRules(ctx context.Context) error {
+	return w.record(ctx, http.MethodGet, "/placement-rules", nil)
+}
+
+func (w *world) iDefineTheDenyRuleByTemperature(ctx context.Context, ruleID, locationType, temperatureClass string) error {
+	return w.record(ctx, http.MethodPost, "/placement-rules", map[string]any{
+		"ruleId": ruleID, "locationType": locationType, "effect": "Deny",
+		"zone": map[string]any{"temperatureClass": temperatureClass},
+	})
+}
+
+func (w *world) iDefineTheDenyRuleWithEmptyPredicate(ctx context.Context, ruleID, locationType string) error {
+	return w.record(ctx, http.MethodPost, "/placement-rules", map[string]any{
+		"ruleId": ruleID, "locationType": locationType, "effect": "Deny",
+		"zone": map[string]any{},
+	})
+}
+
 // ----------------------------------------------------------------- Then ----
 
 func (w *world) theResponseStatusIs(expected int) error {
@@ -709,6 +751,94 @@ func (w *world) theResponseIsAWellFormedSVGMentioning(fragment string) error {
 	return nil
 }
 
+// ------------------------------------------------------ catalog Then --
+
+func (w *world) theListedSitesAre(expected string) error {
+	var listed []struct {
+		SiteCode string `json:"siteCode"`
+	}
+	if err := w.decode(&listed); err != nil {
+		return err
+	}
+	got := make([]string, 0, len(listed))
+	for _, s := range listed {
+		got = append(got, s.SiteCode)
+	}
+	return expectOrder(expected, got, "listed sites")
+}
+
+func (w *world) theListedZonesAre(expected string) error {
+	var listed []struct {
+		ZoneID string `json:"zoneId"`
+	}
+	if err := w.decode(&listed); err != nil {
+		return err
+	}
+	got := make([]string, 0, len(listed))
+	for _, z := range listed {
+		got = append(got, z.ZoneID)
+	}
+	return expectOrder(expected, got, "listed zones")
+}
+
+func (w *world) theListedAislesAre(expected string) error {
+	var listed []struct {
+		AisleCode string `json:"aisleCode"`
+	}
+	if err := w.decode(&listed); err != nil {
+		return err
+	}
+	got := make([]string, 0, len(listed))
+	for _, a := range listed {
+		got = append(got, a.AisleCode)
+	}
+	return expectOrder(expected, got, "listed aisles")
+}
+
+func (w *world) theListedLocationTypesAre(expected string) error {
+	var listed []struct {
+		Name string `json:"name"`
+	}
+	if err := w.decode(&listed); err != nil {
+		return err
+	}
+	got := make([]string, 0, len(listed))
+	for _, t := range listed {
+		got = append(got, t.Name)
+	}
+	return expectOrder(expected, got, "listed location types")
+}
+
+func (w *world) theListedPlacementRulesAre(expected string) error {
+	var listed []struct {
+		RuleID string `json:"ruleId"`
+	}
+	if err := w.decode(&listed); err != nil {
+		return err
+	}
+	got := make([]string, 0, len(listed))
+	for _, r := range listed {
+		got = append(got, r.RuleID)
+	}
+	return expectOrder(expected, got, "listed placement rules")
+}
+
+func (w *world) theClassificationReports(hazmat, temperatureClass string) error {
+	wantHazmat := hazmat == "true"
+	var classification struct {
+		Hazmat           bool   `json:"hazmat"`
+		TemperatureClass string `json:"temperatureClass"`
+	}
+	if err := w.decode(&classification); err != nil {
+		return err
+	}
+	if classification.Hazmat != wantHazmat || classification.TemperatureClass != temperatureClass {
+		return fmt.Errorf("expected hazmat %t / temperature class %q, got %t / %q",
+			wantHazmat, temperatureClass, classification.Hazmat, classification.TemperatureClass)
+	}
+	return nil
+}
+
 // ------------------------------------------------------------- helpers -----
 
 func expectOrder(expected string, got []string, what string) error {
@@ -761,6 +891,15 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^I request the layout of Site "([^"]*)"$`, w.iRequestTheLayoutOfSite)
 	sc.Step(`^I request the layout of Site "([^"]*)" as SVG$`, w.iRequestTheLayoutOfSiteAsSVG)
 	sc.Step(`^I request the grid of Zone "([^"]*)"$`, w.iRequestTheGridOfZone)
+	sc.Step(`^I request the LocationSlot "([^"]*)"$`, w.iRequestTheSlot)
+	sc.Step(`^I request the classification of LocationSlot "([^"]*)"$`, w.iRequestTheClassificationOf)
+	sc.Step(`^I list the sites$`, w.iListTheSites)
+	sc.Step(`^I list the zones of Site "([^"]*)"$`, w.iListTheZonesOfSite)
+	sc.Step(`^I list the aisles of Zone "([^"]*)"$`, w.iListTheAislesOfZone)
+	sc.Step(`^I list the location types$`, w.iListTheLocationTypes)
+	sc.Step(`^I list the placement rules$`, w.iListThePlacementRules)
+	sc.Step(`^I define the PlacementRule "([^"]*)" denying "([^"]*)" where temperature class is "([^"]*)"$`, w.iDefineTheDenyRuleByTemperature)
+	sc.Step(`^I define the PlacementRule "([^"]*)" denying "([^"]*)" with an empty zone predicate$`, w.iDefineTheDenyRuleWithEmptyPredicate)
 
 	// Then
 	sc.Step(`^the response status is (\d+)$`, w.theResponseStatusIs)
@@ -791,4 +930,11 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^the grid cell at level "([^"]*)" column (\d+) is a gap$`, w.theGridCellIsAGap)
 
 	sc.Step(`^the response is a well-formed SVG document mentioning "([^"]*)"$`, w.theResponseIsAWellFormedSVGMentioning)
+
+	sc.Step(`^the listed sites are "([^"]*)"$`, w.theListedSitesAre)
+	sc.Step(`^the listed zones are "([^"]*)"$`, w.theListedZonesAre)
+	sc.Step(`^the listed aisles are "([^"]*)"$`, w.theListedAislesAre)
+	sc.Step(`^the listed location types are "([^"]*)"$`, w.theListedLocationTypesAre)
+	sc.Step(`^the listed placement rules are "([^"]*)"$`, w.theListedPlacementRulesAre)
+	sc.Step(`^the classification reports hazmat (true|false) and temperature class "([^"]*)"$`, w.theClassificationReports)
 }
