@@ -176,6 +176,123 @@ func TestRegisterLocationSlotEnforcesPlacementRules(t *testing.T) {
 	})
 }
 
+// seedFunctionalRoles registers a Dock-role and a WorkCenter-role location
+// type over the canonical ambient aisle, the setup every ADR-0016
+// functional-attributes case needs.
+func seedFunctionalRoles(t *testing.T, h *harness) {
+	t.Helper()
+	h.seedAmbientAisle()
+	if _, err := h.registerLocationType.Execute(h.ctx(), "DockDoor", placement.Dock, shared.Capacity{}); err != nil {
+		t.Fatalf("seeding DockDoor: %v", err)
+	}
+	if _, err := h.registerLocationType.Execute(h.ctx(), "PackBenches", placement.WorkCenter, shared.Capacity{}); err != nil {
+		t.Fatalf("seeding PackBenches: %v", err)
+	}
+}
+
+func TestRegisterLocationSlotFunctionalAttributes(t *testing.T) {
+	tests := []struct {
+		name        string
+		locationTyp string
+		dockFlow    string
+		activities  []string
+		wantErr     error
+		verify      func(t *testing.T, s *slot.LocationSlot)
+	}{
+		{
+			name:        "a dock slot with a valid flow carries it",
+			locationTyp: "DockDoor",
+			dockFlow:    "Inbound",
+			verify: func(t *testing.T, s *slot.LocationSlot) {
+				t.Helper()
+				if s.Functional().DockFlow() != slot.Inbound {
+					t.Fatalf("expected dockFlow Inbound, got %q", s.Functional().DockFlow())
+				}
+			},
+		},
+		{
+			name:        "a dock slot with an unknown flow is rejected",
+			locationTyp: "DockDoor",
+			dockFlow:    "Sideways",
+			wantErr:     slot.ErrUnknownDockFlow,
+		},
+		{
+			name:        "a dock slot without a flow is rejected",
+			locationTyp: "DockDoor",
+			wantErr:     slot.ErrDockFlowRequired,
+		},
+		{
+			name:        "a dock slot with activities is rejected",
+			locationTyp: "DockDoor",
+			dockFlow:    "Both",
+			activities:  []string{"Pack"},
+			wantErr:     slot.ErrFunctionalAttributesNotAllowed,
+		},
+		{
+			name:        "a work center slot with valid activities carries them sorted",
+			locationTyp: "PackBenches",
+			activities:  []string{"VAS", "Pack"},
+			verify: func(t *testing.T, s *slot.LocationSlot) {
+				t.Helper()
+				got := s.Functional().Activities()
+				if len(got) != 2 || got[0] != slot.Pack || got[1] != slot.VAS {
+					t.Fatalf("expected sorted [Pack VAS], got %v", got)
+				}
+			},
+		},
+		{
+			name:        "a work center slot with an unknown activity is rejected",
+			locationTyp: "PackBenches",
+			activities:  []string{"Pack", "Juggle"},
+			wantErr:     slot.ErrUnknownActivity,
+		},
+		{
+			name:        "a work center slot without activities is rejected",
+			locationTyp: "PackBenches",
+			wantErr:     slot.ErrWorkCenterActivitiesRequired,
+		},
+		{
+			name:        "a work center slot with a dock flow is rejected",
+			locationTyp: "PackBenches",
+			dockFlow:    "Inbound",
+			activities:  []string{"Pack"},
+			wantErr:     slot.ErrFunctionalAttributesNotAllowed,
+		},
+		{
+			name:        "a storage slot with activities is rejected",
+			locationTyp: placement.PalletRack,
+			activities:  []string{"Pack"},
+			wantErr:     slot.ErrFunctionalAttributesNotAllowed,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			seedFunctionalRoles(t, h)
+			h.metrics.outcomes = nil
+
+			s, err := h.registerSlot.Execute(h.ctx(), mustCode(t, "WH1-STOR-AMB-A07-03-02-B"), tc.locationTyp, shared.Capacity{}, tc.dockFlow, tc.activities)
+			if tc.wantErr != nil {
+				assertErrorIs(t, err, tc.wantErr)
+				h.assertNotPublished("LocationSlotRegistered")
+				if len(h.metrics.outcomes) != 1 || h.metrics.outcomes[0] != usecases.OutcomeRejected {
+					t.Fatalf("expected one rejected outcome, got %v", h.metrics.outcomes)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			h.assertPublished("LocationSlotRegistered")
+			if len(h.metrics.outcomes) != 1 || h.metrics.outcomes[0] != usecases.OutcomeAccepted {
+				t.Fatalf("expected one accepted outcome, got %v", h.metrics.outcomes)
+			}
+			tc.verify(t, s)
+		})
+	}
+}
+
 func TestGetLocationSlot(t *testing.T) {
 	h := newHarness(t)
 	h.seedAmbientAisle()

@@ -94,6 +94,46 @@ func TestGetSiteLayout(t *testing.T) {
 		assertErrorIs(t, err, usecases.ErrSiteNotFound)
 	})
 
+	t.Run("aisles sharing a sequence hint fall back to aisle code, and slots order by bay first", func(t *testing.T) {
+		h := newHarness(t)
+		h.mustRegisterSite("WH1", "Fulfilment Centre One")
+		h.mustRegisterLocationType(placement.PalletRack, 1200, 2.4)
+		h.mustRegisterZone("WH1", "STOR", "AMB", shared.Ambient, false)
+
+		// Three aisles all sharing hint 5, registered in non-alphabetical
+		// order: the layout must order them by code so the order is total.
+		h.mustRegisterAisle("WH1-STOR-AMB", "A09", 5, shared.TwoWay)
+		h.mustRegisterAisle("WH1-STOR-AMB", "A07", 5, shared.TwoWay)
+		h.mustRegisterAisle("WH1-STOR-AMB", "A08", 5, shared.TwoWay)
+
+		// Slots across bays, registered deliberately out of order.
+		h.mustRegisterSlot("WH1-STOR-AMB-A07-03-01-A", placement.PalletRack)
+		h.mustRegisterSlot("WH1-STOR-AMB-A07-01-02-A", placement.PalletRack)
+		h.mustRegisterSlot("WH1-STOR-AMB-A07-02-01-A", placement.PalletRack)
+
+		layout, err := h.getSiteLayout.Execute(h.ctx(), "WH1")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		aisles := layout.Zones[0].Aisles
+		for i, want := range []string{"A07", "A08", "A09"} {
+			if aisles[i].Aisle.AisleCode() != want {
+				t.Fatalf("expected aisle %d to be %q on the hint tie, got %q", i, want, aisles[i].Aisle.AisleCode())
+			}
+		}
+
+		want := []string{"WH1-STOR-AMB-A07-01-02-A", "WH1-STOR-AMB-A07-02-01-A", "WH1-STOR-AMB-A07-03-01-A"}
+		a07 := aisles[0].Slots
+		if len(a07) != len(want) {
+			t.Fatalf("expected %d slots, got %d", len(want), len(a07))
+		}
+		for i, code := range want {
+			if a07[i].Code().String() != code {
+				t.Fatalf("expected slot %d to be %q, got %q", i, code, a07[i].Code().String())
+			}
+		}
+	})
+
 	t.Run("publishes nothing: it is a pure read model", func(t *testing.T) {
 		h := seedDrawableSite(t)
 		before := len(h.publishedEventNames())
@@ -258,4 +298,60 @@ func TestSingleResourceReadsPropagateFailures(t *testing.T) {
 	if _, err := (&usecases.GetPlacementRule{Rules: &faultyRuleRepo{PlacementRuleRepo: h.rules, failFind: true}}).Execute(h.ctx(), "RULE-1"); !isErr(err, errBoom) {
 		t.Fatalf("expected errBoom, got %v", err)
 	}
+}
+
+// mustRegisterFunctionalSlot registers a slot carrying a dock flow, which
+// the plain mustRegisterSlot helper (no functional attributes) cannot do.
+func mustRegisterFunctionalSlot(t *testing.T, h *harness, raw, locationType, dockFlow string) {
+	t.Helper()
+	if _, err := h.registerSlot.Execute(h.ctx(), mustCode(h.t, raw), locationType, shared.Capacity{}, dockFlow, nil); err != nil {
+		h.t.Fatalf("seeding slot %q: %v", raw, err)
+	}
+}
+
+func TestListLocationsByRole(t *testing.T) {
+	t.Run("returns only the site's slots with that role, zone -> aisle -> bay ordered", func(t *testing.T) {
+		h := newHarness(t)
+		seedFunctionalRoles(t, h)
+		mustRegisterFunctionalSlot(t, h, "WH1-STOR-AMB-A07-01-01-A", "DockDoor", "Inbound")
+		mustRegisterFunctionalSlot(t, h, "WH1-STOR-AMB-A07-03-01-A", "DockDoor", "Inbound")
+		h.mustRegisterSlot("WH1-STOR-AMB-A07-02-01-A", "PalletRack")
+		uc := &usecases.ListLocationsByRole{Sites: h.sites, Zones: h.zones, Slots: h.slots}
+
+		out, err := uc.Execute(h.ctx(), "WH1", placement.Dock)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := []string{"WH1-STOR-AMB-A07-01-01-A", "WH1-STOR-AMB-A07-03-01-A"}
+		if len(out) != len(want) {
+			t.Fatalf("expected %d dock slots, got %v", len(want), out)
+		}
+		for i, code := range want {
+			if out[i].Code().String() != code {
+				t.Fatalf("expected slot %d to be %q, got %q", i, code, out[i].Code().String())
+			}
+		}
+	})
+
+	t.Run("a role with no slots yields an empty, non-nil list", func(t *testing.T) {
+		h := newHarness(t)
+		seedFunctionalRoles(t, h)
+		uc := &usecases.ListLocationsByRole{Sites: h.sites, Zones: h.zones, Slots: h.slots}
+
+		out, err := uc.Execute(h.ctx(), "WH1", placement.Dock)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if out == nil || len(out) != 0 {
+			t.Fatalf("expected an empty, non-nil list, got %v", out)
+		}
+	})
+
+	t.Run("rejects an unknown site", func(t *testing.T) {
+		h := newHarness(t)
+		uc := &usecases.ListLocationsByRole{Sites: h.sites, Zones: h.zones, Slots: h.slots}
+
+		_, err := uc.Execute(h.ctx(), "NOPE", placement.Dock)
+		assertErrorIs(t, err, usecases.ErrSiteNotFound)
+	})
 }
