@@ -113,6 +113,21 @@ database:
 
 extraEnv: []
 
+# Without a startupProbe, boot work races the liveness probe and loses:
+# every injected pod's first outbound TCP dial (Postgres/Kafka) in this
+# cluster is reset ~10s after start (Istio native sidecars), and the
+# app-side retry (bootretry package) can take up to ~31s to recover from
+# that. The startupProbe suspends liveness/readiness checks until the
+# process actually answers /healthz, so a boot that is retrying its first
+# dial is never killed mid-retry. periodSeconds 2 * failureThreshold 30 =
+# 60s of startup grace, comfortably past the ~31s worst-case retry budget.
+startupProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  periodSeconds: 2
+  failureThreshold: 30
+
 livenessProbe:
   httpGet:
     path: /healthz

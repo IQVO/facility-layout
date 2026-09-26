@@ -23,6 +23,7 @@ import (
 
 	inboundkafka "github.com/claudioed/facility-layout/internal/adapters/inbound/kafka"
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/analyticsstore"
+	"github.com/claudioed/facility-layout/internal/adapters/outbound/bootretry"
 	outboundkafka "github.com/claudioed/facility-layout/internal/adapters/outbound/kafka"
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/postgres"
 )
@@ -53,7 +54,14 @@ func run() error {
 	migrationsPath := getenv("ANALYTICS_MIGRATIONS_PATH", "migrations/analytics")
 
 	// The projector owns the analytical schema: run its migrations on start.
-	if err := postgres.RunMigrations(analyticsURL, migrationsPath); err != nil {
+	// Retried, because in this fleet EVERY injected pod's first outbound TCP
+	// dial is reset ~10s after the app starts (Istio native sidecars). A
+	// single attempt turns that known, transient condition into
+	// CrashLoopBackOff; the retry still refuses to boot once the budget is
+	// exhausted, reporting the real underlying error.
+	if err := bootretry.Retry(rootCtx, logger, "run analytics migrations", func() error {
+		return postgres.RunMigrations(analyticsURL, migrationsPath)
+	}); err != nil {
 		return err
 	}
 
@@ -62,6 +70,11 @@ func run() error {
 		return err
 	}
 	defer pool.Close()
+	if err := bootretry.Retry(rootCtx, logger, "ping analytics database", func() error {
+		return pool.Ping(rootCtx)
+	}); err != nil {
+		return err
+	}
 
 	projection := analyticsstore.NewPostgresProjection(pool)
 	consumed := analyticsstore.NewConsumedEventsRepo(pool)

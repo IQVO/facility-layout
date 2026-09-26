@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 
 	inboundhttp "github.com/claudioed/facility-layout/internal/adapters/inbound/http"
+	"github.com/claudioed/facility-layout/internal/adapters/outbound/bootretry"
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/events"
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/kafka"
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/memory"
@@ -268,12 +269,30 @@ func buildAdapters(cfg publisherConfig, logger *slog.Logger) (adapterSet, func()
 		}, closeFn, nil
 	}
 
-	if err := postgres.RunMigrations(cfg.databaseURL, cfg.migrationsPath); err != nil {
+	ctx := context.Background()
+
+	// Retried, because in this fleet EVERY injected pod's first outbound TCP
+	// dial is reset ~10s after the app starts (Istio native sidecars;
+	// holdApplicationUntilProxyStarts is a no-op for them). A single attempt
+	// turns that known, transient condition into CrashLoopBackOff. The retry
+	// does not weaken the fail-closed rule: after the budget is exhausted
+	// this still refuses to boot, reporting the real underlying error.
+	if err := bootretry.Retry(ctx, logger, "run migrations", func() error {
+		return postgres.RunMigrations(cfg.databaseURL, cfg.migrationsPath)
+	}); err != nil {
 		return adapterSet{}, noop, err
 	}
 
-	pool, err := postgres.NewPool(context.Background(), cfg.databaseURL)
+	pool, err := postgres.NewPool(ctx, cfg.databaseURL)
 	if err != nil {
+		return adapterSet{}, noop, err
+	}
+	// pgxpool does not itself dial until first use, so without this the
+	// first real failure would surface inside a request instead of at boot.
+	if err := bootretry.Retry(ctx, logger, "ping database", func() error {
+		return pool.Ping(ctx)
+	}); err != nil {
+		pool.Close()
 		return adapterSet{}, noop, err
 	}
 

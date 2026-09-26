@@ -75,6 +75,10 @@ spec:
             {{- range .Values.extraEnv }}
             - {{ toYaml . | nindent 14 | trim }}
             {{- end }}
+          {{- with .Values.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           {{- with .Values.livenessProbe }}
           livenessProbe:
             {{- toYaml . | nindent 12 }}
