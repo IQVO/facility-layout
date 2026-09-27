@@ -157,6 +157,51 @@ Jaeger and Grafana alongside HTTP.
    runs as unit tests in `internal/adapters/inbound/mcp/governance_test.go`
    (tool count ≤ 8, naming, mandatory annotations), so it gates every
    `make check`.
+4. **Eval gate (E1–E3):** the tool surface **MUST** pass the eval suites in
+   `internal/adapters/inbound/mcp/eval_*_test.go` and
+   `evalsuite_test.go`, all plain `go test`s inside the CI `test` job:
+   - **E1 — schema & metadata** (`eval_governance_test.go`): every
+     advertised tool's input schema resolves as a JSON Schema, accepts a
+     schema-shaped arguments object, and REJECTS wrong-typed values (it
+     constrains model input, not just decorates it); every parameter
+     carries a non-empty description; the advertised surface matches
+     `testdata/tool_registry.golden`; and this repo's tools are present,
+     correctly credited, and globally unique in
+     `testdata/fleet_tool_snapshot.golden` (the federated registry kept
+     identical across all fleet repos — a model host mounts several of
+     these servers together, so tool names MUST NOT collide).
+   - **E2 — wire conformance** (`eval_conformance_test.go`): over the real
+     Streamable HTTP handler — initialize handshake carries server info
+     and non-empty instructions; unknown tools, wrong-typed arguments,
+     unknown extra arguments, unknown resources and prompts are rejected;
+     the `layout://facility/{siteCode}` resource template and the
+     `explore_layout` prompt are discoverable; a closed session fails
+     loudly.
+   - **E3 — behavioral evals** (`evalsuite_test.go` +
+     `testdata/features/mcp_tools.feature`): Gherkin scenarios driving
+     `tools/call` with model-realistic arguments (stray keys, wrong types,
+     unknown ids, malformed location codes) against seeded state, pinning
+     structured results. This context is a read-only Open Host Service —
+     there is no write tool, so (unlike the fleet's write-capable
+     servers) there are no side-effect scenarios to pin; the absence of a
+     write tool is itself the contract (§4).
+
+### Pinned behavioral contracts the evals found
+
+- Typed tool schemas are **strict** (`additionalProperties: false`, the
+  SDK default): stray model-generated argument keys are rejected with a
+  validation error, not silently ignored — even for `list_sites`, which
+  declares no parameters at all.
+- `estimate_travel_distance` **refuses** cross-zone travel
+  (`ErrNoRouteBetweenZones`) rather than guessing a route — this
+  context's travel graph does not yet connect zones.
+- With no real aisle geometry registered, a within-aisle distance is the
+  bay gap at the zone's default bay pitch (1.2 m per bay) and is always
+  flagged `estimated: true` — the map's distances are explicitly
+  approximate until centreline geometry is set.
+- A zone's travel graph lists a waypoint for **every** (aisle, bay) pair
+  that has slots — including isolated ones: a one-way aisle with a single
+  bay contributes a node but no edges.
 
 ## 11. Changing this charter
 
