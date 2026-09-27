@@ -23,7 +23,7 @@ func NewSiteRepo(pool *pgxpool.Pool) *SiteRepo {
 
 // Save upserts the site.
 func (r *SiteRepo) Save(ctx context.Context, s *site.Site) error {
-	_, err := r.pool.Exec(ctx, `
+	_, err := querierFrom(ctx, r.pool).Exec(ctx, `
 		INSERT INTO sites (code, name, status)
 		VALUES ($1, $2, $3)
 		ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name, status = EXCLUDED.status
@@ -34,7 +34,7 @@ func (r *SiteRepo) Save(ctx context.Context, s *site.Site) error {
 // FindByCode returns the site, or (nil, nil) when it does not exist.
 func (r *SiteRepo) FindByCode(ctx context.Context, code string) (*site.Site, error) {
 	var name, status string
-	err := r.pool.QueryRow(ctx, `SELECT name, status FROM sites WHERE code = $1`, code).Scan(&name, &status)
+	err := querierFrom(ctx, r.pool).QueryRow(ctx, `SELECT name, status FROM sites WHERE code = $1`, code).Scan(&name, &status)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -50,7 +50,7 @@ func (r *SiteRepo) FindByCode(ctx context.Context, code string) (*site.Site, err
 
 // List returns every site, ordered by code.
 func (r *SiteRepo) List(ctx context.Context) ([]*site.Site, error) {
-	rows, err := r.pool.Query(ctx, `SELECT code, name, status FROM sites ORDER BY code`)
+	rows, err := querierFrom(ctx, r.pool).Query(ctx, `SELECT code, name, status FROM sites ORDER BY code`)
 	if err != nil {
 		return nil, err
 	}

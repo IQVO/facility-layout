@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"os"
@@ -84,12 +85,14 @@ func run() error {
 	migrationsPath := getenv("MIGRATIONS_PATH", "migrations")
 	eventPublisher := getenv("EVENT_PUBLISHER", "")
 	kafkaBrokers := getenv("KAFKA_BROKERS", "localhost:9092")
+	relayInterval := durationEnv("OUTBOX_RELAY_INTERVAL", time.Second)
 
-	adapters, closeAdapters, err := buildAdapters(publisherConfig{
+	adapters, relay, closeAdapters, err := buildAdapters(publisherConfig{
 		databaseURL:    databaseURL,
 		migrationsPath: migrationsPath,
 		eventPublisher: eventPublisher,
 		kafkaBrokers:   kafkaBrokers,
+		relayInterval:  relayInterval,
 	}, logger)
 	if err != nil {
 		return err
@@ -113,6 +116,24 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// The outbox relay (ADR-0018) runs alongside the HTTP server in the
+	// same process, draining outbox_events onto Kafka. It is only wired
+	// when both Postgres and the kafka publisher are configured.
+	relayDone := make(chan struct{})
+	relayCtx, stopRelay := context.WithCancel(ctx)
+	defer stopRelay()
+	if relay != nil {
+		go func() {
+			defer close(relayDone)
+			logger.Info("outbox relay running", "integration_topic", kafka.Topic, "analytics_topic", kafka.AnalyticsTopic)
+			if err := relay.Run(relayCtx); err != nil && !errors.Is(err, context.Canceled) {
+				errCh <- err
+			}
+		}()
+	} else {
+		close(relayDone)
+	}
+
 	select {
 	case err := <-errCh:
 		return err
@@ -121,7 +142,17 @@ func run() error {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	return httpServer.Shutdown(shutdownCtx)
+	err = httpServer.Shutdown(shutdownCtx)
+	// Let the relay finish its in-flight pass so an event committed by a
+	// request that completed just before shutdown is not stranded until
+	// the next pod boots.
+	stopRelay()
+	select {
+	case <-relayDone:
+	case <-shutdownCtx.Done():
+		logger.Warn("outbox relay did not stop before the shutdown deadline")
+	}
+	return err
 }
 
 // adapterSet is the concrete outbound side of the hexagon, chosen at
@@ -136,57 +167,62 @@ type adapterSet struct {
 	structures    ports.FixedStructureRepo
 	crossAisles   ports.CrossAisleRepo
 	publisher     ports.EventPublisher
+	// unitOfWork brackets a use case's Save(s) + Publish(es) atomically
+	// (ADR-0018). nil when running without Postgres — every use case
+	// treats that identically to "run them back to back" (see the
+	// usecases package's atomically helper).
+	unitOfWork ports.UnitOfWork
 }
 
 // newServer wires every use case over the chosen adapters. It is the one
 // place in the codebase that knows about all three layers at once.
 func newServer(a adapterSet, clock ports.Clock, locationMetrics ports.LocationMetrics) *inboundhttp.Server {
 	return &inboundhttp.Server{
-		RegisterSite: &usecases.RegisterSite{Sites: a.sites, Events: a.publisher, Clock: clock},
+		RegisterSite: &usecases.RegisterSite{Sites: a.sites, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork},
 		GetSite:      &usecases.GetSite{Sites: a.sites},
 		ListSites:    &usecases.ListSites{Sites: a.sites},
 
-		RegisterZone: &usecases.RegisterZone{Sites: a.sites, Zones: a.zones, Events: a.publisher, Clock: clock},
+		RegisterZone: &usecases.RegisterZone{Sites: a.sites, Zones: a.zones, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork},
 		GetZone:      &usecases.GetZone{Zones: a.zones},
 		ListZones:    &usecases.ListZones{Sites: a.sites, Zones: a.zones},
 
-		RegisterAisle: &usecases.RegisterAisle{Zones: a.zones, Aisles: a.aisles, Events: a.publisher, Clock: clock},
+		RegisterAisle: &usecases.RegisterAisle{Zones: a.zones, Aisles: a.aisles, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork},
 		GetAisle:      &usecases.GetAisle{Aisles: a.aisles},
 		ListAisles:    &usecases.ListAisles{Zones: a.zones, Aisles: a.aisles},
 
-		RegisterLocationType: &usecases.RegisterLocationType{LocationTypes: a.locationTypes, Events: a.publisher, Clock: clock},
+		RegisterLocationType: &usecases.RegisterLocationType{LocationTypes: a.locationTypes, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork},
 		GetLocationType:      &usecases.GetLocationType{LocationTypes: a.locationTypes},
 		ListLocationTypes:    &usecases.ListLocationTypes{LocationTypes: a.locationTypes},
 
-		DefinePlacementRule: &usecases.DefinePlacementRule{LocationTypes: a.locationTypes, Rules: a.rules, Events: a.publisher, Clock: clock},
+		DefinePlacementRule: &usecases.DefinePlacementRule{LocationTypes: a.locationTypes, Rules: a.rules, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork},
 		GetPlacementRule:    &usecases.GetPlacementRule{Rules: a.rules},
 		ListPlacementRules:  &usecases.ListPlacementRules{Rules: a.rules},
 
 		RegisterLocationSlot: &usecases.RegisterLocationSlot{
 			Sites: a.sites, Zones: a.zones, Aisles: a.aisles, Slots: a.slots,
 			LocationTypes: a.locationTypes, Rules: a.rules, Events: a.publisher, Clock: clock,
-			Metrics: locationMetrics,
+			Metrics: locationMetrics, UnitOfWork: a.unitOfWork,
 		},
 		GetLocationSlot:           &usecases.GetLocationSlot{Slots: a.slots},
 		GetLocationClassification: &usecases.GetLocationClassification{Slots: a.slots, Zones: a.zones},
 		ListLocationsByRole:       &usecases.ListLocationsByRole{Sites: a.sites, Zones: a.zones, Slots: a.slots},
-		DecommissionLocationSlot:  &usecases.DecommissionLocationSlot{Slots: a.slots, Events: a.publisher, Clock: clock},
+		DecommissionLocationSlot:  &usecases.DecommissionLocationSlot{Slots: a.slots, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork},
 		ImportFacilityLayout: &usecases.ImportFacilityLayout{
 			Sites: a.sites, Zones: a.zones, Aisles: a.aisles, Slots: a.slots,
 			LocationTypes: a.locationTypes, Rules: a.rules, Events: a.publisher, Clock: clock,
-			Metrics: locationMetrics,
+			Metrics: locationMetrics, UnitOfWork: a.unitOfWork,
 		},
 
 		GetSiteLayout: &usecases.GetSiteLayout{Sites: a.sites, Zones: a.zones, Aisles: a.aisles, Slots: a.slots, Structures: a.structures},
 		GetZoneGrid:   &usecases.GetZoneGrid{Zones: a.zones, Aisles: a.aisles, Slots: a.slots},
 
-		SetLocationGeometry:    &usecases.SetLocationGeometry{Slots: a.slots, Events: a.publisher, Clock: clock},
-		SetAisleGeometry:       &usecases.SetAisleGeometry{Aisles: a.aisles, Events: a.publisher, Clock: clock},
-		RegisterFixedStructure: &usecases.RegisterFixedStructure{Sites: a.sites, Structures: a.structures, Events: a.publisher, Clock: clock},
+		SetLocationGeometry:    &usecases.SetLocationGeometry{Slots: a.slots, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork},
+		SetAisleGeometry:       &usecases.SetAisleGeometry{Aisles: a.aisles, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork},
+		RegisterFixedStructure: &usecases.RegisterFixedStructure{Sites: a.sites, Structures: a.structures, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork},
 		ListFixedStructures:    &usecases.ListFixedStructures{Sites: a.sites, Structures: a.structures},
 
 		RegisterCrossAisle: &usecases.RegisterCrossAisle{
-			Zones: a.zones, Aisles: a.aisles, CrossAisles: a.crossAisles, Events: a.publisher, Clock: clock,
+			Zones: a.zones, Aisles: a.aisles, CrossAisles: a.crossAisles, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork,
 		},
 		GetZoneTravelGraph: &usecases.GetZoneTravelGraph{
 			Zones: a.zones, Aisles: a.aisles, Slots: a.slots, CrossAisles: a.crossAisles,
@@ -203,58 +239,50 @@ type publisherConfig struct {
 	databaseURL    string
 	migrationsPath string
 	// eventPublisher selects the outbound EventPublisher: "kafka" publishes
-	// the Published Language to the integration topic; "" (default) uses the
-	// Postgres outbox when a database is configured, or the log publisher when
-	// running purely in-memory.
+	// the Published Language to the integration topic (and, with a database
+	// configured, via the transactional outbox); "" (default) uses the log
+	// publisher.
 	eventPublisher string
 	kafkaBrokers   string
+	// relayInterval is how long the outbox relay sleeps between empty
+	// passes (OUTBOX_RELAY_INTERVAL).
+	relayInterval time.Duration
 }
 
 // buildAdapters wires the Postgres adapters when DATABASE_URL is set, or
 // falls back to the in-memory adapters for local development without a
-// database. The EventPublisher is chosen independently: EVENT_PUBLISHER=kafka
-// selects the Kafka integration publisher regardless of the repository choice,
-// so the Published Language reaches the broker whether the store is Postgres
-// or in-memory.
-func buildAdapters(cfg publisherConfig, logger *slog.Logger) (adapterSet, func(), error) {
+// database. The EventPublisher is chosen independently:
+// EVENT_PUBLISHER=kafka selects Kafka publishing regardless of the
+// repository choice, so the Published Language reaches the broker
+// whether the store is Postgres or in-memory. With BOTH Postgres and
+// kafka configured, use cases publish into the transactional outbox
+// (ADR-0018) and the returned relay drains it onto Kafka; the store and
+// the topic can no longer diverge. The mode matrix:
+//
+//	DATABASE_URL | EVENT_PUBLISHER | publisher wired                    | relay
+//	unset        | log (default)   | log                                | no
+//	unset        | kafka           | direct Kafka fan-out (no outbox)   | no
+//	set          | log (default)   | log                                | no
+//	set          | kafka           | outbox (fans out to both topics)   | yes
+func buildAdapters(cfg publisherConfig, logger *slog.Logger) (adapterSet, *postgres.OutboxRelay, func(), error) {
 	noop := func() {}
-
-	// The Kafka publishers, when selected, are independent of the store, so
-	// they are built once here and folded into every branch's cleanup. When
-	// EVENT_PUBLISHER=kafka the composition root fans out to BOTH the
-	// integration topic (warehouse.facility.events, ADR-0009) and the analytics
-	// topic (warehouse.facility.analytics, ADR-0010), so the OLTP integration
-	// stream and the analytical read-model stream stay independent.
 	kafkaEnabled := cfg.eventPublisher == "kafka"
-	var (
-		kafkaPublisher     *kafka.Publisher
-		analyticsPublisher *kafka.AnalyticsPublisher
-		fanOut             ports.EventPublisher
-	)
-	if kafkaEnabled {
-		brokers := strings.Split(cfg.kafkaBrokers, ",")
-		kafkaPublisher = kafka.NewPublisher(brokers, uuidLike)
-		analyticsPublisher = kafka.NewAnalyticsPublisher(brokers, uuidLike)
-		fanOut = fanOutPublisher{kafkaPublisher, analyticsPublisher}
-		logger.Info("event publisher configured", "publisher", "kafka",
-			"integration_topic", kafka.Topic, "analytics_topic", kafka.AnalyticsTopic, "brokers", brokers)
-	}
-	closeKafka := func() {
-		if kafkaPublisher != nil {
-			_ = kafkaPublisher.Close()
-		}
-		if analyticsPublisher != nil {
-			_ = analyticsPublisher.Close()
-		}
-	}
 
 	if cfg.databaseURL == "" {
 		logger.Info("database url not configured; using in-memory adapters")
 		pub := ports.EventPublisher(events.NewLogPublisher(logger))
 		closeFn := noop
 		if kafkaEnabled {
-			pub = fanOut
-			closeFn = closeKafka
+			brokers := strings.Split(cfg.kafkaBrokers, ",")
+			kafkaPublisher := kafka.NewPublisher(brokers, uuidLike)
+			analyticsPublisher := kafka.NewAnalyticsPublisher(brokers, uuidLike)
+			pub = fanOutPublisher{kafkaPublisher, analyticsPublisher}
+			closeFn = func() {
+				_ = kafkaPublisher.Close()
+				_ = analyticsPublisher.Close()
+			}
+			logger.Info("event publisher configured", "publisher", "kafka", "mode", "direct",
+				"integration_topic", kafka.Topic, "analytics_topic", kafka.AnalyticsTopic, "brokers", brokers)
 		}
 		return adapterSet{
 			sites:         memory.NewSiteRepo(),
@@ -266,7 +294,7 @@ func buildAdapters(cfg publisherConfig, logger *slog.Logger) (adapterSet, func()
 			structures:    memory.NewFixedStructureRepo(),
 			crossAisles:   memory.NewCrossAisleRepo(),
 			publisher:     pub,
-		}, closeFn, nil
+		}, nil, closeFn, nil
 	}
 
 	ctx := context.Background()
@@ -280,12 +308,12 @@ func buildAdapters(cfg publisherConfig, logger *slog.Logger) (adapterSet, func()
 	if err := bootretry.Retry(ctx, logger, "run migrations", func() error {
 		return postgres.RunMigrations(cfg.databaseURL, cfg.migrationsPath)
 	}); err != nil {
-		return adapterSet{}, noop, err
+		return adapterSet{}, nil, noop, err
 	}
 
 	pool, err := postgres.NewPool(ctx, cfg.databaseURL)
 	if err != nil {
-		return adapterSet{}, noop, err
+		return adapterSet{}, nil, noop, err
 	}
 	// pgxpool does not itself dial until first use, so without this the
 	// first real failure would surface inside a request instead of at boot.
@@ -293,21 +321,10 @@ func buildAdapters(cfg publisherConfig, logger *slog.Logger) (adapterSet, func()
 		return pool.Ping(ctx)
 	}); err != nil {
 		pool.Close()
-		return adapterSet{}, noop, err
+		return adapterSet{}, nil, noop, err
 	}
 
-	// Default (no EVENT_PUBLISHER) keeps the Postgres outbox; kafka overrides it.
-	pub := ports.EventPublisher(postgres.NewEventPublisher(pool))
-	closeFn := pool.Close
-	if kafkaEnabled {
-		pub = fanOut
-		closeFn = func() {
-			closeKafka()
-			pool.Close()
-		}
-	}
-
-	return adapterSet{
+	base := adapterSet{
 		sites:         postgres.NewSiteRepo(pool),
 		zones:         postgres.NewZoneRepo(pool),
 		aisles:        postgres.NewAisleRepo(pool),
@@ -316,8 +333,35 @@ func buildAdapters(cfg publisherConfig, logger *slog.Logger) (adapterSet, func()
 		rules:         postgres.NewPlacementRuleRepo(pool),
 		structures:    postgres.NewFixedStructureRepo(pool),
 		crossAisles:   postgres.NewCrossAisleRepo(pool),
-		publisher:     pub,
-	}, closeFn, nil
+	}
+
+	if !kafkaEnabled {
+		base.publisher = events.NewLogPublisher(logger)
+		return base, nil, pool.Close, nil
+	}
+
+	brokers := strings.Split(cfg.kafkaBrokers, ",")
+	kafkaPublisher := kafka.NewPublisher(brokers, uuidLike)
+	analyticsPublisher := kafka.NewAnalyticsPublisher(brokers, uuidLike)
+	relaySink := kafka.NewRelaySink(brokers)
+	closeFn := func() {
+		_ = kafkaPublisher.Close()
+		_ = analyticsPublisher.Close()
+		_ = relaySink.Close()
+		pool.Close()
+	}
+
+	base.unitOfWork = postgres.NewUnitOfWork(pool)
+	// Every domain event is enqueued onto BOTH the integration topic and
+	// the analytics topic (ADR-0018) in the same transaction as the
+	// aggregate write, so the two streams can never diverge from what
+	// actually happened.
+	base.publisher = postgres.NewOutboxPublisher(pool, uuidLike, kafkaPublisher, analyticsPublisher)
+	relay := postgres.NewOutboxRelay(pool, relaySink, logger, postgres.WithInterval(cfg.relayInterval))
+	logger.Info("event publisher configured", "publisher", "kafka", "mode", "outbox",
+		"integration_topic", kafka.Topic, "analytics_topic", kafka.AnalyticsTopic, "brokers", brokers)
+
+	return base, relay, closeFn, nil
 }
 
 func getenv(key, fallback string) string {
@@ -327,16 +371,31 @@ func getenv(key, fallback string) string {
 	return fallback
 }
 
+// durationEnv parses key as a time.Duration, falling back on absence or a
+// malformed value (the relay interval is a tuning knob, not a contract).
+func durationEnv(key string, fallback time.Duration) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		return fallback
+	}
+	return d
+}
+
 // uuidLike mints the event_id stamped on each published integration event.
 func uuidLike() string {
 	return uuid.NewString()
 }
 
 // fanOutPublisher forwards every domain event to each wrapped EventPublisher in
-// order, so a single EVENT_PUBLISHER=kafka run publishes to BOTH the integration
-// topic and the analytics topic. It is a composition-root concern (ADR-0010): a
-// publish failure on any target aborts and is returned, so the caller sees the
-// first error rather than silently dropping a stream.
+// order, so a single EVENT_PUBLISHER=kafka run with no Postgres publishes to
+// BOTH the integration topic and the analytics topic directly (no outbox — no
+// transaction to bind them to). A publish failure on any target aborts and is
+// returned, so the caller sees the first error rather than silently dropping
+// a stream.
 type fanOutPublisher []ports.EventPublisher
 
 // Publish forwards event to every wrapped publisher, stopping at the first error.

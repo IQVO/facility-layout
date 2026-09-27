@@ -19,6 +19,8 @@ type RegisterCrossAisle struct {
 	CrossAisles ports.CrossAisleRepo
 	Events      ports.EventPublisher
 	Clock       ports.Clock
+	// UnitOfWork brackets Save + Publish atomically (ADR-0018, optional).
+	UnitOfWork ports.UnitOfWork
 }
 
 // Execute registers the cross-aisle and publishes CrossAisleRegistered.
@@ -51,12 +53,14 @@ func (uc *RegisterCrossAisle) Execute(ctx context.Context, zoneID, fromAisleCode
 	if err != nil {
 		return nil, err
 	}
-	if err := uc.CrossAisles.Save(ctx, c); err != nil {
-		return nil, err
-	}
-
-	event := shared.NewCrossAisleRegistered(uc.Clock.Now(), zoneID, fromAisleCode, toAisleCode, atBay)
-	if err := uc.Events.Publish(ctx, event); err != nil {
+	err = atomically(ctx, uc.UnitOfWork, func(ctx context.Context) error {
+		if err := uc.CrossAisles.Save(ctx, c); err != nil {
+			return err
+		}
+		event := shared.NewCrossAisleRegistered(uc.Clock.Now(), zoneID, fromAisleCode, toAisleCode, atBay)
+		return uc.Events.Publish(ctx, event)
+	})
+	if err != nil {
 		return nil, err
 	}
 	return c, nil

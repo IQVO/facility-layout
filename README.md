@@ -205,8 +205,9 @@ migrate -source file://migrations -database "$DATABASE_URL" up
 |---|---|---|
 | `HTTP_ADDR` | `:8080` | Listen address |
 | `DATABASE_URL` | *(unset)* | Postgres DSN. Unset ⇒ in-memory adapters + log-only event publishing |
-| `EVENT_PUBLISHER` | *(unset)* | `kafka` publishes the full Published Language to `warehouse.facility.events`; unset ⇒ Postgres outbox (with a DB) or log publisher (in-memory) |
+| `EVENT_PUBLISHER` | *(unset)* | `kafka` publishes the full Published Language to `warehouse.facility.events` (and the analytics topic); with `DATABASE_URL` also set, publishing goes through the transactional outbox (ADR-0018) and a background relay drains it — unset ⇒ log publisher |
 | `KAFKA_BROKERS` | `localhost:9092` | Comma-separated broker list, used when `EVENT_PUBLISHER=kafka` |
+| `OUTBOX_RELAY_INTERVAL` | `1s` | How long the outbox relay sleeps between empty passes (ADR-0018; only relevant with `DATABASE_URL` + `EVENT_PUBLISHER=kafka`) |
 | `MIGRATIONS_PATH` | `migrations` | Directory of golang-migrate SQL files |
 | `LOG_LEVEL` | `info` | `debug`/`info`/`warn`/`error`, case-insensitive |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `localhost:4317` | OTel Collector, `host:port` or a full URL |

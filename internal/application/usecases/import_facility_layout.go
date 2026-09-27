@@ -86,6 +86,11 @@ type ImportFacilityLayout struct {
 	// Metrics is passed straight through to the per-row slot registration,
 	// so an imported slot is counted exactly like a hand-registered one.
 	Metrics ports.LocationMetrics
+	// UnitOfWork brackets each row's Save(s) + Publish(es) atomically
+	// (ADR-0018, optional), and is passed through to the per-row
+	// RegisterLocationSlot/SetLocationGeometry use cases so their own
+	// writes join the same scope.
+	UnitOfWork ports.UnitOfWork
 }
 
 // Execute processes every row and returns the full report. It publishes the
@@ -112,7 +117,9 @@ func (uc *ImportFacilityLayout) Execute(ctx context.Context, rows []ImportRow) (
 	}
 
 	event := shared.NewFacilityLayoutImported(uc.Clock.Now(), report.RowsSubmitted, report.SlotsImported, report.RowsRejected)
-	if err := uc.Events.Publish(ctx, event); err != nil {
+	if err := atomically(ctx, uc.UnitOfWork, func(ctx context.Context) error {
+		return uc.Events.Publish(ctx, event)
+	}); err != nil {
 		return nil, err
 	}
 	return report, nil
@@ -154,6 +161,7 @@ func (uc *ImportFacilityLayout) importRow(ctx context.Context, row ImportRow) (s
 		Events:        uc.Events,
 		Clock:         uc.Clock,
 		Metrics:       uc.Metrics,
+		UnitOfWork:    uc.UnitOfWork,
 	}
 	if _, err := register.Execute(ctx, code, row.LocationType, capacityOverride, row.DockFlow, row.Activities); err != nil {
 		return code.String(), err
@@ -168,7 +176,7 @@ func (uc *ImportFacilityLayout) importRow(ctx context.Context, row ImportRow) (s
 		if err != nil {
 			return code.String(), err
 		}
-		geometry := &SetLocationGeometry{Slots: uc.Slots, Events: uc.Events, Clock: uc.Clock}
+		geometry := &SetLocationGeometry{Slots: uc.Slots, Events: uc.Events, Clock: uc.Clock, UnitOfWork: uc.UnitOfWork}
 		if _, err := geometry.Execute(ctx, code, position, dimensions, row.PickSequence); err != nil {
 			return code.String(), err
 		}
@@ -207,10 +215,12 @@ func (uc *ImportFacilityLayout) ensureSite(ctx context.Context, row ImportRow) e
 	if err != nil {
 		return err
 	}
-	if err := uc.Sites.Save(ctx, s); err != nil {
-		return err
-	}
-	return uc.Events.Publish(ctx, shared.NewSiteRegistered(uc.Clock.Now(), s.Code(), s.Name()))
+	return atomically(ctx, uc.UnitOfWork, func(ctx context.Context) error {
+		if err := uc.Sites.Save(ctx, s); err != nil {
+			return err
+		}
+		return uc.Events.Publish(ctx, shared.NewSiteRegistered(uc.Clock.Now(), s.Code(), s.Name()))
+	})
 }
 
 func (uc *ImportFacilityLayout) ensureZone(ctx context.Context, row ImportRow, zoneID string) error {
@@ -229,11 +239,13 @@ func (uc *ImportFacilityLayout) ensureZone(ctx context.Context, row ImportRow, z
 	if err != nil {
 		return err
 	}
-	if err := uc.Zones.Save(ctx, z); err != nil {
-		return err
-	}
-	event := shared.NewZoneRegistered(uc.Clock.Now(), z.ID(), z.SiteCode(), z.AreaCode(), z.ZoneCode(), z.TemperatureClass(), z.Hazmat())
-	return uc.Events.Publish(ctx, event)
+	return atomically(ctx, uc.UnitOfWork, func(ctx context.Context) error {
+		if err := uc.Zones.Save(ctx, z); err != nil {
+			return err
+		}
+		event := shared.NewZoneRegistered(uc.Clock.Now(), z.ID(), z.SiteCode(), z.AreaCode(), z.ZoneCode(), z.TemperatureClass(), z.Hazmat())
+		return uc.Events.Publish(ctx, event)
+	})
 }
 
 func (uc *ImportFacilityLayout) ensureAisle(ctx context.Context, row ImportRow, zoneID, aisleID string) error {
@@ -256,9 +268,11 @@ func (uc *ImportFacilityLayout) ensureAisle(ctx context.Context, row ImportRow, 
 	if err != nil {
 		return err
 	}
-	if err := uc.Aisles.Save(ctx, a); err != nil {
-		return err
-	}
-	event := shared.NewAisleRegistered(uc.Clock.Now(), a.ID(), a.ZoneID(), a.AisleCode(), a.SequenceHint(), a.Direction())
-	return uc.Events.Publish(ctx, event)
+	return atomically(ctx, uc.UnitOfWork, func(ctx context.Context) error {
+		if err := uc.Aisles.Save(ctx, a); err != nil {
+			return err
+		}
+		event := shared.NewAisleRegistered(uc.Clock.Now(), a.ID(), a.ZoneID(), a.AisleCode(), a.SequenceHint(), a.Direction())
+		return uc.Events.Publish(ctx, event)
+	})
 }
