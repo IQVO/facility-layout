@@ -17,6 +17,11 @@ import (
 // the writer.
 type ReportsHandlers struct {
 	Store report.ReportStore
+	// Readiness backs GET /readyz (ADR-0020 §graceful shutdown, mirroring
+	// order-management's ADR-0025 verbatim). nil (the zero value of
+	// *ReportsHandlers, every existing test) always reports ready -- see
+	// Readiness.Ready's nil-receiver doc comment.
+	Readiness *Readiness
 }
 
 // catalogRowDTO is the wire shape of one report row. It is a dedicated DTO so
@@ -168,6 +173,7 @@ func NewReportsRouter(h *ReportsHandlers, logger *slog.Logger, opts ...RouterOpt
 	r.Use(middleware.Recoverer)
 
 	r.Get("/healthz", h.GetReportsHealthz)
+	r.Get("/readyz", HandleReadyz(h.Readiness))
 
 	r.Get("/reports/catalog-growth", h.GetCatalogGrowth)
 	r.Get("/reports/catalog-growth/freshness", h.GetCatalogGrowthFreshness)

@@ -66,6 +66,11 @@ func run() error {
 	}
 
 	handlers := &inboundhttp.ReportsHandlers{Store: analyticsstore.NewPostgresReport(pool)}
+	// readiness backs GET /readyz (ADR-0020 §graceful shutdown): flipped
+	// to not-ready as the FIRST step of the shutdown sequence below,
+	// before the HTTP server itself stops accepting connections.
+	readiness := &inboundhttp.Readiness{}
+	handlers.Readiness = readiness
 	router := inboundhttp.NewReportsRouter(handlers, logger)
 
 	srv := &http.Server{Addr: httpAddr, Handler: router, ReadHeaderTimeout: 5 * time.Second}
@@ -80,6 +85,14 @@ func run() error {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
+
+	// Graceful shutdown (ADR-0020, mirroring order-management's ADR-0025
+	// §graceful shutdown verbatim): flip readiness to not-ready FIRST,
+	// then drain in-flight HTTP requests, then (via the deferred
+	// pool.Close() registered above) close the read-only pgx pool LAST.
+	// This process has no Kafka consumer/producer to stop -- it is a
+	// pure read-only reader over Postgres.
+	readiness.SetNotReady()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

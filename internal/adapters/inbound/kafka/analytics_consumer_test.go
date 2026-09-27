@@ -67,6 +67,10 @@ type fakeProcessed struct {
 
 func newFakeProcessed() *fakeProcessed { return &fakeProcessed{seen: map[string]bool{}} }
 
+func (p *fakeProcessed) IsProcessed(_ context.Context, eventId string) (bool, error) {
+	return p.seen[eventId], nil
+}
+
 func (p *fakeProcessed) MarkProcessed(_ context.Context, eventId string) (bool, error) {
 	if p.seen[eventId] {
 		return false, nil

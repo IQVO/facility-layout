@@ -25,6 +25,9 @@ spec:
       serviceAccountName: {{ include "facility-layout.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with $.Values.terminationGracePeriodSeconds }}
+      terminationGracePeriodSeconds: {{ . }}
+      {{- end }}
       containers:
         - name: projector
           securityContext:
@@ -71,8 +74,11 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
           readinessProbe:
+            # ADR-0020 §graceful shutdown, mirroring order-management's
+            # ADR-0025 §8: distinct from /healthz above so a draining pod
+            # can flip readiness without failing liveness.
             httpGet:
-              path: /healthz
+              path: /readyz
               port: admin
             initialDelaySeconds: 3
             periodSeconds: 5
