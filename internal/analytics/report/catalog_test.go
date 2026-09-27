@@ -127,13 +127,26 @@ func (s *fakeStore) FreshnessLag(_ context.Context) (time.Duration, error) { ret
 
 func TestCatalogReport_DerivesFromEventSequence(t *testing.T) {
 	base := time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)
+	s := seedOneDayOfCatalogChanges(t, base)
+
+	rep := queryDay(t, s, base)
+
+	bucket := dayBucket(base)
+	assertSiteRowGrew(t, rep, bucket)
+	assertZoneRowGrew(t, rep, bucket)
+	assertCatalogWideRowGrew(t, rep, bucket)
+}
+
+// seedOneDayOfCatalogChanges replays one day of catalog changes into a fresh
+// store and returns it:
+//
+//   - WH1: one site, two zones
+//   - zone WH1-STOR-AMB: one aisle, three slots, one decommission
+//   - catalog-wide: two location types, one placement rule, one import
+func seedOneDayOfCatalogChanges(t *testing.T, base time.Time) *fakeStore {
+	t.Helper()
 	s := newFakeStore()
 	ctx := context.Background()
-
-	// One day of catalog changes:
-	//  - WH1: one site, two zones
-	//  - zone WH1-STOR-AMB: one aisle, three slots, one decommission
-	//  - catalog-wide: two location types, one placement rule, one import
 	must(t, s.ApplySiteRegistered(ctx, "e1", "WH1", base))
 	must(t, s.ApplyZoneRegistered(ctx, "e2", "WH1", base))
 	must(t, s.ApplyZoneRegistered(ctx, "e3", "WH1", base))
@@ -146,8 +159,13 @@ func TestCatalogReport_DerivesFromEventSequence(t *testing.T) {
 	must(t, s.ApplyLocationTypeRegistered(ctx, "e10", "", base))
 	must(t, s.ApplyPlacementRuleDefined(ctx, "e11", "", base))
 	must(t, s.ApplyFacilityLayoutImported(ctx, "e12", "", 10, 9, 1, base))
+	return s
+}
 
-	rep, err := s.Query(ctx, report.ReportQuery{
+// queryDay returns the day-granularity report covering [base-24h, base+24h).
+func queryDay(t *testing.T, s *fakeStore, base time.Time) report.CatalogReport {
+	t.Helper()
+	rep, err := s.Query(context.Background(), report.ReportQuery{
 		From:        base.Add(-24 * time.Hour),
 		To:          base.Add(24 * time.Hour),
 		Granularity: report.GranularityDay,
@@ -155,8 +173,12 @@ func TestCatalogReport_DerivesFromEventSequence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Query: %v", err)
 	}
+	return rep
+}
 
-	bucket := dayBucket(base)
+// assertSiteRowGrowth checks the WH1-scoped row of the day bucket.
+func assertSiteRowGrew(t *testing.T, rep report.CatalogReport, bucket time.Time) {
+	t.Helper()
 	site := findRow(rep, report.RowKey{Scope: "WH1", DayBucket: bucket})
 	if site == nil {
 		t.Fatal("no WH1 row")
@@ -167,7 +189,11 @@ func TestCatalogReport_DerivesFromEventSequence(t *testing.T) {
 	if site.ZonesRegistered != 2 {
 		t.Errorf("ZonesRegistered = %d, want 2", site.ZonesRegistered)
 	}
+}
 
+// assertZoneRowGrew checks the WH1-STOR-AMB-scoped row of the day bucket.
+func assertZoneRowGrew(t *testing.T, rep report.CatalogReport, bucket time.Time) {
+	t.Helper()
 	zone := findRow(rep, report.RowKey{Scope: "WH1-STOR-AMB", DayBucket: bucket})
 	if zone == nil {
 		t.Fatal("no zone row")
@@ -181,7 +207,12 @@ func TestCatalogReport_DerivesFromEventSequence(t *testing.T) {
 	if zone.SlotsDecommissioned != 1 {
 		t.Errorf("SlotsDecommissioned = %d, want 1", zone.SlotsDecommissioned)
 	}
+}
 
+// assertCatalogWideRowGrew checks the catalog-wide (empty-scope) row of the
+// day bucket.
+func assertCatalogWideRowGrew(t *testing.T, rep report.CatalogReport, bucket time.Time) {
+	t.Helper()
 	catalog := findRow(rep, report.RowKey{Scope: "", DayBucket: bucket})
 	if catalog == nil {
 		t.Fatal("no catalog-wide row")

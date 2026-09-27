@@ -11,18 +11,22 @@ import (
 	"github.com/claudioed/facility-layout/internal/domain/shared"
 )
 
+// analyticsEventCase is one row of the analytics-publisher table: a domain
+// event plus the analytics envelope shape it must be published under.
+type analyticsEventCase struct {
+	name      string
+	event     shared.DomainEvent
+	wantType  string
+	wantKey   string
+	wantField string
+	wantValue any
+}
+
 func TestAnalyticsPublisher_PublishesEachEventType(t *testing.T) {
 	at := time.Date(2026, 2, 3, 4, 5, 6, 0, time.UTC)
 	code := mustLocationCode(t)
 
-	tests := []struct {
-		name      string
-		event     shared.DomainEvent
-		wantType  string
-		wantKey   string
-		wantField string
-		wantValue any
-	}{
+	tests := []analyticsEventCase{
 		{
 			name:      "SiteRegistered",
 			event:     shared.NewSiteRegistered(at, "WH1", "Main"),
@@ -91,49 +95,57 @@ func TestAnalyticsPublisher_PublishesEachEventType(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			w := &fakeWriter{}
-			p := outboundkafka.NewAnalyticsPublisher(nil, func() string { return "evt-fixed" })
-			p.Writer = w
-
-			if err := p.Publish(context.Background(), tt.event); err != nil {
-				t.Fatalf("Publish: %v", err)
-			}
-			if len(w.msgs) != 1 {
-				t.Fatalf("expected 1 message, got %d", len(w.msgs))
-			}
-			msg := w.msgs[0]
-			if string(msg.Key) != tt.wantKey {
-				t.Errorf("key = %q, want %q", string(msg.Key), tt.wantKey)
-			}
-
-			var env outboundkafka.AnalyticsEnvelope
-			if err := json.Unmarshal(msg.Value, &env); err != nil {
-				t.Fatalf("unmarshal envelope: %v", err)
-			}
-			if env.EventType != tt.wantType {
-				t.Errorf("event_type = %q, want %q", env.EventType, tt.wantType)
-			}
-			if env.EventId != "evt-fixed" {
-				t.Errorf("event_id = %q, want evt-fixed", env.EventId)
-			}
-			if env.Source != "facility-layout" {
-				t.Errorf("source = %q, want facility-layout", env.Source)
-			}
-			if env.SchemaVersion != 1 {
-				t.Errorf("schema_version = %d, want 1", env.SchemaVersion)
-			}
-			if !env.OccurredAt.Equal(at) {
-				t.Errorf("occurred_at = %v, want %v", env.OccurredAt, at)
-			}
-
-			var data map[string]any
-			if err := json.Unmarshal(env.Data, &data); err != nil {
-				t.Fatalf("unmarshal data: %v", err)
-			}
-			if got := data[tt.wantField]; got != tt.wantValue {
-				t.Errorf("data[%q] = %v (%T), want %v (%T)", tt.wantField, got, got, tt.wantValue, tt.wantValue)
-			}
+			assertAnalyticsEventPublished(t, tt, at)
 		})
+	}
+}
+
+// assertAnalyticsEventPublished publishes one table row's event through a
+// fresh AnalyticsPublisher and checks the resulting analytics envelope's
+// wire shape (including the schema_version the analytics topic carries).
+func assertAnalyticsEventPublished(t *testing.T, tt analyticsEventCase, at time.Time) {
+	t.Helper()
+	w := &fakeWriter{}
+	p := outboundkafka.NewAnalyticsPublisher(nil, func() string { return "evt-fixed" })
+	p.Writer = w
+
+	if err := p.Publish(context.Background(), tt.event); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	if len(w.msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(w.msgs))
+	}
+	msg := w.msgs[0]
+	if string(msg.Key) != tt.wantKey {
+		t.Errorf("key = %q, want %q", string(msg.Key), tt.wantKey)
+	}
+
+	var env outboundkafka.AnalyticsEnvelope
+	if err := json.Unmarshal(msg.Value, &env); err != nil {
+		t.Fatalf("unmarshal envelope: %v", err)
+	}
+	if env.EventType != tt.wantType {
+		t.Errorf("event_type = %q, want %q", env.EventType, tt.wantType)
+	}
+	if env.EventId != "evt-fixed" {
+		t.Errorf("event_id = %q, want evt-fixed", env.EventId)
+	}
+	if env.Source != "facility-layout" {
+		t.Errorf("source = %q, want facility-layout", env.Source)
+	}
+	if env.SchemaVersion != 1 {
+		t.Errorf("schema_version = %d, want 1", env.SchemaVersion)
+	}
+	if !env.OccurredAt.Equal(at) {
+		t.Errorf("occurred_at = %v, want %v", env.OccurredAt, at)
+	}
+
+	var data map[string]any
+	if err := json.Unmarshal(env.Data, &data); err != nil {
+		t.Fatalf("unmarshal data: %v", err)
+	}
+	if got := data[tt.wantField]; got != tt.wantValue {
+		t.Errorf("data[%q] = %v (%T), want %v (%T)", tt.wantField, got, got, tt.wantValue, tt.wantValue)
 	}
 }
 

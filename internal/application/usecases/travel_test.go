@@ -101,121 +101,136 @@ func TestGetZoneTravelGraph(t *testing.T) {
 }
 
 func TestEstimateTravelDistance(t *testing.T) {
-	t.Run("computes a same-aisle distance using the zone's default pitch", func(t *testing.T) {
-		h := newHarness(t)
-		seedThreeAisleZone(h)
+	t.Run("computes a same-aisle distance using the zone's default pitch", testTravelSameAislePitch)
+	t.Run("routes across a cross-aisle when a direct path does not exist", testTravelCrossAisleRoute)
+	t.Run("refuses a cross-zone request", testTravelRefusesCrossZone)
+	t.Run("errors when a location does not exist", testTravelUnknownLocation)
+	t.Run("honours OneWay aisle direction", testTravelHonoursOneWayDirection)
+	t.Run("skips a decommissioned cross-aisle when building the graph", testTravelSkipsDecommissionedCrossAisle)
+	t.Run("uses real aisle centreline geometry when set", testTravelUsesCentrelineGeometry)
+}
 
-		d, err := h.estimateTravelDistance.Execute(h.ctx(),
-			mustCode(t, "WH1-STOR-AMB-A07-01-01-A"), mustCode(t, "WH1-STOR-AMB-A07-03-01-A"))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		want := 2 * 1.2 // 2 gaps at the DefaultBayPitchM
-		if d.MetresM != want {
-			t.Fatalf("expected %v, got %v", want, d.MetresM)
-		}
-		if !d.Estimated {
-			t.Fatal("expected Estimated=true: no aisle geometry was ever set")
-		}
-	})
+func testTravelSameAislePitch(t *testing.T) {
+	t.Helper()
+	h := newHarness(t)
+	seedThreeAisleZone(h)
 
-	t.Run("routes across a cross-aisle when a direct path does not exist", func(t *testing.T) {
-		h := newHarness(t)
-		seedThreeAisleZone(h)
-		if _, err := h.registerCrossAisle.Execute(h.ctx(), "WH1-STOR-AMB", "A07", "A08", "02"); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+	d, err := h.estimateTravelDistance.Execute(h.ctx(),
+		mustCode(t, "WH1-STOR-AMB-A07-01-01-A"), mustCode(t, "WH1-STOR-AMB-A07-03-01-A"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := 2 * 1.2 // 2 gaps at the DefaultBayPitchM
+	if d.MetresM != want {
+		t.Fatalf("expected %v, got %v", want, d.MetresM)
+	}
+	if !d.Estimated {
+		t.Fatal("expected Estimated=true: no aisle geometry was ever set")
+	}
+}
 
-		d, err := h.estimateTravelDistance.Execute(h.ctx(),
-			mustCode(t, "WH1-STOR-AMB-A07-01-01-A"), mustCode(t, "WH1-STOR-AMB-A08-03-01-A"))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(d.Route) < 3 {
-			t.Fatalf("expected a route crossing at least one cross-aisle, got %+v", d.Route)
-		}
-	})
+func testTravelCrossAisleRoute(t *testing.T) {
+	t.Helper()
+	h := newHarness(t)
+	seedThreeAisleZone(h)
+	if _, err := h.registerCrossAisle.Execute(h.ctx(), "WH1-STOR-AMB", "A07", "A08", "02"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
-	t.Run("refuses a cross-zone request", func(t *testing.T) {
-		h := newHarness(t)
-		seedThreeAisleZone(h)
-		h.mustRegisterZone("WH1", "STOR", "FRZ", shared.Frozen, false)
-		h.mustRegisterAisle("WH1-STOR-FRZ", "B01", 1, shared.TwoWay)
-		h.mustRegisterSlot("WH1-STOR-FRZ-B01-01-01-A", "PalletRack")
+	d, err := h.estimateTravelDistance.Execute(h.ctx(),
+		mustCode(t, "WH1-STOR-AMB-A07-01-01-A"), mustCode(t, "WH1-STOR-AMB-A08-03-01-A"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(d.Route) < 3 {
+		t.Fatalf("expected a route crossing at least one cross-aisle, got %+v", d.Route)
+	}
+}
 
-		_, err := h.estimateTravelDistance.Execute(h.ctx(),
-			mustCode(t, "WH1-STOR-AMB-A07-01-01-A"), mustCode(t, "WH1-STOR-FRZ-B01-01-01-A"))
-		assertErrorIs(t, err, usecases.ErrNoRouteBetweenZones)
-	})
+func testTravelRefusesCrossZone(t *testing.T) {
+	t.Helper()
+	h := newHarness(t)
+	seedThreeAisleZone(h)
+	h.mustRegisterZone("WH1", "STOR", "FRZ", shared.Frozen, false)
+	h.mustRegisterAisle("WH1-STOR-FRZ", "B01", 1, shared.TwoWay)
+	h.mustRegisterSlot("WH1-STOR-FRZ-B01-01-01-A", "PalletRack")
 
-	t.Run("errors when a location does not exist", func(t *testing.T) {
-		h := newHarness(t)
-		seedThreeAisleZone(h)
+	_, err := h.estimateTravelDistance.Execute(h.ctx(),
+		mustCode(t, "WH1-STOR-AMB-A07-01-01-A"), mustCode(t, "WH1-STOR-FRZ-B01-01-01-A"))
+	assertErrorIs(t, err, usecases.ErrNoRouteBetweenZones)
+}
 
-		_, err := h.estimateTravelDistance.Execute(h.ctx(),
-			mustCode(t, "WH1-STOR-AMB-A99-01-01-A"), mustCode(t, "WH1-STOR-AMB-A07-01-01-A"))
-		assertErrorIs(t, err, usecases.ErrLocationSlotNotFound)
-	})
+func testTravelUnknownLocation(t *testing.T) {
+	t.Helper()
+	h := newHarness(t)
+	seedThreeAisleZone(h)
 
-	t.Run("honours OneWay aisle direction", func(t *testing.T) {
-		h := newHarness(t)
-		seedThreeAisleZone(h)
+	_, err := h.estimateTravelDistance.Execute(h.ctx(),
+		mustCode(t, "WH1-STOR-AMB-A99-01-01-A"), mustCode(t, "WH1-STOR-AMB-A07-01-01-A"))
+	assertErrorIs(t, err, usecases.ErrLocationSlotNotFound)
+}
 
-		// A09 is OneWay; going from bay 03 back to bay 01 has no route
-		// without a cross-aisle.
-		_, err := h.estimateTravelDistance.Execute(h.ctx(),
-			mustCode(t, "WH1-STOR-AMB-A09-03-01-A"), mustCode(t, "WH1-STOR-AMB-A09-01-01-A"))
-		assertErrorIs(t, err, travel.ErrNoRoute)
-	})
+func testTravelHonoursOneWayDirection(t *testing.T) {
+	t.Helper()
+	h := newHarness(t)
+	seedThreeAisleZone(h)
 
-	t.Run("skips a decommissioned cross-aisle when building the graph", func(t *testing.T) {
-		h := newHarness(t)
-		seedThreeAisleZone(h)
-		if _, err := h.registerCrossAisle.Execute(h.ctx(), "WH1-STOR-AMB", "A07", "A08", "02"); err != nil {
-			t.Fatalf("seed cross-aisle: %v", err)
-		}
-		c, err := h.crossAisles.FindByAisles(h.ctx(), "WH1-STOR-AMB", "A07", "A08", "02")
-		if err != nil || c == nil {
-			t.Fatalf("seeding: cross-aisle not found (%v)", err)
-		}
-		if err := c.Decommission(); err != nil {
-			t.Fatalf("decommission: %v", err)
-		}
-		if err := h.crossAisles.Save(h.ctx(), c); err != nil {
-			t.Fatalf("save: %v", err)
-		}
+	// A09 is OneWay; going from bay 03 back to bay 01 has no route
+	// without a cross-aisle.
+	_, err := h.estimateTravelDistance.Execute(h.ctx(),
+		mustCode(t, "WH1-STOR-AMB-A09-03-01-A"), mustCode(t, "WH1-STOR-AMB-A09-01-01-A"))
+	assertErrorIs(t, err, travel.ErrNoRoute)
+}
 
-		// A09 is OneWay and A07/A08 connect only through the now-retired
-		// cross-aisle, so no route exists once it is skipped.
-		_, err = h.estimateTravelDistance.Execute(h.ctx(),
-			mustCode(t, "WH1-STOR-AMB-A07-01-01-A"), mustCode(t, "WH1-STOR-AMB-A08-03-01-A"))
-		assertErrorIs(t, err, travel.ErrNoRoute)
-	})
+func testTravelSkipsDecommissionedCrossAisle(t *testing.T) {
+	t.Helper()
+	h := newHarness(t)
+	seedThreeAisleZone(h)
+	if _, err := h.registerCrossAisle.Execute(h.ctx(), "WH1-STOR-AMB", "A07", "A08", "02"); err != nil {
+		t.Fatalf("seed cross-aisle: %v", err)
+	}
+	c, err := h.crossAisles.FindByAisles(h.ctx(), "WH1-STOR-AMB", "A07", "A08", "02")
+	if err != nil || c == nil {
+		t.Fatalf("seeding: cross-aisle not found (%v)", err)
+	}
+	if err := c.Decommission(); err != nil {
+		t.Fatalf("decommission: %v", err)
+	}
+	if err := h.crossAisles.Save(h.ctx(), c); err != nil {
+		t.Fatalf("save: %v", err)
+	}
 
-	t.Run("uses real aisle centreline geometry when set", func(t *testing.T) {
-		h := newHarness(t)
-		seedThreeAisleZone(h)
+	// A09 is OneWay and A07/A08 connect only through the now-retired
+	// cross-aisle, so no route exists once it is skipped.
+	_, err = h.estimateTravelDistance.Execute(h.ctx(),
+		mustCode(t, "WH1-STOR-AMB-A07-01-01-A"), mustCode(t, "WH1-STOR-AMB-A08-03-01-A"))
+	assertErrorIs(t, err, travel.ErrNoRoute)
+}
 
-		start := mustGeomPoint(t, 0, 0, 0)
-		end := mustGeomPoint(t, 2.4, 0, 0)
-		centreline, err := shared.NewSegment(start, end)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if _, err := h.setAisleGeometry.Execute(h.ctx(), "WH1-STOR-AMB-A07", centreline); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+func testTravelUsesCentrelineGeometry(t *testing.T) {
+	t.Helper()
+	h := newHarness(t)
+	seedThreeAisleZone(h)
 
-		d, err := h.estimateTravelDistance.Execute(h.ctx(),
-			mustCode(t, "WH1-STOR-AMB-A07-01-01-A"), mustCode(t, "WH1-STOR-AMB-A07-03-01-A"))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if d.MetresM != 2.4 {
-			t.Fatalf("expected 2.4m from real centreline geometry, got %v", d.MetresM)
-		}
-		if d.Estimated {
-			t.Fatal("expected Estimated=false: the route used only real geometry")
-		}
-	})
+	start := mustGeomPoint(t, 0, 0, 0)
+	end := mustGeomPoint(t, 2.4, 0, 0)
+	centreline, err := shared.NewSegment(start, end)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, err := h.setAisleGeometry.Execute(h.ctx(), "WH1-STOR-AMB-A07", centreline); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	d, err := h.estimateTravelDistance.Execute(h.ctx(),
+		mustCode(t, "WH1-STOR-AMB-A07-01-01-A"), mustCode(t, "WH1-STOR-AMB-A07-03-01-A"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if d.MetresM != 2.4 {
+		t.Fatalf("expected 2.4m from real centreline geometry, got %v", d.MetresM)
+	}
+	if d.Estimated {
+		t.Fatal("expected Estimated=false: the route used only real geometry")
+	}
 }

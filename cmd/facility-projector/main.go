@@ -27,6 +27,7 @@ import (
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/bootretry"
 	outboundkafka "github.com/claudioed/facility-layout/internal/adapters/outbound/kafka"
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/postgres"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // errMissingAnalyticsURL is returned when ANALYTICS_DATABASE_URL is unset: the
@@ -54,19 +55,7 @@ func run() error {
 	kafkaBrokers := strings.Split(getenv("KAFKA_BROKERS", "localhost:9092"), ",")
 	migrationsPath := getenv("ANALYTICS_MIGRATIONS_PATH", "migrations/analytics")
 
-	// The projector owns the analytical schema: run its migrations on start.
-	// Retried, because in this fleet EVERY injected pod's first outbound TCP
-	// dial is reset ~10s after the app starts (Istio native sidecars). A
-	// single attempt turns that known, transient condition into
-	// CrashLoopBackOff; the retry still refuses to boot once the budget is
-	// exhausted, reporting the real underlying error.
-	if err := bootretry.Retry(rootCtx, logger, "run analytics migrations", func() error {
-		return postgres.RunMigrations(analyticsURL, migrationsPath)
-	}); err != nil {
-		return err
-	}
-
-	pool, err := analyticsstore.NewPool(rootCtx, analyticsURL)
+	pool, err := openAnalyticsPool(rootCtx, logger, analyticsURL, migrationsPath)
 	if err != nil {
 		return err
 	}
@@ -76,11 +65,6 @@ func run() error {
 	// own deferred Close below, once the shutdown sequence has already
 	// waited for the consumer's Run goroutine to actually finish.
 	defer pool.Close()
-	if err := bootretry.Retry(rootCtx, logger, "ping analytics database", func() error {
-		return pool.Ping(rootCtx)
-	}); err != nil {
-		return err
-	}
 
 	projection := analyticsstore.NewPostgresProjection(pool)
 	consumed := analyticsstore.NewConsumedEventsRepo(pool)
@@ -100,21 +84,7 @@ func run() error {
 	// shutdown.
 	var notReady atomic.Bool
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
-	})
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
-		if notReady.Load() {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			_, _ = w.Write([]byte(`{"status":"not_ready"}`))
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ready"}`))
-	})
-	srv := &http.Server{Addr: adminAddr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	srv := &http.Server{Addr: adminAddr, Handler: newAdminMux(&notReady), ReadHeaderTimeout: 5 * time.Second}
 
 	go func() {
 		logger.Info("projector admin server listening", "addr", adminAddr)
@@ -173,6 +143,53 @@ func run() error {
 	}
 
 	return shutdownErr
+}
+
+// newAdminMux builds the projector's admin endpoints: /healthz is a pure
+// liveness signal, never flipped by shutdown; /readyz mirrors notReady so a
+// Kubernetes readinessProbe observes the shutdown flip (ADR-0020).
+func newAdminMux(notReady *atomic.Bool) *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
+		if notReady.Load() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"status":"not_ready"}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ready"}`))
+	})
+	return mux
+}
+
+// openAnalyticsPool runs the projector-owned analytical schema migrations,
+// opens the pool, and verifies it with a ping — each under boot retry:
+// in this fleet EVERY injected pod's first outbound TCP dial is reset ~10s
+// after the app starts (Istio native sidecars). A single attempt turns that
+// known, transient condition into CrashLoopBackOff; the retry still refuses
+// to boot once the budget is exhausted, reporting the real underlying error.
+func openAnalyticsPool(ctx context.Context, logger *slog.Logger, analyticsURL, migrationsPath string) (*pgxpool.Pool, error) {
+	if err := bootretry.Retry(ctx, logger, "run analytics migrations", func() error {
+		return postgres.RunMigrations(analyticsURL, migrationsPath)
+	}); err != nil {
+		return nil, err
+	}
+
+	pool, err := analyticsstore.NewPool(ctx, analyticsURL)
+	if err != nil {
+		return nil, err
+	}
+	if err := bootretry.Retry(ctx, logger, "ping analytics database", func() error {
+		return pool.Ping(ctx)
+	}); err != nil {
+		pool.Close()
+		return nil, err
+	}
+	return pool, nil
 }
 
 // newLogger builds a JSON slog logger at the given level. The analytics

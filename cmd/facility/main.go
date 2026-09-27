@@ -47,17 +47,7 @@ func run() error {
 	logger := telemetry.NewLogger(os.Stdout, getenv("LOG_LEVEL", "info"), serviceName)
 	slog.SetDefault(logger)
 
-	// Observability is wired before any adapter is built, so a failure in
-	// the database or migrations is itself traced and logged with the
-	// right service identity. An unreachable Collector is not an error:
-	// the OTLP exporters are non-blocking, and telemetry is dropped rather
-	// than the service failing to start.
-	shutdownTelemetry, err := telemetry.Setup(
-		context.Background(),
-		serviceName,
-		resolveServiceVersion(),
-		getenv("OTEL_EXPORTER_OTLP_ENDPOINT", telemetry.DefaultOTLPEndpoint),
-	)
+	shutdownTelemetry, err := setupServiceTelemetry(logger, serviceName)
 	if err != nil {
 		return err
 	}
@@ -74,27 +64,9 @@ func run() error {
 		return err
 	}
 
-	logger.Info("telemetry configured",
-		"service_name", serviceName,
-		"service_version", resolveServiceVersion(),
-		"environment", telemetry.Environment(),
-		"otlp_endpoint", getenv("OTEL_EXPORTER_OTLP_ENDPOINT", telemetry.DefaultOTLPEndpoint),
-	)
-
 	httpAddr := getenv("HTTP_ADDR", ":8080")
-	databaseURL := os.Getenv("DATABASE_URL")
-	migrationsPath := getenv("MIGRATIONS_PATH", "migrations")
-	eventPublisher := getenv("EVENT_PUBLISHER", "")
-	kafkaBrokers := getenv("KAFKA_BROKERS", "localhost:9092")
-	relayInterval := durationEnv("OUTBOX_RELAY_INTERVAL", time.Second)
 
-	adapters, relay, closeKafka, closePool, err := buildAdapters(publisherConfig{
-		databaseURL:    databaseURL,
-		migrationsPath: migrationsPath,
-		eventPublisher: eventPublisher,
-		kafkaBrokers:   kafkaBrokers,
-		relayInterval:  relayInterval,
-	}, logger)
+	adapters, relay, closeKafka, closePool, err := buildAdapters(publisherConfigFromEnv(), logger)
 	if err != nil {
 		return err
 	}
@@ -159,29 +131,33 @@ func run() error {
 	case <-ctx.Done():
 	}
 
-	// Graceful shutdown (ADR-0020, mirroring order-management's ADR-0025
-	// §graceful shutdown verbatim), in order:
-	//
-	//  1. Flip readiness to not-ready FIRST, before anything else stops
-	//     -- a Kubernetes readinessProbe polling /readyz needs a window
-	//     to observe this and stop routing NEW traffic to this pod
-	//     before step 2 below ever closes the listener.
-	//  2. Stop accepting new HTTP connections and drain in-flight
-	//     requests, bounded by shutdownCtx.
-	//  3. Stop the outbox relay cleanly: cancel its context (no new work
-	//     is picked up after this) and wait, bounded by the SAME
-	//     shutdownCtx, for it to actually finish in-flight work rather
-	//     than merely asking it to stop and moving on.
-	//  4. Only THEN do the deferred closeKafka/closePool calls
-	//     (registered earlier in this function), so by defer's LIFO
-	//     order closeKafka runs after this function returns and
-	//     closePool -- which closes the pgx pool -- runs LAST of all,
-	//     after every relay/producer has already stopped touching it.
+	return gracefulShutdown(logger, httpServer, readiness, stopRelay, relayDone)
+}
+
+// gracefulShutdown drains the process (ADR-0020, mirroring
+// order-management's ADR-0025 §graceful shutdown verbatim), in order:
+//
+//  1. Flip readiness to not-ready FIRST, before anything else stops
+//     -- a Kubernetes readinessProbe polling /readyz needs a window
+//     to observe this and stop routing NEW traffic to this pod
+//     before step 2 below ever closes the listener.
+//  2. Stop accepting new HTTP connections and drain in-flight
+//     requests, bounded by shutdownCtx.
+//  3. Stop the outbox relay cleanly: cancel its context (no new work
+//     is picked up after this) and wait, bounded by the SAME
+//     shutdownCtx, for it to actually finish in-flight work rather
+//     than merely asking it to stop and moving on.
+//  4. Only THEN do the deferred closeKafka/closePool calls
+//     (registered earlier in run), so by defer's LIFO
+//     order closeKafka runs after this function returns and
+//     closePool -- which closes the pgx pool -- runs LAST of all,
+//     after every relay/producer has already stopped touching it.
+func gracefulShutdown(logger *slog.Logger, httpServer *http.Server, readiness *inboundhttp.Readiness, stopRelay context.CancelFunc, relayDone chan struct{}) error {
 	readiness.SetNotReady()
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	err = httpServer.Shutdown(shutdownCtx)
+	err := httpServer.Shutdown(shutdownCtx)
 	// Let the relay finish its in-flight pass so an event committed by a
 	// request that completed just before shutdown is not stranded until
 	// the next pod boots.
@@ -317,57 +293,11 @@ func buildAdapters(cfg publisherConfig, logger *slog.Logger) (adapterSet, *postg
 	kafkaEnabled := cfg.eventPublisher == "kafka"
 
 	if cfg.databaseURL == "" {
-		logger.Info("database url not configured; using in-memory adapters")
-		pub := ports.EventPublisher(events.NewLogPublisher(logger))
-		closeKafka := noopKafkaClose
-		if kafkaEnabled {
-			brokers := strings.Split(cfg.kafkaBrokers, ",")
-			kafkaPublisher := kafka.NewPublisher(brokers, uuidLike)
-			analyticsPublisher := kafka.NewAnalyticsPublisher(brokers, uuidLike)
-			pub = fanOutPublisher{kafkaPublisher, analyticsPublisher}
-			closeKafka = func() error {
-				return errors.Join(kafkaPublisher.Close(), analyticsPublisher.Close())
-			}
-			logger.Info("event publisher configured", "publisher", "kafka", "mode", "direct",
-				"integration_topic", kafka.Topic, "analytics_topic", kafka.AnalyticsTopic, "brokers", brokers)
-		}
-		return adapterSet{
-			sites:         memory.NewSiteRepo(),
-			zones:         memory.NewZoneRepo(),
-			aisles:        memory.NewAisleRepo(),
-			slots:         memory.NewSlotRepo(),
-			locationTypes: memory.NewLocationTypeRepo(),
-			rules:         memory.NewPlacementRuleRepo(),
-			structures:    memory.NewFixedStructureRepo(),
-			crossAisles:   memory.NewCrossAisleRepo(),
-			publisher:     pub,
-		}, nil, closeKafka, noop, nil
+		return memoryAdapters(cfg, logger, kafkaEnabled)
 	}
 
-	ctx := context.Background()
-
-	// Retried, because in this fleet EVERY injected pod's first outbound TCP
-	// dial is reset ~10s after the app starts (Istio native sidecars;
-	// holdApplicationUntilProxyStarts is a no-op for them). A single attempt
-	// turns that known, transient condition into CrashLoopBackOff. The retry
-	// does not weaken the fail-closed rule: after the budget is exhausted
-	// this still refuses to boot, reporting the real underlying error.
-	if err := bootretry.Retry(ctx, logger, "run migrations", func() error {
-		return postgres.RunMigrations(cfg.databaseURL, cfg.migrationsPath)
-	}); err != nil {
-		return adapterSet{}, nil, noopKafkaClose, noop, err
-	}
-
-	pool, err := postgres.NewPool(ctx, cfg.databaseURL)
+	pool, err := dialPostgres(cfg, logger)
 	if err != nil {
-		return adapterSet{}, nil, noopKafkaClose, noop, err
-	}
-	// pgxpool does not itself dial until first use, so without this the
-	// first real failure would surface inside a request instead of at boot.
-	if err := bootretry.Retry(ctx, logger, "ping database", func() error {
-		return pool.Ping(ctx)
-	}); err != nil {
-		pool.Close()
 		return adapterSet{}, nil, noopKafkaClose, noop, err
 	}
 
@@ -388,6 +318,45 @@ func buildAdapters(cfg publisherConfig, logger *slog.Logger) (adapterSet, *postg
 		return base, nil, noopKafkaClose, pool.Close, nil
 	}
 
+	return outboxAdapters(cfg, logger, base, pool)
+}
+
+// memoryAdapters is the no-database branch of buildAdapters: in-memory
+// repositories with either the log publisher or, when EVENT_PUBLISHER=kafka,
+// direct Kafka fan-out (no outbox — there is no store to keep in step with).
+func memoryAdapters(cfg publisherConfig, logger *slog.Logger, kafkaEnabled bool) (adapterSet, *postgres.OutboxRelay, func() error, func(), error) {
+	logger.Info("database url not configured; using in-memory adapters")
+	pub := ports.EventPublisher(events.NewLogPublisher(logger))
+	closeKafka := func() error { return nil }
+	if kafkaEnabled {
+		brokers := strings.Split(cfg.kafkaBrokers, ",")
+		kafkaPublisher := kafka.NewPublisher(brokers, uuidLike)
+		analyticsPublisher := kafka.NewAnalyticsPublisher(brokers, uuidLike)
+		pub = fanOutPublisher{kafkaPublisher, analyticsPublisher}
+		closeKafka = func() error {
+			return errors.Join(kafkaPublisher.Close(), analyticsPublisher.Close())
+		}
+		logger.Info("event publisher configured", "publisher", "kafka", "mode", "direct",
+			"integration_topic", kafka.Topic, "analytics_topic", kafka.AnalyticsTopic, "brokers", brokers)
+	}
+	return adapterSet{
+		sites:         memory.NewSiteRepo(),
+		zones:         memory.NewZoneRepo(),
+		aisles:        memory.NewAisleRepo(),
+		slots:         memory.NewSlotRepo(),
+		locationTypes: memory.NewLocationTypeRepo(),
+		rules:         memory.NewPlacementRuleRepo(),
+		structures:    memory.NewFixedStructureRepo(),
+		crossAisles:   memory.NewCrossAisleRepo(),
+		publisher:     pub,
+	}, nil, closeKafka, func() {}, nil
+}
+
+// outboxAdapters is the DATABASE_URL + EVENT_PUBLISHER=kafka branch
+// (ADR-0018): every domain event is enqueued onto BOTH the integration
+// topic and the analytics topic in the same transaction as the aggregate
+// write, and the returned relay drains the outbox onto Kafka.
+func outboxAdapters(cfg publisherConfig, logger *slog.Logger, base adapterSet, pool *pgxpool.Pool) (adapterSet, *postgres.OutboxRelay, func() error, func(), error) {
 	brokers := strings.Split(cfg.kafkaBrokers, ",")
 	kafkaPublisher := kafka.NewPublisher(brokers, uuidLike)
 	analyticsPublisher := kafka.NewAnalyticsPublisher(brokers, uuidLike)
@@ -403,10 +372,6 @@ func buildAdapters(cfg publisherConfig, logger *slog.Logger) (adapterSet, *postg
 	}
 
 	base.unitOfWork = postgres.NewUnitOfWork(pool)
-	// Every domain event is enqueued onto BOTH the integration topic and
-	// the analytics topic (ADR-0018) in the same transaction as the
-	// aggregate write, so the two streams can never diverge from what
-	// actually happened.
 	base.publisher = postgres.NewOutboxPublisher(pool, uuidLike, kafkaPublisher, analyticsPublisher)
 	base.idempotencyPool = pool
 	relay := postgres.NewOutboxRelay(pool, relaySink, logger, postgres.WithInterval(cfg.relayInterval))
@@ -414,6 +379,73 @@ func buildAdapters(cfg publisherConfig, logger *slog.Logger) (adapterSet, *postg
 		"integration_topic", kafka.Topic, "analytics_topic", kafka.AnalyticsTopic, "brokers", brokers)
 
 	return base, relay, closeKafka, pool.Close, nil
+}
+
+// dialPostgres runs the schema migrations, opens the pool, and verifies it
+// with a ping, each under boot retry. Retried, because in this fleet EVERY
+// injected pod's first outbound TCP dial is reset ~10s after the app starts
+// (Istio native sidecars; holdApplicationUntilProxyStarts is a no-op for
+// them). A single attempt turns that known, transient condition into
+// CrashLoopBackOff. The retry does not weaken the fail-closed rule: after
+// the budget is exhausted this still refuses to boot, reporting the real
+// underlying error.
+func dialPostgres(cfg publisherConfig, logger *slog.Logger) (*pgxpool.Pool, error) {
+	ctx := context.Background()
+	if err := bootretry.Retry(ctx, logger, "run migrations", func() error {
+		return postgres.RunMigrations(cfg.databaseURL, cfg.migrationsPath)
+	}); err != nil {
+		return nil, err
+	}
+
+	pool, err := postgres.NewPool(ctx, cfg.databaseURL)
+	if err != nil {
+		return nil, err
+	}
+	// pgxpool does not itself dial until first use, so without this the
+	// first real failure would surface inside a request instead of at boot.
+	if err := bootretry.Retry(ctx, logger, "ping database", func() error {
+		return pool.Ping(ctx)
+	}); err != nil {
+		pool.Close()
+		return nil, err
+	}
+	return pool, nil
+}
+
+// publisherConfigFromEnv gathers the outbound-wiring environment for
+// buildAdapters in one place.
+func publisherConfigFromEnv() publisherConfig {
+	return publisherConfig{
+		databaseURL:    os.Getenv("DATABASE_URL"),
+		migrationsPath: getenv("MIGRATIONS_PATH", "migrations"),
+		eventPublisher: getenv("EVENT_PUBLISHER", ""),
+		kafkaBrokers:   getenv("KAFKA_BROKERS", "localhost:9092"),
+		relayInterval:  durationEnv("OUTBOX_RELAY_INTERVAL", time.Second),
+	}
+}
+
+// setupServiceTelemetry configures OTel once at boot, before any adapter
+// is built, so a failure in the database or migrations is itself traced and
+// logged with the right service identity. An unreachable Collector is not
+// an error: the OTLP exporters are non-blocking, and telemetry is dropped
+// rather than the service failing to start.
+func setupServiceTelemetry(logger *slog.Logger, serviceName string) (func(context.Context) error, error) {
+	shutdown, err := telemetry.Setup(
+		context.Background(),
+		serviceName,
+		resolveServiceVersion(),
+		getenv("OTEL_EXPORTER_OTLP_ENDPOINT", telemetry.DefaultOTLPEndpoint),
+	)
+	if err != nil {
+		return nil, err
+	}
+	logger.Info("telemetry configured",
+		"service_name", serviceName,
+		"service_version", resolveServiceVersion(),
+		"environment", telemetry.Environment(),
+		"otlp_endpoint", getenv("OTEL_EXPORTER_OTLP_ENDPOINT", telemetry.DefaultOTLPEndpoint),
+	)
+	return shutdown, nil
 }
 
 func getenv(key, fallback string) string {
