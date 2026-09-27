@@ -14,6 +14,8 @@ type DecommissionLocationSlot struct {
 	Slots  ports.SlotRepo
 	Events ports.EventPublisher
 	Clock  ports.Clock
+	// UnitOfWork brackets Save + Publish atomically (ADR-0018, optional).
+	UnitOfWork ports.UnitOfWork
 }
 
 // Execute decommissions the slot and publishes LocationSlotDecommissioned.
@@ -28,8 +30,10 @@ func (uc *DecommissionLocationSlot) Execute(ctx context.Context, code shared.Loc
 	if err := s.Decommission(); err != nil {
 		return err
 	}
-	if err := uc.Slots.Save(ctx, s); err != nil {
-		return err
-	}
-	return uc.Events.Publish(ctx, shared.NewLocationSlotDecommissioned(uc.Clock.Now(), s.Code()))
+	return atomically(ctx, uc.UnitOfWork, func(ctx context.Context) error {
+		if err := uc.Slots.Save(ctx, s); err != nil {
+			return err
+		}
+		return uc.Events.Publish(ctx, shared.NewLocationSlotDecommissioned(uc.Clock.Now(), s.Code()))
+	})
 }

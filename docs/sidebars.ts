@@ -104,6 +104,7 @@ const sidebars: SidebarsConfig = {
         'adr/0015-remove-rest-mcp-auth',
         'adr/0016-functional-location-roles',
         'adr/0017-geometry-and-travel-graph',
+        'adr/0018-transactional-outbox',
       ],
     },
   ],

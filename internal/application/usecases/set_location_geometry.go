@@ -16,6 +16,8 @@ type SetLocationGeometry struct {
 	Slots  ports.SlotRepo
 	Events ports.EventPublisher
 	Clock  ports.Clock
+	// UnitOfWork brackets Save + Publish atomically (ADR-0018, optional).
+	UnitOfWork ports.UnitOfWork
 }
 
 // Execute sets the slot's geometry and publishes LocationGeometryUpdated.
@@ -37,11 +39,14 @@ func (uc *SetLocationGeometry) Execute(ctx context.Context, code shared.Location
 			return nil, err
 		}
 	}
-	if err := uc.Slots.Save(ctx, s); err != nil {
-		return nil, err
-	}
-	event := shared.NewLocationGeometryUpdated(uc.Clock.Now(), s.Code(), s.Position(), s.Dimensions(), s.PickSequence())
-	if err := uc.Events.Publish(ctx, event); err != nil {
+	err = atomically(ctx, uc.UnitOfWork, func(ctx context.Context) error {
+		if err := uc.Slots.Save(ctx, s); err != nil {
+			return err
+		}
+		event := shared.NewLocationGeometryUpdated(uc.Clock.Now(), s.Code(), s.Position(), s.Dimensions(), s.PickSequence())
+		return uc.Events.Publish(ctx, event)
+	})
+	if err != nil {
 		return nil, err
 	}
 	return s, nil

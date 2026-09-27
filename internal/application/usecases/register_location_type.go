@@ -15,6 +15,8 @@ type RegisterLocationType struct {
 	LocationTypes ports.LocationTypeRepo
 	Events        ports.EventPublisher
 	Clock         ports.Clock
+	// UnitOfWork brackets Save + Publish atomically (ADR-0018, optional).
+	UnitOfWork ports.UnitOfWork
 }
 
 // Execute registers the location type and publishes LocationTypeRegistered.
@@ -31,10 +33,13 @@ func (uc *RegisterLocationType) Execute(ctx context.Context, name string, role p
 	if err != nil {
 		return placement.LocationType{}, err
 	}
-	if err := uc.LocationTypes.Save(ctx, lt); err != nil {
-		return placement.LocationType{}, err
-	}
-	if err := uc.Events.Publish(ctx, shared.NewLocationTypeRegistered(uc.Clock.Now(), lt.Name(), string(lt.Role()), lt.DefaultCapacity())); err != nil {
+	err = atomically(ctx, uc.UnitOfWork, func(ctx context.Context) error {
+		if err := uc.LocationTypes.Save(ctx, lt); err != nil {
+			return err
+		}
+		return uc.Events.Publish(ctx, shared.NewLocationTypeRegistered(uc.Clock.Now(), lt.Name(), string(lt.Role()), lt.DefaultCapacity()))
+	})
+	if err != nil {
 		return placement.LocationType{}, err
 	}
 	return lt, nil

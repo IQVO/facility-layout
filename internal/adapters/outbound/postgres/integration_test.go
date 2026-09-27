@@ -54,7 +54,7 @@ func newPool(t *testing.T) (context.Context, *pgxPool) {
 	t.Cleanup(pool.Close)
 
 	if _, err := pool.Exec(ctx, `
-		TRUNCATE location_slots, placement_rules, location_types, aisles, zones, sites, events RESTART IDENTITY CASCADE
+		TRUNCATE location_slots, placement_rules, location_types, aisles, zones, sites, outbox_events RESTART IDENTITY CASCADE
 	`); err != nil {
 		t.Fatalf("unexpected error truncating: %v", err)
 	}
