@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	inboundhttp "github.com/claudioed/facility-layout/internal/adapters/inbound/http"
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/bootretry"
@@ -172,6 +173,12 @@ type adapterSet struct {
 	// treats that identically to "run them back to back" (see the
 	// usecases package's atomically helper).
 	unitOfWork ports.UnitOfWork
+	// idempotencyPool, when non-nil, is the same pgxpool.Pool the
+	// Postgres adapters use. It is threaded through to
+	// inboundhttp.Server.IdempotencyPool so RequireIdempotencyKey can
+	// begin its own transaction directly (ADR-0019). nil in the
+	// in-memory adapter set (no Postgres configured).
+	idempotencyPool *pgxpool.Pool
 }
 
 // newServer wires every use case over the chosen adapters. It is the one
@@ -230,6 +237,7 @@ func newServer(a adapterSet, clock ports.Clock, locationMetrics ports.LocationMe
 		EstimateTravelDistance: &usecases.EstimateTravelDistance{
 			Zones: a.zones, Aisles: a.aisles, Slots: a.slots, CrossAisles: a.crossAisles,
 		},
+		IdempotencyPool: a.idempotencyPool,
 	}
 }
 
@@ -337,6 +345,7 @@ func buildAdapters(cfg publisherConfig, logger *slog.Logger) (adapterSet, *postg
 
 	if !kafkaEnabled {
 		base.publisher = events.NewLogPublisher(logger)
+		base.idempotencyPool = pool
 		return base, nil, pool.Close, nil
 	}
 
@@ -357,6 +366,7 @@ func buildAdapters(cfg publisherConfig, logger *slog.Logger) (adapterSet, *postg
 	// aggregate write, so the two streams can never diverge from what
 	// actually happened.
 	base.publisher = postgres.NewOutboxPublisher(pool, uuidLike, kafkaPublisher, analyticsPublisher)
+	base.idempotencyPool = pool
 	relay := postgres.NewOutboxRelay(pool, relaySink, logger, postgres.WithInterval(cfg.relayInterval))
 	logger.Info("event publisher configured", "publisher", "kafka", "mode", "outbox",
 		"integration_topic", kafka.Topic, "analytics_topic", kafka.AnalyticsTopic, "brokers", brokers)
