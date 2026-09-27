@@ -8,6 +8,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/claudioed/facility-layout/internal/pgtx"
 )
 
 // querier is the subset of pgx that both *pgxpool.Pool and pgx.Tx satisfy.
@@ -21,19 +23,17 @@ type querier interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
-type txKey struct{}
-
-// withTx returns a child context carrying tx, so adapters called within
-// UnitOfWork.Execute join the transaction.
-func withTx(ctx context.Context, tx pgx.Tx) context.Context {
-	return context.WithValue(ctx, txKey{}, tx)
-}
-
-// txFrom reports the transaction bound to ctx, if any.
-func txFrom(ctx context.Context) (pgx.Tx, bool) {
-	tx, ok := ctx.Value(txKey{}).(pgx.Tx)
-	return tx, ok
-}
+// withTx and txFrom are thin aliases over internal/pgtx — the ONE
+// transaction-in-context mechanism this service uses. It lives in its
+// own package (rather than as an unexported type here) specifically so
+// internal/adapters/inbound/http's idempotency middleware can bind a
+// transaction it began itself into the same slot, and have it join here
+// via UnitOfWork.Execute/querierFrom below, without either adapter
+// package importing the other (see internal/pgtx's doc comment for the
+// full reasoning and internal/architecture's fitness tests for the rule
+// this sidesteps).
+func withTx(ctx context.Context, tx pgx.Tx) context.Context { return pgtx.WithTx(ctx, tx) }
+func txFrom(ctx context.Context) (pgx.Tx, bool)             { return pgtx.TxFrom(ctx) }
 
 // querierFrom resolves the transaction bound to ctx, or falls back to the
 // pool when the caller is not inside a UnitOfWork.
