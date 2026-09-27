@@ -119,6 +119,23 @@ jobs:
       - name: Contract tests (Schemathesis over apis/openapi.yaml)
         run: ./scripts/contract-test.sh
 
+  # The MCP eval gate as its own named check: the eval suites from
+  # internal/adapters/inbound/mcp run inside the `test` job too; this job makes the gate
+  # visible — and individually gating — on every push and PR.
+  # ============================================================
+  # CLASSIFICATION: EVALUATION TESTING (MCP evals)
+  # ============================================================
+  evals-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+      - name: MCP evals (E1 schemas, E2 wire conformance, E3 behavioral)
+        run: go test ./internal/adapters/inbound/mcp/... -race -run '^TestEval|^TestMCPEvalSuite' -v
+
   # ============================================================
   # CLASSIFICATION: INTEGRATION TESTING
   # ============================================================
@@ -441,7 +458,7 @@ jobs:
   docker-publish:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [lint, test, bdd, contract, integration, mutation-fast, vuln, api-lint, arch-test]
+    needs: [lint, test, bdd, contract, integration, mutation-fast, vuln, api-lint, arch-test, evals-tests]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
