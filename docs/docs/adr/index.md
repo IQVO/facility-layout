@@ -69,6 +69,7 @@ updated. The history of what was believed and when is the point.
 | [0017](./0017-geometry-and-travel-graph.md) | Physical geometry and a travel-distance read model | Proposed |
 | [0018](./0018-transactional-outbox.md) | Transactional outbox + relay for atomic event publishing | Accepted |
 | [0019](./0019-idempotency-key-middleware.md) | Transactional Idempotency-Key middleware for resource-creation POSTs | Accepted |
+| [0020](./0020-resilience-kafka-dlq-graceful-shutdown.md) | Kafka consumer dead-letter queue and graceful shutdown hardening | Accepted |
 
 ## The Kafka record that was deferred until the adapter existed
 

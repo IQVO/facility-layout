@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -69,6 +70,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	// pool.Close runs LAST (ADR-0020 §graceful shutdown, mirroring
+	// order-management's ADR-0025 verbatim): registered here, near the
+	// top of run(), so by defer's LIFO order it runs AFTER the consumer's
+	// own deferred Close below, once the shutdown sequence has already
+	// waited for the consumer's Run goroutine to actually finish.
 	defer pool.Close()
 	if err := bootretry.Retry(rootCtx, logger, "ping analytics database", func() error {
 		return pool.Ping(rootCtx)
@@ -79,12 +85,34 @@ func run() error {
 	projection := analyticsstore.NewPostgresProjection(pool)
 	consumed := analyticsstore.NewConsumedEventsRepo(pool)
 	consumer := inboundkafka.NewAnalyticsConsumer(kafkaBrokers, outboundkafka.AnalyticsTopic, projection, consumed, logger)
-	defer func() { _ = consumer.Close() }()
+	defer func() {
+		if err := consumer.Close(); err != nil {
+			logger.Error("error closing analytics consumer", "error", err)
+		}
+	}()
+
+	// notReady backs GET /readyz (ADR-0020 §graceful shutdown): flipped
+	// to 1 as the FIRST step of the shutdown sequence below, before the
+	// admin server itself stops accepting connections, so a Kubernetes
+	// readinessProbe has a chance to observe the flip and stop routing
+	// new traffic during the drain window that follows. /healthz is
+	// unaffected -- it stays a pure liveness signal, never flipped by
+	// shutdown.
+	var notReady atomic.Bool
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
+		if notReady.Load() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"status":"not_ready"}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ready"}`))
 	})
 	srv := &http.Server{Addr: adminAddr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 
@@ -96,7 +124,15 @@ func run() error {
 	}()
 
 	consumerCtx, cancelConsumer := context.WithCancel(context.Background())
+	defer cancelConsumer()
+	// consumerDone closes once the consumer's Run goroutine has actually
+	// returned -- including having committed (or dead-lettered, ADR-0020
+	// §DLQ) the offset for whatever message it was mid-handling when
+	// cancelConsumer is called -- so graceful shutdown can wait for a REAL
+	// stop, not just fire-and-forget the cancel.
+	consumerDone := make(chan struct{})
 	go func() {
+		defer close(consumerDone)
 		logger.Info("analytics consumer starting", "topic", outboundkafka.AnalyticsTopic, "group", inboundkafka.AnalyticsConsumerGroup, "brokers", kafkaBrokers)
 		if err := consumer.Run(consumerCtx); err != nil {
 			logger.Error("analytics consumer stopped", "error", err)
@@ -107,11 +143,36 @@ func run() error {
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
 
-	cancelConsumer()
+	// Graceful shutdown (ADR-0020, mirroring order-management's ADR-0025
+	// §graceful shutdown verbatim), in order:
+	//  1. Flip readiness to not-ready FIRST.
+	//  2. Stop accepting new admin-server connections and drain
+	//     in-flight requests, bounded by shutdownCtx.
+	//  3. Stop the analytics consumer's loop cleanly: cancel its context
+	//     (no new message is fetched/handled after this) and wait,
+	//     bounded by the SAME shutdownCtx, for it to actually finish
+	//     in-flight work (a message already being handled commits its
+	//     offset, or dead-letters it, before Run returns) rather than
+	//     merely asking it to stop and moving on.
+	//  4. Only THEN do the deferred consumer.Close()/pool.Close() calls
+	//     (registered earlier in this function), so by defer's LIFO
+	//     order pool.Close() -- which closes the analytics pgx pool --
+	//     runs LAST of all, after the consumer has already stopped
+	//     touching it.
+	notReady.Store(true)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	return srv.Shutdown(ctx)
+	shutdownErr := srv.Shutdown(ctx)
+
+	cancelConsumer()
+	select {
+	case <-consumerDone:
+	case <-ctx.Done():
+		logger.Warn("analytics consumer did not stop before the shutdown deadline")
+	}
+
+	return shutdownErr
 }
 
 // newLogger builds a JSON slog logger at the given level. The analytics

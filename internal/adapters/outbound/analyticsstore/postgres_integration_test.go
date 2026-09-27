@@ -168,6 +168,12 @@ func TestConsumedEventsRepo_MarksOnce(t *testing.T) {
 	t.Cleanup(func() { _, _ = pool.Exec(ctx, `DELETE FROM analytics_consumed_events WHERE event_id = $1`, id) })
 
 	repo := analyticsstore.NewConsumedEventsRepo(pool)
+
+	before, err := repo.IsProcessed(ctx, id)
+	if err != nil || before {
+		t.Fatalf("IsProcessed before MarkProcessed = (%v, %v), want (false, nil)", before, err)
+	}
+
 	first, err := repo.MarkProcessed(ctx, id)
 	if err != nil || !first {
 		t.Fatalf("first MarkProcessed = (%v, %v), want (true, nil)", first, err)
@@ -175,5 +181,10 @@ func TestConsumedEventsRepo_MarksOnce(t *testing.T) {
 	second, err := repo.MarkProcessed(ctx, id)
 	if err != nil || second {
 		t.Fatalf("second MarkProcessed = (%v, %v), want (false, nil)", second, err)
+	}
+
+	after, err := repo.IsProcessed(ctx, id)
+	if err != nil || !after {
+		t.Fatalf("IsProcessed after MarkProcessed = (%v, %v), want (true, nil)", after, err)
 	}
 }

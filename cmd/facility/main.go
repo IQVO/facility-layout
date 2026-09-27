@@ -88,7 +88,7 @@ func run() error {
 	kafkaBrokers := getenv("KAFKA_BROKERS", "localhost:9092")
 	relayInterval := durationEnv("OUTBOX_RELAY_INTERVAL", time.Second)
 
-	adapters, relay, closeAdapters, err := buildAdapters(publisherConfig{
+	adapters, relay, closeKafka, closePool, err := buildAdapters(publisherConfig{
 		databaseURL:    databaseURL,
 		migrationsPath: migrationsPath,
 		eventPublisher: eventPublisher,
@@ -98,11 +98,29 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	defer closeAdapters()
+	// closePool runs LAST (ADR-0020 §graceful shutdown, mirroring
+	// order-management's ADR-0025 verbatim): registered here, near the
+	// top of run(), so by defer's LIFO order it runs AFTER closeKafka
+	// (registered next) and after every consumer/relay goroutine has
+	// already stopped touching it in the explicit shutdown sequence
+	// below.
+	defer closePool()
+	defer func() {
+		if err := closeKafka(); err != nil {
+			logger.Warn("error closing kafka producers", "error", err)
+		}
+	}()
+
+	// readiness backs GET /readyz (ADR-0020 §graceful shutdown): flipped
+	// to not-ready as the FIRST step of the shutdown sequence below,
+	// before the HTTP server itself stops accepting connections, so a
+	// Kubernetes readinessProbe has a chance to observe the flip and stop
+	// routing new traffic during the drain window that follows.
+	readiness := &inboundhttp.Readiness{}
 
 	httpServer := &http.Server{
 		Addr:              httpAddr,
-		Handler:           inboundhttp.NewRouter(newServer(adapters, memory.SystemClock{}, locationMetrics), logger, inboundhttp.WithServiceName(serviceName)),
+		Handler:           inboundhttp.NewRouter(newServer(adapters, memory.SystemClock{}, locationMetrics, readiness), logger, inboundhttp.WithServiceName(serviceName)),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -140,6 +158,26 @@ func run() error {
 		return err
 	case <-ctx.Done():
 	}
+
+	// Graceful shutdown (ADR-0020, mirroring order-management's ADR-0025
+	// §graceful shutdown verbatim), in order:
+	//
+	//  1. Flip readiness to not-ready FIRST, before anything else stops
+	//     -- a Kubernetes readinessProbe polling /readyz needs a window
+	//     to observe this and stop routing NEW traffic to this pod
+	//     before step 2 below ever closes the listener.
+	//  2. Stop accepting new HTTP connections and drain in-flight
+	//     requests, bounded by shutdownCtx.
+	//  3. Stop the outbox relay cleanly: cancel its context (no new work
+	//     is picked up after this) and wait, bounded by the SAME
+	//     shutdownCtx, for it to actually finish in-flight work rather
+	//     than merely asking it to stop and moving on.
+	//  4. Only THEN do the deferred closeKafka/closePool calls
+	//     (registered earlier in this function), so by defer's LIFO
+	//     order closeKafka runs after this function returns and
+	//     closePool -- which closes the pgx pool -- runs LAST of all,
+	//     after every relay/producer has already stopped touching it.
+	readiness.SetNotReady()
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -183,7 +221,7 @@ type adapterSet struct {
 
 // newServer wires every use case over the chosen adapters. It is the one
 // place in the codebase that knows about all three layers at once.
-func newServer(a adapterSet, clock ports.Clock, locationMetrics ports.LocationMetrics) *inboundhttp.Server {
+func newServer(a adapterSet, clock ports.Clock, locationMetrics ports.LocationMetrics, readiness *inboundhttp.Readiness) *inboundhttp.Server {
 	return &inboundhttp.Server{
 		RegisterSite: &usecases.RegisterSite{Sites: a.sites, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork},
 		GetSite:      &usecases.GetSite{Sites: a.sites},
@@ -238,6 +276,7 @@ func newServer(a adapterSet, clock ports.Clock, locationMetrics ports.LocationMe
 			Zones: a.zones, Aisles: a.aisles, Slots: a.slots, CrossAisles: a.crossAisles,
 		},
 		IdempotencyPool: a.idempotencyPool,
+		Readiness:       readiness,
 	}
 }
 
@@ -272,22 +311,22 @@ type publisherConfig struct {
 //	unset        | kafka           | direct Kafka fan-out (no outbox)   | no
 //	set          | log (default)   | log                                | no
 //	set          | kafka           | outbox (fans out to both topics)   | yes
-func buildAdapters(cfg publisherConfig, logger *slog.Logger) (adapterSet, *postgres.OutboxRelay, func(), error) {
+func buildAdapters(cfg publisherConfig, logger *slog.Logger) (adapterSet, *postgres.OutboxRelay, func() error, func(), error) {
 	noop := func() {}
+	noopKafkaClose := func() error { return nil }
 	kafkaEnabled := cfg.eventPublisher == "kafka"
 
 	if cfg.databaseURL == "" {
 		logger.Info("database url not configured; using in-memory adapters")
 		pub := ports.EventPublisher(events.NewLogPublisher(logger))
-		closeFn := noop
+		closeKafka := noopKafkaClose
 		if kafkaEnabled {
 			brokers := strings.Split(cfg.kafkaBrokers, ",")
 			kafkaPublisher := kafka.NewPublisher(brokers, uuidLike)
 			analyticsPublisher := kafka.NewAnalyticsPublisher(brokers, uuidLike)
 			pub = fanOutPublisher{kafkaPublisher, analyticsPublisher}
-			closeFn = func() {
-				_ = kafkaPublisher.Close()
-				_ = analyticsPublisher.Close()
+			closeKafka = func() error {
+				return errors.Join(kafkaPublisher.Close(), analyticsPublisher.Close())
 			}
 			logger.Info("event publisher configured", "publisher", "kafka", "mode", "direct",
 				"integration_topic", kafka.Topic, "analytics_topic", kafka.AnalyticsTopic, "brokers", brokers)
@@ -302,7 +341,7 @@ func buildAdapters(cfg publisherConfig, logger *slog.Logger) (adapterSet, *postg
 			structures:    memory.NewFixedStructureRepo(),
 			crossAisles:   memory.NewCrossAisleRepo(),
 			publisher:     pub,
-		}, nil, closeFn, nil
+		}, nil, closeKafka, noop, nil
 	}
 
 	ctx := context.Background()
@@ -316,12 +355,12 @@ func buildAdapters(cfg publisherConfig, logger *slog.Logger) (adapterSet, *postg
 	if err := bootretry.Retry(ctx, logger, "run migrations", func() error {
 		return postgres.RunMigrations(cfg.databaseURL, cfg.migrationsPath)
 	}); err != nil {
-		return adapterSet{}, nil, noop, err
+		return adapterSet{}, nil, noopKafkaClose, noop, err
 	}
 
 	pool, err := postgres.NewPool(ctx, cfg.databaseURL)
 	if err != nil {
-		return adapterSet{}, nil, noop, err
+		return adapterSet{}, nil, noopKafkaClose, noop, err
 	}
 	// pgxpool does not itself dial until first use, so without this the
 	// first real failure would surface inside a request instead of at boot.
@@ -329,7 +368,7 @@ func buildAdapters(cfg publisherConfig, logger *slog.Logger) (adapterSet, *postg
 		return pool.Ping(ctx)
 	}); err != nil {
 		pool.Close()
-		return adapterSet{}, nil, noop, err
+		return adapterSet{}, nil, noopKafkaClose, noop, err
 	}
 
 	base := adapterSet{
@@ -346,18 +385,21 @@ func buildAdapters(cfg publisherConfig, logger *slog.Logger) (adapterSet, *postg
 	if !kafkaEnabled {
 		base.publisher = events.NewLogPublisher(logger)
 		base.idempotencyPool = pool
-		return base, nil, pool.Close, nil
+		return base, nil, noopKafkaClose, pool.Close, nil
 	}
 
 	brokers := strings.Split(cfg.kafkaBrokers, ",")
 	kafkaPublisher := kafka.NewPublisher(brokers, uuidLike)
 	analyticsPublisher := kafka.NewAnalyticsPublisher(brokers, uuidLike)
 	relaySink := kafka.NewRelaySink(brokers)
-	closeFn := func() {
-		_ = kafkaPublisher.Close()
-		_ = analyticsPublisher.Close()
-		_ = relaySink.Close()
-		pool.Close()
+	// closeKafka releases every Kafka producer this process opened
+	// (integration publisher, analytics publisher, relay sink) WITHOUT
+	// touching the pgx pool -- ADR-0020 §graceful shutdown requires the
+	// pool to close LAST, after every consumer/relay/producer has already
+	// stopped touching it, so the pool's own close is returned separately
+	// (closePool below) rather than bundled into this function.
+	closeKafka := func() error {
+		return errors.Join(kafkaPublisher.Close(), analyticsPublisher.Close(), relaySink.Close())
 	}
 
 	base.unitOfWork = postgres.NewUnitOfWork(pool)
@@ -371,7 +413,7 @@ func buildAdapters(cfg publisherConfig, logger *slog.Logger) (adapterSet, *postg
 	logger.Info("event publisher configured", "publisher", "kafka", "mode", "outbox",
 		"integration_topic", kafka.Topic, "analytics_topic", kafka.AnalyticsTopic, "brokers", brokers)
 
-	return base, relay, closeFn, nil
+	return base, relay, closeKafka, pool.Close, nil
 }
 
 func getenv(key, fallback string) string {

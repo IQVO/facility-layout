@@ -86,6 +86,16 @@ type Server struct {
 	// (UnitOfWork, the outbox relay). Mirrors order-management's
 	// identically-named field (PR #105, ADR 0023).
 	IdempotencyPool *pgxpool.Pool
+
+	// Readiness backs GET /readyz (ADR-0020 §graceful shutdown, mirroring
+	// order-management's ADR-0025 verbatim): flipped to not-ready as the
+	// FIRST step of the composition root's shutdown sequence, before
+	// anything else stops, so a Kubernetes readinessProbe has a chance to
+	// observe the flip and stop routing new traffic during the drain
+	// window that follows. nil (the zero value of *Server, every existing
+	// test) always reports ready -- see Readiness.Ready's nil-receiver
+	// doc comment.
+	Readiness *Readiness
 }
 
 // NewRouter builds the chi router for every endpoint in CLAUDE.md's REST
@@ -131,6 +141,7 @@ func NewRouter(s *Server, logger *slog.Logger, opts ...RouterOption) http.Handle
 	r.Use(corsMiddleware())
 
 	r.Get("/healthz", s.handleHealthz)
+	r.Get("/readyz", HandleReadyz(s.Readiness))
 
 	// idempotent wraps a chi router handler behind RequireIdempotencyKey
 	// when a Postgres-backed IdempotencyPool is configured — every true

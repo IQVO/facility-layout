@@ -136,11 +136,23 @@ livenessProbe:
   periodSeconds: 10
 
 readinessProbe:
+  # ADR-0020 §graceful shutdown, mirroring order-management's ADR-0025
+  # §8 verbatim: /readyz is a DISTINCT endpoint from /healthz above, so it
+  # can be flipped to not-ready by a draining pod without also failing
+  # liveness (which would get the pod SIGKILLed mid-drain instead of
+  # allowed to finish it).
   httpGet:
-    path: /healthz
+    path: /readyz
     port: http
   initialDelaySeconds: 3
   periodSeconds: 5
+
+# ADR-0020 §graceful shutdown (order-management's ADR-0025 §8 verbatim):
+# the HTTP Shutdown budget (10s) plus the outbox-relay/Kafka-consumer stop
+# budget (the same 10s, reused) plus margin for readinessProbe's
+# periodSeconds above to have actually observed the not-ready flip before
+# traffic fully stops arriving.
+terminationGracePeriodSeconds: 30
 
 kafka:
   enabled: false
