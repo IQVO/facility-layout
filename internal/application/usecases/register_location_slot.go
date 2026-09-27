@@ -44,6 +44,8 @@ type RegisterLocationSlot struct {
 	// Metrics is optional: when nil, registrations are simply not counted.
 	// The use case's decisions are identical either way.
 	Metrics ports.LocationMetrics
+	// UnitOfWork brackets Save + Publish atomically (ADR-0018, optional).
+	UnitOfWork ports.UnitOfWork
 }
 
 // Execute registers the slot and publishes LocationSlotRegistered.
@@ -116,15 +118,18 @@ func (uc *RegisterLocationSlot) register(ctx context.Context, code shared.Locati
 	if err != nil {
 		return nil, err
 	}
-	if err := uc.Slots.Save(ctx, s); err != nil {
-		return nil, err
-	}
-	f := s.Functional()
-	event := shared.NewLocationSlotRegistered(
-		uc.Clock.Now(), s.Code(), s.LocationType(), string(s.Role()),
-		string(f.DockFlow()), activityStrings(f.Activities()), s.Capacity(),
-	)
-	if err := uc.Events.Publish(ctx, event); err != nil {
+	err = atomically(ctx, uc.UnitOfWork, func(ctx context.Context) error {
+		if err := uc.Slots.Save(ctx, s); err != nil {
+			return err
+		}
+		f := s.Functional()
+		event := shared.NewLocationSlotRegistered(
+			uc.Clock.Now(), s.Code(), s.LocationType(), string(s.Role()),
+			string(f.DockFlow()), activityStrings(f.Activities()), s.Capacity(),
+		)
+		return uc.Events.Publish(ctx, event)
+	})
+	if err != nil {
 		return nil, err
 	}
 	return s, nil

@@ -15,6 +15,11 @@ type RegisterSite struct {
 	Sites  ports.SiteRepo
 	Events ports.EventPublisher
 	Clock  ports.Clock
+	// UnitOfWork brackets Save + Publish atomically (ADR-0018). Optional:
+	// a nil value means "no transactional backing" and the two calls run
+	// back to back, which is exactly the in-memory / log-publisher dev
+	// configuration.
+	UnitOfWork ports.UnitOfWork
 }
 
 // Execute registers the site and publishes SiteRegistered.
@@ -31,10 +36,13 @@ func (uc *RegisterSite) Execute(ctx context.Context, code, name string) (*site.S
 	if err != nil {
 		return nil, err
 	}
-	if err := uc.Sites.Save(ctx, s); err != nil {
-		return nil, err
-	}
-	if err := uc.Events.Publish(ctx, shared.NewSiteRegistered(uc.Clock.Now(), s.Code(), s.Name())); err != nil {
+	err = atomically(ctx, uc.UnitOfWork, func(ctx context.Context) error {
+		if err := uc.Sites.Save(ctx, s); err != nil {
+			return err
+		}
+		return uc.Events.Publish(ctx, shared.NewSiteRegistered(uc.Clock.Now(), s.Code(), s.Name()))
+	})
+	if err != nil {
 		return nil, err
 	}
 	return s, nil

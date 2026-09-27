@@ -25,7 +25,7 @@ func NewZoneRepo(pool *pgxpool.Pool) *ZoneRepo {
 // unset (ADR-0017) — 0 the domain sentinel for "use the default", never a
 // literal zero pitch.
 func (r *ZoneRepo) Save(ctx context.Context, z *zone.Zone) error {
-	_, err := r.pool.Exec(ctx, `
+	_, err := querierFrom(ctx, r.pool).Exec(ctx, `
 		INSERT INTO zones (id, site_code, area_code, zone_code, temperature_class, hazmat, status, bay_pitch_m, level_pitch_m)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (id) DO UPDATE SET
@@ -44,7 +44,7 @@ func (r *ZoneRepo) FindByID(ctx context.Context, id string) (*zone.Zone, error) 
 	var siteCode, areaCode, zoneCode, temperatureClass, status string
 	var hazmat bool
 	var bayPitchM, levelPitchM *float64
-	err := r.pool.QueryRow(ctx, `
+	err := querierFrom(ctx, r.pool).QueryRow(ctx, `
 		SELECT site_code, area_code, zone_code, temperature_class, hazmat, status, bay_pitch_m, level_pitch_m
 		FROM zones WHERE id = $1
 	`, id).Scan(&siteCode, &areaCode, &zoneCode, &temperatureClass, &hazmat, &status, &bayPitchM, &levelPitchM)
@@ -59,7 +59,7 @@ func (r *ZoneRepo) FindByID(ctx context.Context, id string) (*zone.Zone, error) 
 
 // ListBySite returns every zone in a site, ordered by id.
 func (r *ZoneRepo) ListBySite(ctx context.Context, siteCode string) ([]*zone.Zone, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := querierFrom(ctx, r.pool).Query(ctx, `
 		SELECT site_code, area_code, zone_code, temperature_class, hazmat, status, bay_pitch_m, level_pitch_m
 		FROM zones WHERE site_code = $1 ORDER BY id
 	`, siteCode)

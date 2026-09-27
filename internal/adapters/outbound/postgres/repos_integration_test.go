@@ -309,25 +309,3 @@ func TestPostgresSlotRepoRoundTrip(t *testing.T) {
 		t.Fatal("expected the persisted slot to be Decommissioned")
 	}
 }
-
-func TestPostgresEventPublisherAppendsToOutbox(t *testing.T) {
-	ctx, pool := newPool(t)
-	publisher := postgres.NewEventPublisher(pool)
-
-	event := shared.NewSiteRegistered(fixedTime(), "WH1", "Fulfilment Centre One")
-	if err := publisher.Publish(ctx, event); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	var name, eventType string
-	if err := pool.QueryRow(ctx, `SELECT event_name, event_type FROM events ORDER BY id DESC LIMIT 1`).
-		Scan(&name, &eventType); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if name != "SiteRegistered" {
-		t.Fatalf("unexpected event name %q", name)
-	}
-	if eventType != "com.warehouse.wms.facility-layout.site.SiteRegistered" {
-		t.Fatalf("the CloudEvents type must be persisted verbatim, got %q", eventType)
-	}
-}

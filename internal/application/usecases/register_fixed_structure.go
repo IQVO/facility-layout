@@ -19,6 +19,8 @@ type RegisterFixedStructure struct {
 	Structures ports.FixedStructureRepo
 	Events     ports.EventPublisher
 	Clock      ports.Clock
+	// UnitOfWork brackets Save + Publish atomically (ADR-0018, optional).
+	UnitOfWork ports.UnitOfWork
 }
 
 // Execute registers the structure and publishes FixedStructureRegistered.
@@ -43,11 +45,14 @@ func (uc *RegisterFixedStructure) Execute(ctx context.Context, id, siteCode stri
 	if err != nil {
 		return nil, err
 	}
-	if err := uc.Structures.Save(ctx, f); err != nil {
-		return nil, err
-	}
-	event := shared.NewFixedStructureRegistered(uc.Clock.Now(), f.ID(), f.SiteCode(), string(f.Kind()), f.Footprint(), f.Label())
-	if err := uc.Events.Publish(ctx, event); err != nil {
+	err = atomically(ctx, uc.UnitOfWork, func(ctx context.Context) error {
+		if err := uc.Structures.Save(ctx, f); err != nil {
+			return err
+		}
+		event := shared.NewFixedStructureRegistered(uc.Clock.Now(), f.ID(), f.SiteCode(), string(f.Kind()), f.Footprint(), f.Label())
+		return uc.Events.Publish(ctx, event)
+	})
+	if err != nil {
 		return nil, err
 	}
 	return f, nil

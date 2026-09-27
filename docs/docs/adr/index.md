@@ -67,6 +67,7 @@ updated. The history of what was believed and when is the point.
 | [0015](./0015-remove-rest-mcp-auth.md) | Remove the static-bearer REST/MCP auth layer (reverts 0014 and the auth portion of 0007) | Accepted |
 | [0016](./0016-functional-location-roles.md) | Functional location roles beyond storage (Dock, Yard, WorkCenter, Drop, QC, Consolidation, Shipping) | Proposed |
 | [0017](./0017-geometry-and-travel-graph.md) | Physical geometry and a travel-distance read model | Proposed |
+| [0018](./0018-transactional-outbox.md) | Transactional outbox + relay for atomic event publishing | Accepted |
 
 ## The Kafka record that was deferred until the adapter existed
 
