@@ -259,8 +259,31 @@ func newServer(a adapterSet, clock ports.Clock, locationMetrics ports.LocationMe
 // publisherConfig carries the composition-root inputs that decide which
 // repositories and which EventPublisher buildAdapters wires.
 type publisherConfig struct {
-	databaseURL    string
-	migrationsPath string
+	databaseURL string
+	// migrationsDatabaseURL is a DIRECT (non-pooled, session-mode) Postgres
+	// connection string used ONLY for the golang-migrate step in
+	// dialPostgres below — never for the pgxpool built right after, which
+	// always uses databaseURL. They are deliberately different in a
+	// PgBouncer-fronted environment: golang-migrate's postgres driver takes
+	// a session-scoped `SELECT pg_advisory_lock($1)` to serialize
+	// concurrent migration runs across replicas starting at the same time,
+	// and PgBouncer's transaction-pooling mode (this fleet's pool_mode for
+	// every OLTP DATABASE_URL, warehouse-infra PR #43) does not support
+	// session-scoped state — each statement in one logical client session
+	// can land on a different physical backend connection, so the
+	// advisory lock never behaves as a real mutex. Losing replicas
+	// crash-loop with `pq: unnamed prepared statement does not exist` /
+	// `pq: canceling statement due to statement timeout` until one wins
+	// the race. See ADR 0023-migrations-direct-postgres-connection.md
+	// (mirroring order-management's ADR-0029) for the full incident and
+	// fix. publisherConfigFromEnv sets this to MIGRATIONS_DATABASE_URL
+	// when set (warehouse-infra provisions it as a direct, non-pooled DSN
+	// alongside DATABASE_URL) or falls back to databaseURL itself for any
+	// environment that doesn't provision the split (local dev, CI
+	// integration tests) — byte-identical to this field's behavior before
+	// it existed in that case.
+	migrationsDatabaseURL string
+	migrationsPath        string
 	// eventPublisher selects the outbound EventPublisher: "kafka" publishes
 	// the Published Language to the integration topic (and, with a database
 	// configured, via the transactional outbox); "" (default) uses the log
@@ -392,7 +415,7 @@ func outboxAdapters(cfg publisherConfig, logger *slog.Logger, base adapterSet, p
 func dialPostgres(cfg publisherConfig, logger *slog.Logger) (*pgxpool.Pool, error) {
 	ctx := context.Background()
 	if err := bootretry.Retry(ctx, logger, "run migrations", func() error {
-		return postgres.RunMigrations(cfg.databaseURL, cfg.migrationsPath)
+		return postgres.RunMigrations(cfg.migrationsDatabaseURL, cfg.migrationsPath)
 	}); err != nil {
 		return nil, err
 	}
@@ -415,12 +438,21 @@ func dialPostgres(cfg publisherConfig, logger *slog.Logger) (*pgxpool.Pool, erro
 // publisherConfigFromEnv gathers the outbound-wiring environment for
 // buildAdapters in one place.
 func publisherConfigFromEnv() publisherConfig {
+	databaseURL := os.Getenv("DATABASE_URL")
 	return publisherConfig{
-		databaseURL:    os.Getenv("DATABASE_URL"),
-		migrationsPath: getenv("MIGRATIONS_PATH", "migrations"),
-		eventPublisher: getenv("EVENT_PUBLISHER", ""),
-		kafkaBrokers:   getenv("KAFKA_BROKERS", "localhost:9092"),
-		relayInterval:  durationEnv("OUTBOX_RELAY_INTERVAL", time.Second),
+		databaseURL: databaseURL,
+		// See publisherConfig.migrationsDatabaseURL's doc comment and ADR
+		// 0023-migrations-direct-postgres-connection.md: falls back to
+		// databaseURL (DATABASE_URL) when MIGRATIONS_DATABASE_URL is unset,
+		// which is every environment that doesn't provision the split
+		// (local dev, CI integration tests, a cluster whose Terraform
+		// predates this fix) — byte-identical to this service's behavior
+		// before this env var existed in that case.
+		migrationsDatabaseURL: getenv("MIGRATIONS_DATABASE_URL", databaseURL),
+		migrationsPath:        getenv("MIGRATIONS_PATH", "migrations"),
+		eventPublisher:        getenv("EVENT_PUBLISHER", ""),
+		kafkaBrokers:          getenv("KAFKA_BROKERS", "localhost:9092"),
+		relayInterval:         durationEnv("OUTBOX_RELAY_INTERVAL", time.Second),
 	}
 }
 

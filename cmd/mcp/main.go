@@ -67,9 +67,16 @@ func run() error {
 
 	httpAddr := getenv("MCP_ADDR", ":8090")
 	databaseURL := os.Getenv("DATABASE_URL")
+	// See buildAdapters' doc comment and ADR
+	// 0023-migrations-direct-postgres-connection.md (mirroring
+	// order-management's ADR-0029) for the full "why" (session-scoped
+	// pg_advisory_lock vs PgBouncer transaction-pooling incompatibility).
+	// This binary also runs migrations on start (buildAdapters below), so
+	// it needs the same direct-connection split as cmd/facility.
+	migrationsDatabaseURL := getenv("MIGRATIONS_DATABASE_URL", databaseURL)
 	migrationsPath := getenv("MIGRATIONS_PATH", "migrations")
 
-	adapters, closeAdapters, err := buildAdapters(databaseURL, migrationsPath, logger)
+	adapters, closeAdapters, err := buildAdapters(databaseURL, migrationsDatabaseURL, migrationsPath, logger)
 	if err != nil {
 		return err
 	}
@@ -159,7 +166,15 @@ type adapterSet struct {
 // buildAdapters wires the Postgres repos when DATABASE_URL is set, or falls
 // back to the in-memory repos for local development without a database —
 // exactly as cmd/facility/main.go does.
-func buildAdapters(databaseURL, migrationsPath string, logger *slog.Logger) (adapterSet, func(), error) {
+//
+// migrationsDatabaseURL is used ONLY for the golang-migrate step below —
+// the pgxpool opened just after it (and used for every subsequent request)
+// always uses databaseURL. See cmd/facility/main.go's publisherConfig.
+// migrationsDatabaseURL doc comment and ADR
+// 0023-migrations-direct-postgres-connection.md for the full "why" a
+// direct, non-pooled connection is needed here even though the pgxpool
+// opened just after stays on PgBouncer.
+func buildAdapters(databaseURL, migrationsDatabaseURL, migrationsPath string, logger *slog.Logger) (adapterSet, func(), error) {
 	noop := func() {}
 
 	if databaseURL == "" {
@@ -180,7 +195,7 @@ func buildAdapters(databaseURL, migrationsPath string, logger *slog.Logger) (ada
 	// CrashLoopBackOff; the retry still refuses to boot once the budget is
 	// exhausted, reporting the real underlying error.
 	if err := bootretry.Retry(context.Background(), logger, "run migrations", func() error {
-		return postgres.RunMigrations(databaseURL, migrationsPath)
+		return postgres.RunMigrations(migrationsDatabaseURL, migrationsPath)
 	}); err != nil {
 		return adapterSet{}, noop, err
 	}
