@@ -108,6 +108,7 @@ const sidebars: SidebarsConfig = {
         'adr/0019-idempotency-key-middleware',
         'adr/0020-resilience-kafka-dlq-graceful-shutdown',
         'adr/0021-kafka-writer-balancer-hash',
+        'adr/0022-horizontal-autoscaling-and-pgxpool-tuning',
       ],
     },
   ],

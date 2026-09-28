@@ -7,7 +7,9 @@ metadata:
     {{- include "facility-layout.labels" . | nindent 4 }}
     app.kubernetes.io/component: analytics-projector
 spec:
+  {{- if not .Values.autoscaling.projector.enabled }}
   replicas: {{ .Values.analytics.projector.replicaCount }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "facility-layout.selectorLabels" . | nindent 6 }}

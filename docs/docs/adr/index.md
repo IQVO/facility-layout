@@ -70,6 +70,8 @@ updated. The history of what was believed and when is the point.
 | [0018](./0018-transactional-outbox.md) | Transactional outbox + relay for atomic event publishing | Accepted |
 | [0019](./0019-idempotency-key-middleware.md) | Transactional Idempotency-Key middleware for resource-creation POSTs | Accepted |
 | [0020](./0020-resilience-kafka-dlq-graceful-shutdown.md) | Kafka consumer dead-letter queue and graceful shutdown hardening | Accepted |
+| [0021](./0021-kafka-writer-balancer-hash.md) | Kafka writer Balancer switched from LeastBytes to Hash | Accepted |
+| [0022](./0022-horizontal-autoscaling-and-pgxpool-tuning.md) | Per-workload HorizontalPodAutoscaler and pgxpool MaxConns/statement_timeout tuning | Accepted |
 
 ## The Kafka record that was deferred until the adapter existed
 

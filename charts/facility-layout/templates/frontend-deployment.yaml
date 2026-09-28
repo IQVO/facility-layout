@@ -7,7 +7,9 @@ metadata:
     {{- include "facility-layout.labels" . | nindent 4 }}
     app.kubernetes.io/component: frontend
 spec:
+  {{- if not .Values.autoscaling.frontend.enabled }}
   replicas: {{ .Values.frontend.replicaCount }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "facility-layout.selectorLabels" . | nindent 6 }}
