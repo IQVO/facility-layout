@@ -174,6 +174,18 @@ database:
   url: ""
   existingSecret: ""
   existingSecretKey: "DATABASE_URL"
+  # Key, in the same existingSecret, of a DIRECT (non-pooled, session-mode)
+  # Postgres connection string used ONLY for the golang-migrate startup
+  # step (cmd/facility/main.go, cmd/mcp/main.go) -- never for the runtime
+  # pgxpool, which always uses existingSecretKey/DATABASE_URL above,
+  # unchanged. `optional: true` below so a secret that predates this key
+  # (local dev, an environment whose Terraform hasn't been rolled yet)
+  # still starts the pod: the Go binary's own
+  # getenv("MIGRATIONS_DATABASE_URL", databaseURL) fallback then makes
+  # migrations run against DATABASE_URL, exactly as before this key
+  # existed. See ADR-0023 for the PgBouncer/pg_advisory_lock
+  # incompatibility this key exists to route migrations around.
+  migrationsExistingSecretKey: "MIGRATIONS_DATABASE_URL"
 
 extraEnv: []
 

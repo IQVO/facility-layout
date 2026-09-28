@@ -64,6 +64,20 @@ spec:
                 secretKeyRef:
                   name: {{ include "facility-layout.databaseSecretName" . }}
                   key: {{ .Values.database.existingSecretKey }}
+            {{- if .Values.database.migrationsExistingSecretKey }}
+            # See values.yaml's database.migrationsExistingSecretKey comment
+            # and ADR-0023: a direct (non-pooled) connection used only for
+            # the migration step below, never for the runtime pgxpool.
+            # `optional: true` so a secret without this key yet (predates
+            # this chart version) still starts the pod -- the binary falls
+            # back to DATABASE_URL itself when this env var is unset.
+            - name: MIGRATIONS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "facility-layout.databaseSecretName" . }}
+                  key: {{ .Values.database.migrationsExistingSecretKey }}
+                  optional: true
+            {{- end }}
             {{- end }}
             {{- if .Values.otel.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT

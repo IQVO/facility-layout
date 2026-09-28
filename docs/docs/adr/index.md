@@ -72,6 +72,7 @@ updated. The history of what was believed and when is the point.
 | [0020](./0020-resilience-kafka-dlq-graceful-shutdown.md) | Kafka consumer dead-letter queue and graceful shutdown hardening | Accepted |
 | [0021](./0021-kafka-writer-balancer-hash.md) | Kafka writer Balancer switched from LeastBytes to Hash | Accepted |
 | [0022](./0022-horizontal-autoscaling-and-pgxpool-tuning.md) | Per-workload HorizontalPodAutoscaler and pgxpool MaxConns/statement_timeout tuning | Accepted |
+| [0023](./0023-migrations-direct-postgres-connection.md) | Run golang-migrate against a direct Postgres connection, not PgBouncer | Accepted |
 
 ## The Kafka record that was deferred until the adapter existed
 
