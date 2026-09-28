@@ -64,7 +64,7 @@ jobs:
           set -euo pipefail
           go install github.com/fzipp/gocyclo/cmd/gocyclo@v0.6.0
           echo "### gocyclo — functions over 10 (informational; the gate is 15)" >> "$GITHUB_STEP_SUMMARY"
-          go list ./... | grep -v '/web/' | xargs -r gocyclo -over 10 | tee -a "$GITHUB_STEP_SUMMARY" || true
+          go list -f '{{.Dir}}' ./... | grep -v '/web/' | xargs -r gocyclo -over 10 | awk '!seen[$0]++' | grep -v '/web/' | tee -a "$GITHUB_STEP_SUMMARY" || true
 
   # ============================================================
   # CLASSIFICATION: UNIT TESTING
