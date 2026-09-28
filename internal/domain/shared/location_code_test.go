@@ -7,12 +7,16 @@ import (
 	"github.com/claudioed/facility-layout/internal/domain/shared"
 )
 
+// locationCodeCase is one row of the NewLocationCode table: either a valid
+// seven-segment code or an invalid one (wantErr set).
+type locationCodeCase struct {
+	name                                          string
+	site, area, zone, aisle, bay, level, position string
+	wantErr                                       error
+}
+
 func TestNewLocationCode(t *testing.T) {
-	tests := []struct {
-		name                                          string
-		site, area, zone, aisle, bay, level, position string
-		wantErr                                       error
-	}{
+	tests := []locationCodeCase{
 		{name: "the canonical industry-standard code", site: "WH1", area: "STOR", zone: "AMB", aisle: "A07", bay: "03", level: "02", position: "B"},
 		{name: "digits only everywhere", site: "1", area: "2", zone: "3", aisle: "4", bay: "5", level: "6", position: "7"},
 		{name: "empty site", site: "", area: "STOR", zone: "AMB", aisle: "A07", bay: "03", level: "02", position: "B", wantErr: shared.ErrEmptyLocationSegment},
@@ -30,27 +34,35 @@ func TestNewLocationCode(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			code, err := shared.NewLocationCode(tc.site, tc.area, tc.zone, tc.aisle, tc.bay, tc.level, tc.position)
-			if tc.wantErr != nil {
-				if !errors.Is(err, tc.wantErr) {
-					t.Fatalf("expected error %v, got %v", tc.wantErr, err)
-				}
-				if !code.IsZero() {
-					t.Fatal("expected the zero LocationCode on failure")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if code.Site() != tc.site || code.Area() != tc.area || code.Zone() != tc.zone ||
-				code.Aisle() != tc.aisle || code.Bay() != tc.bay || code.Level() != tc.level || code.Position() != tc.position {
-				t.Fatalf("segments did not round-trip: %+v", code)
-			}
-			if code.IsZero() {
-				t.Fatal("a valid code must never be the zero value")
-			}
+			assertNewLocationCode(t, tc)
 		})
+	}
+}
+
+// assertNewLocationCode exercises one table row: the error arm checks the
+// typed sentinel and the zero value, the success arm checks that all seven
+// segments round-trip.
+func assertNewLocationCode(t *testing.T, tc locationCodeCase) {
+	t.Helper()
+	code, err := shared.NewLocationCode(tc.site, tc.area, tc.zone, tc.aisle, tc.bay, tc.level, tc.position)
+	if tc.wantErr != nil {
+		if !errors.Is(err, tc.wantErr) {
+			t.Fatalf("expected error %v, got %v", tc.wantErr, err)
+		}
+		if !code.IsZero() {
+			t.Fatal("expected the zero LocationCode on failure")
+		}
+		return
+	}
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if code.Site() != tc.site || code.Area() != tc.area || code.Zone() != tc.zone ||
+		code.Aisle() != tc.aisle || code.Bay() != tc.bay || code.Level() != tc.level || code.Position() != tc.position {
+		t.Fatalf("segments did not round-trip: %+v", code)
+	}
+	if code.IsZero() {
+		t.Fatal("a valid code must never be the zero value")
 	}
 }
 

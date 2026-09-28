@@ -66,15 +66,19 @@ func TestRehydrateLocationType(t *testing.T) {
 	}
 }
 
+// zonePredicateCase is one row of the NewZonePredicate table: either a
+// constraining predicate (wantString set) or an invalid one (wantErr set).
+type zonePredicateCase struct {
+	name             string
+	zoneCode         string
+	temperatureClass shared.TemperatureClass
+	hazmat           *bool
+	wantString       string
+	wantErr          error
+}
+
 func TestNewZonePredicate(t *testing.T) {
-	tests := []struct {
-		name             string
-		zoneCode         string
-		temperatureClass shared.TemperatureClass
-		hazmat           *bool
-		wantString       string
-		wantErr          error
-	}{
+	tests := []zonePredicateCase{
 		{name: "pinned to a zone code", zoneCode: "HAZ", wantString: "zoneCode=HAZ"},
 		{name: "pinned to a temperature class", temperatureClass: shared.Frozen, wantString: "temperatureClass=Frozen"},
 		{name: "pinned to hazmat", hazmat: boolPtr(true), wantString: "hazmat=true"},
@@ -85,26 +89,34 @@ func TestNewZonePredicate(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			p, err := placement.NewZonePredicate(tc.zoneCode, tc.temperatureClass, tc.hazmat)
-			if tc.wantErr != nil {
-				if !errors.Is(err, tc.wantErr) {
-					t.Fatalf("expected error %v, got %v", tc.wantErr, err)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if p.String() != tc.wantString {
-				t.Fatalf("expected predicate %q, got %q", tc.wantString, p.String())
-			}
-			if p.ZoneCode() != tc.zoneCode || p.TemperatureClass() != tc.temperatureClass {
-				t.Fatalf("predicate lost its dimensions: %+v", p)
-			}
-			if (p.Hazmat() == nil) != (tc.hazmat == nil) {
-				t.Fatalf("predicate lost its hazmat dimension: %+v", p)
-			}
+			assertNewZonePredicate(t, tc)
 		})
+	}
+}
+
+// assertNewZonePredicate exercises one table row: the error arm checks the
+// typed sentinel, the success arm checks the rendered predicate and that no
+// dimension was lost.
+func assertNewZonePredicate(t *testing.T, tc zonePredicateCase) {
+	t.Helper()
+	p, err := placement.NewZonePredicate(tc.zoneCode, tc.temperatureClass, tc.hazmat)
+	if tc.wantErr != nil {
+		if !errors.Is(err, tc.wantErr) {
+			t.Fatalf("expected error %v, got %v", tc.wantErr, err)
+		}
+		return
+	}
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if p.String() != tc.wantString {
+		t.Fatalf("expected predicate %q, got %q", tc.wantString, p.String())
+	}
+	if p.ZoneCode() != tc.zoneCode || p.TemperatureClass() != tc.temperatureClass {
+		t.Fatalf("predicate lost its dimensions: %+v", p)
+	}
+	if (p.Hazmat() == nil) != (tc.hazmat == nil) {
+		t.Fatalf("predicate lost its hazmat dimension: %+v", p)
 	}
 }
 

@@ -46,18 +46,22 @@ func mustCapacity(t *testing.T, w, v float64) shared.Capacity {
 	return c
 }
 
+// integrationEventCase is one row of the integration-publisher table: a
+// domain event plus the envelope shape it must be published under.
+type integrationEventCase struct {
+	name      string
+	event     shared.DomainEvent
+	wantType  string
+	wantKey   string
+	wantField string // a json field expected in data
+	wantValue any
+}
+
 func TestPublisher_PublishesEachEventType(t *testing.T) {
 	at := time.Date(2026, 2, 3, 4, 5, 6, 0, time.UTC)
 	code := mustLocationCode(t)
 
-	tests := []struct {
-		name      string
-		event     shared.DomainEvent
-		wantType  string
-		wantKey   string
-		wantField string // a json field expected in data
-		wantValue any
-	}{
+	tests := []integrationEventCase{
 		{
 			name:      "SiteRegistered",
 			event:     shared.NewSiteRegistered(at, "WH1", "Main"),
@@ -126,46 +130,53 @@ func TestPublisher_PublishesEachEventType(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			w := &fakeWriter{}
-			p := outboundkafka.NewPublisher(nil, func() string { return "evt-fixed" })
-			p.Writer = w
-
-			if err := p.Publish(context.Background(), tt.event); err != nil {
-				t.Fatalf("Publish: %v", err)
-			}
-			if len(w.msgs) != 1 {
-				t.Fatalf("expected 1 message, got %d", len(w.msgs))
-			}
-			msg := w.msgs[0]
-			if string(msg.Key) != tt.wantKey {
-				t.Errorf("key = %q, want %q", string(msg.Key), tt.wantKey)
-			}
-
-			var env outboundkafka.Envelope
-			if err := json.Unmarshal(msg.Value, &env); err != nil {
-				t.Fatalf("unmarshal envelope: %v", err)
-			}
-			if env.EventType != tt.wantType {
-				t.Errorf("event_type = %q, want %q", env.EventType, tt.wantType)
-			}
-			if env.EventId != "evt-fixed" {
-				t.Errorf("event_id = %q, want evt-fixed", env.EventId)
-			}
-			if env.Source != "facility-layout" {
-				t.Errorf("source = %q, want facility-layout", env.Source)
-			}
-			if !env.OccurredAt.Equal(at) {
-				t.Errorf("occurred_at = %v, want %v", env.OccurredAt, at)
-			}
-
-			var data map[string]any
-			if err := json.Unmarshal(env.Data, &data); err != nil {
-				t.Fatalf("unmarshal data: %v", err)
-			}
-			if got := data[tt.wantField]; got != tt.wantValue {
-				t.Errorf("data[%q] = %v (%T), want %v (%T)", tt.wantField, got, got, tt.wantValue, tt.wantValue)
-			}
+			assertIntegrationEventPublished(t, tt, at)
 		})
+	}
+}
+
+// assertIntegrationEventPublished publishes one table row's event through a
+// fresh Publisher and checks the resulting Envelope v1 wire shape.
+func assertIntegrationEventPublished(t *testing.T, tt integrationEventCase, at time.Time) {
+	t.Helper()
+	w := &fakeWriter{}
+	p := outboundkafka.NewPublisher(nil, func() string { return "evt-fixed" })
+	p.Writer = w
+
+	if err := p.Publish(context.Background(), tt.event); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	if len(w.msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(w.msgs))
+	}
+	msg := w.msgs[0]
+	if string(msg.Key) != tt.wantKey {
+		t.Errorf("key = %q, want %q", string(msg.Key), tt.wantKey)
+	}
+
+	var env outboundkafka.Envelope
+	if err := json.Unmarshal(msg.Value, &env); err != nil {
+		t.Fatalf("unmarshal envelope: %v", err)
+	}
+	if env.EventType != tt.wantType {
+		t.Errorf("event_type = %q, want %q", env.EventType, tt.wantType)
+	}
+	if env.EventId != "evt-fixed" {
+		t.Errorf("event_id = %q, want evt-fixed", env.EventId)
+	}
+	if env.Source != "facility-layout" {
+		t.Errorf("source = %q, want facility-layout", env.Source)
+	}
+	if !env.OccurredAt.Equal(at) {
+		t.Errorf("occurred_at = %v, want %v", env.OccurredAt, at)
+	}
+
+	var data map[string]any
+	if err := json.Unmarshal(env.Data, &data); err != nil {
+		t.Fatalf("unmarshal data: %v", err)
+	}
+	if got := data[tt.wantField]; got != tt.wantValue {
+		t.Errorf("data[%q] = %v (%T), want %v (%T)", tt.wantField, got, got, tt.wantValue, tt.wantValue)
 	}
 }
 

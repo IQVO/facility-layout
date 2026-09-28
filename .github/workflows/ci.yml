@@ -37,6 +37,35 @@ jobs:
           version: v2.13.1
           args: --timeout=5m
 
+  # Complexity gate as its own named check: cyclomatic (gocyclo, cyclop),
+  # cognitive (gocognit), nesting (nestif) and function size (funlen).
+  # Thresholds live in .golangci.yml; --enable-only runs just these five
+  # so violations surface under their own check name. The report step is
+  # informational (step summary, functions over 10 vs the gate of 15).
+  # ============================================================
+  # CLASSIFICATION: LINTERS & STATIC ANALYSIS (code complexity)
+  # ============================================================
+  complexity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false          # golangci-lint-action manages its own cache
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
+        with:
+          version: v2.13.1
+          args: --timeout=5m --enable-only gocyclo,gocognit,cyclop,funlen,nestif
+      - name: gocyclo report (functions over 10 — informational, gate is 15)
+        if: always()
+        run: |
+          set -euo pipefail
+          go install github.com/fzipp/gocyclo/cmd/gocyclo@v0.6.0
+          echo "### gocyclo — functions over 10 (informational; the gate is 15)" >> "$GITHUB_STEP_SUMMARY"
+          go list -f '{{.Dir}}' ./... | grep -v '/web/' | xargs -r gocyclo -over 10 | awk '!seen[$0]++' | grep -v '/web/' | tee -a "$GITHUB_STEP_SUMMARY" || true
+
   # ============================================================
   # CLASSIFICATION: UNIT TESTING
   # ============================================================
@@ -458,7 +487,7 @@ jobs:
   docker-publish:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [lint, test, bdd, contract, integration, mutation-fast, vuln, api-lint, arch-test, evals-tests]
+    needs: [lint, complexity, test, bdd, contract, integration, mutation-fast, vuln, api-lint, arch-test, evals-tests]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read

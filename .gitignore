@@ -12,3 +12,7 @@ bin/
 # Local scratch artifacts from browser-based verification
 .playwright-mcp/
 /*.png
+
+# Local tool-run artifacts (Schemathesis contract runs, Spectral installs)
+.schemathesis/
+.github/tooling/spectral/node_modules/
