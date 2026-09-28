@@ -6,7 +6,7 @@ metadata:
     {{- include "facility-layout.labels" . | nindent 4 }}
     app.kubernetes.io/component: api
 spec:
-  {{- if not .Values.autoscaling.enabled }}
+  {{- if not .Values.autoscaling.api.enabled }}
   replicas: {{ .Values.replicaCount }}
   {{- end }}
   selector:
