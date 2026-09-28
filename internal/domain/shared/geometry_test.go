@@ -103,50 +103,15 @@ func TestNewSegment(t *testing.T) {
 	end := mustPoint(t, 3, 4, 0)
 
 	t.Run("constructs from two distinct real points and computes length", func(t *testing.T) {
-		s, err := shared.NewSegment(start, end)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if s.Start() != start || s.End() != end {
-			t.Fatalf("unexpected segment %+v", s)
-		}
-		if s.IsZero() {
-			t.Fatal("a constructed segment must not report IsZero")
-		}
-		if math.Abs(s.LengthM()-5.0) > 1e-9 {
-			t.Fatalf("expected a 3-4-5 triangle length of 5, got %v", s.LengthM())
-		}
+		testSegmentFromDistinctPoints(t, start, end)
 	})
 
 	t.Run("length is computed from the difference of non-zero endpoints", func(t *testing.T) {
-		// A start point at the origin makes end-start and end+start
-		// identical, which would let an arithmetic-operator mutant
-		// survive undetected. Both endpoints here are non-zero on
-		// every axis, AND all three deltas (dx, dy, dz) are distinct
-		// non-zero values, so a mutant that swaps + for - between
-		// terms, or * for / within a term, changes the result.
-		off := mustPoint(t, 5, 5, 5)
-		far, err := shared.NewPoint3D(6, 7, 7)
-		if err != nil {
-			t.Fatalf("far: %v", err)
-		}
-		s, err := shared.NewSegment(off, far)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		// dx=1, dy=2, dz=2 -> sqrt(1+4+4) = 3.
-		if math.Abs(s.LengthM()-3.0) > 1e-9 {
-			t.Fatalf("expected length 3 from deltas (1,2,2), got %v", s.LengthM())
-		}
+		testSegmentLengthFromDeltas(t)
 	})
 
 	t.Run("rejects a zero endpoint", func(t *testing.T) {
-		if _, err := shared.NewSegment(shared.Point3D{}, end); err == nil {
-			t.Fatal("expected an error for a zero start point")
-		}
-		if _, err := shared.NewSegment(start, shared.Point3D{}); err == nil {
-			t.Fatal("expected an error for a zero end point")
-		}
+		testSegmentRejectsZeroEndpoint(t, start, end)
 	})
 
 	t.Run("rejects identical start and end", func(t *testing.T) {
@@ -161,6 +126,56 @@ func TestNewSegment(t *testing.T) {
 			t.Fatal("expected the zero Segment to report IsZero")
 		}
 	})
+}
+
+func testSegmentFromDistinctPoints(t *testing.T, start, end shared.Point3D) {
+	t.Helper()
+	s, err := shared.NewSegment(start, end)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if s.Start() != start || s.End() != end {
+		t.Fatalf("unexpected segment %+v", s)
+	}
+	if s.IsZero() {
+		t.Fatal("a constructed segment must not report IsZero")
+	}
+	if math.Abs(s.LengthM()-5.0) > 1e-9 {
+		t.Fatalf("expected a 3-4-5 triangle length of 5, got %v", s.LengthM())
+	}
+}
+
+func testSegmentLengthFromDeltas(t *testing.T) {
+	t.Helper()
+	// A start point at the origin makes end-start and end+start
+	// identical, which would let an arithmetic-operator mutant
+	// survive undetected. Both endpoints here are non-zero on
+	// every axis, AND all three deltas (dx, dy, dz) are distinct
+	// non-zero values, so a mutant that swaps + for - between
+	// terms, or * for / within a term, changes the result.
+	off := mustPoint(t, 5, 5, 5)
+	far, err := shared.NewPoint3D(6, 7, 7)
+	if err != nil {
+		t.Fatalf("far: %v", err)
+	}
+	s, err := shared.NewSegment(off, far)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// dx=1, dy=2, dz=2 -> sqrt(1+4+4) = 3.
+	if math.Abs(s.LengthM()-3.0) > 1e-9 {
+		t.Fatalf("expected length 3 from deltas (1,2,2), got %v", s.LengthM())
+	}
+}
+
+func testSegmentRejectsZeroEndpoint(t *testing.T, start, end shared.Point3D) {
+	t.Helper()
+	if _, err := shared.NewSegment(shared.Point3D{}, end); err == nil {
+		t.Fatal("expected an error for a zero start point")
+	}
+	if _, err := shared.NewSegment(start, shared.Point3D{}); err == nil {
+		t.Fatal("expected an error for a zero end point")
+	}
 }
 
 func TestSegmentDistanceToPoint(t *testing.T) {

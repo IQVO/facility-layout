@@ -12,12 +12,39 @@ linters:
     - unconvert
     - gocritic
     - gosec
+    - gocyclo
+    - gocognit
+    - cyclop
+    - funlen
+    - nestif
+  settings:
+    cyclop:
+      max-complexity: 15
+      package-average: 10.0
+    gocognit:
+      min-complexity: 20
+    gocyclo:
+      min-complexity: 15
+    funlen:
+      lines: 80
+      statements: 50
+    nestif:
+      min-complexity: 5
   exclusions:
     rules:
       - path: _test\.go
         linters:
           - errcheck
           - gosec
+          - funlen
+          - gocyclo
+      - path: ^web/
+        linters:
+          - gocyclo
+          - gocognit
+          - cyclop
+          - funlen
+          - nestif
 formatters:
   enable:
     - gofmt

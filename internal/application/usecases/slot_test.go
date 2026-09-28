@@ -190,25 +190,24 @@ func seedFunctionalRoles(t *testing.T, h *harness) {
 	}
 }
 
+// functionalSlotCase is one row of the functional-attributes table: either a
+// rejected registration (wantErr) or one whose slot must satisfy verify.
+type functionalSlotCase struct {
+	name        string
+	locationTyp string
+	dockFlow    string
+	activities  []string
+	wantErr     error
+	verify      func(t *testing.T, s *slot.LocationSlot)
+}
+
 func TestRegisterLocationSlotFunctionalAttributes(t *testing.T) {
-	tests := []struct {
-		name        string
-		locationTyp string
-		dockFlow    string
-		activities  []string
-		wantErr     error
-		verify      func(t *testing.T, s *slot.LocationSlot)
-	}{
+	tests := []functionalSlotCase{
 		{
 			name:        "a dock slot with a valid flow carries it",
 			locationTyp: "DockDoor",
 			dockFlow:    "Inbound",
-			verify: func(t *testing.T, s *slot.LocationSlot) {
-				t.Helper()
-				if s.Functional().DockFlow() != slot.Inbound {
-					t.Fatalf("expected dockFlow Inbound, got %q", s.Functional().DockFlow())
-				}
-			},
+			verify:      verifySlotCarriesDockFlow,
 		},
 		{
 			name:        "a dock slot with an unknown flow is rejected",
@@ -232,13 +231,7 @@ func TestRegisterLocationSlotFunctionalAttributes(t *testing.T) {
 			name:        "a work center slot with valid activities carries them sorted",
 			locationTyp: "PackBenches",
 			activities:  []string{"VAS", "Pack"},
-			verify: func(t *testing.T, s *slot.LocationSlot) {
-				t.Helper()
-				got := s.Functional().Activities()
-				if len(got) != 2 || got[0] != slot.Pack || got[1] != slot.VAS {
-					t.Fatalf("expected sorted [Pack VAS], got %v", got)
-				}
-			},
+			verify:      verifySlotCarriesSortedActivities,
 		},
 		{
 			name:        "a work center slot with an unknown activity is rejected",
@@ -268,28 +261,54 @@ func TestRegisterLocationSlotFunctionalAttributes(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			h := newHarness(t)
-			seedFunctionalRoles(t, h)
-			h.metrics.outcomes = nil
-
-			s, err := h.registerSlot.Execute(h.ctx(), mustCode(t, "WH1-STOR-AMB-A07-03-02-B"), tc.locationTyp, shared.Capacity{}, tc.dockFlow, tc.activities)
-			if tc.wantErr != nil {
-				assertErrorIs(t, err, tc.wantErr)
-				h.assertNotPublished("LocationSlotRegistered")
-				if len(h.metrics.outcomes) != 1 || h.metrics.outcomes[0] != usecases.OutcomeRejected {
-					t.Fatalf("expected one rejected outcome, got %v", h.metrics.outcomes)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			h.assertPublished("LocationSlotRegistered")
-			if len(h.metrics.outcomes) != 1 || h.metrics.outcomes[0] != usecases.OutcomeAccepted {
-				t.Fatalf("expected one accepted outcome, got %v", h.metrics.outcomes)
-			}
-			tc.verify(t, s)
+			runFunctionalSlotCase(t, tc)
 		})
+	}
+}
+
+// runFunctionalSlotCase exercises one table row: the error arm checks the
+// typed sentinel, the untouched read model, and the rejected metric outcome;
+// the success arm checks the published event, accepted metric outcome, and
+// the row's verify assertions.
+func runFunctionalSlotCase(t *testing.T, tc functionalSlotCase) {
+	t.Helper()
+	h := newHarness(t)
+	seedFunctionalRoles(t, h)
+	h.metrics.outcomes = nil
+
+	s, err := h.registerSlot.Execute(h.ctx(), mustCode(t, "WH1-STOR-AMB-A07-03-02-B"), tc.locationTyp, shared.Capacity{}, tc.dockFlow, tc.activities)
+	if tc.wantErr != nil {
+		assertErrorIs(t, err, tc.wantErr)
+		h.assertNotPublished("LocationSlotRegistered")
+		if len(h.metrics.outcomes) != 1 || h.metrics.outcomes[0] != usecases.OutcomeRejected {
+			t.Fatalf("expected one rejected outcome, got %v", h.metrics.outcomes)
+		}
+		return
+	}
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	h.assertPublished("LocationSlotRegistered")
+	if len(h.metrics.outcomes) != 1 || h.metrics.outcomes[0] != usecases.OutcomeAccepted {
+		t.Fatalf("expected one accepted outcome, got %v", h.metrics.outcomes)
+	}
+	tc.verify(t, s)
+}
+
+// verifySlotCarriesDockFlow checks the dock flow stuck to the slot.
+func verifySlotCarriesDockFlow(t *testing.T, s *slot.LocationSlot) {
+	t.Helper()
+	if s.Functional().DockFlow() != slot.Inbound {
+		t.Fatalf("expected dockFlow Inbound, got %q", s.Functional().DockFlow())
+	}
+}
+
+// verifySlotCarriesSortedActivities checks the deduped, sorted activity list.
+func verifySlotCarriesSortedActivities(t *testing.T, s *slot.LocationSlot) {
+	t.Helper()
+	got := s.Functional().Activities()
+	if len(got) != 2 || got[0] != slot.Pack || got[1] != slot.VAS {
+		t.Fatalf("expected sorted [Pack VAS], got %v", got)
 	}
 }
 

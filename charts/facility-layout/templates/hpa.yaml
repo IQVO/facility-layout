@@ -1,24 +1,103 @@
-{{- if .Values.autoscaling.enabled }}
+{{- if .Values.autoscaling.api.enabled }}
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: {{ include "facility-layout.fullname" . }}
   labels:
     {{- include "facility-layout.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
     name: {{ include "facility-layout.fullname" . }}
-  minReplicas: {{ .Values.autoscaling.minReplicas }}
-  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  minReplicas: {{ .Values.autoscaling.api.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.api.maxReplicas }}
   metrics:
-    {{- if .Values.autoscaling.targetCPUUtilizationPercentage }}
+    {{- if .Values.autoscaling.api.targetCPUUtilizationPercentage }}
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }}
+          averageUtilization: {{ .Values.autoscaling.api.targetCPUUtilizationPercentage }}
+    {{- end }}
+{{- end }}
+---
+{{- if and .Values.analytics.enabled .Values.autoscaling.projector.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "facility-layout.projectorFullname" . }}
+  labels:
+    {{- include "facility-layout.labels" . | nindent 4 }}
+    app.kubernetes.io/component: analytics-projector
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "facility-layout.projectorFullname" . }}
+  minReplicas: {{ .Values.autoscaling.projector.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.projector.maxReplicas }}
+  metrics:
+    {{- if .Values.autoscaling.projector.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.projector.targetCPUUtilizationPercentage }}
+    {{- end }}
+{{- end }}
+---
+{{- if and .Values.analytics.enabled .Values.autoscaling.reports.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "facility-layout.reportsFullname" . }}
+  labels:
+    {{- include "facility-layout.labels" . | nindent 4 }}
+    app.kubernetes.io/component: analytics-reports
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "facility-layout.reportsFullname" . }}
+  minReplicas: {{ .Values.autoscaling.reports.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.reports.maxReplicas }}
+  metrics:
+    {{- if .Values.autoscaling.reports.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.reports.targetCPUUtilizationPercentage }}
+    {{- end }}
+{{- end }}
+---
+{{- if and .Values.frontend.enabled .Values.autoscaling.frontend.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "facility-layout.frontendFullname" . }}
+  labels:
+    {{- include "facility-layout.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "facility-layout.frontendFullname" . }}
+  minReplicas: {{ .Values.autoscaling.frontend.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.frontend.maxReplicas }}
+  metrics:
+    {{- if .Values.autoscaling.frontend.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.frontend.targetCPUUtilizationPercentage }}
     {{- end }}
 {{- end }}

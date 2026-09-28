@@ -273,12 +273,7 @@ func (c *AnalyticsConsumer) HandleMessage(ctx context.Context, raw []byte) error
 	// event_type is acknowledged without touching the read model or the
 	// processed set, so a later contract change could still reprocess it.
 	name := eventName(env.EventType)
-	switch name {
-	case "SiteRegistered", "ZoneRegistered", "AisleRegistered",
-		"LocationTypeRegistered", "PlacementRuleDefined",
-		"LocationSlotRegistered", "LocationSlotDecommissioned",
-		"FacilityLayoutImported":
-	default:
+	if !isCatalogChangeEvent(name) {
 		return nil
 	}
 
@@ -295,7 +290,7 @@ func (c *AnalyticsConsumer) HandleMessage(ctx context.Context, raw []byte) error
 		return fmt.Errorf("analytics: decode data: %w", err)
 	}
 
-	if err := c.applyProjection(ctx, name, env, data); err != nil {
+	if err := c.applyCatalogChange(ctx, env, data, name); err != nil {
 		return err
 	}
 
@@ -309,11 +304,26 @@ func (c *AnalyticsConsumer) HandleMessage(ctx context.Context, raw []byte) error
 	return nil
 }
 
-// applyProjection dispatches the decoded envelope to the matching
-// ProjectionStore Apply* method. Split out of HandleMessage purely so the
-// apply-then-claim ordering documented on HandleMessage reads as one
-// straight-line sequence rather than being interleaved with this switch.
-func (c *AnalyticsConsumer) applyProjection(ctx context.Context, name string, env analyticsEnvelope, data analyticsData) error {
+// isCatalogChangeEvent reports whether name belongs to the catalog-change
+// event set the Layout Catalog Growth & Change report derives from.
+func isCatalogChangeEvent(name string) bool {
+	switch name {
+	case "SiteRegistered", "ZoneRegistered", "AisleRegistered",
+		"LocationTypeRegistered", "PlacementRuleDefined",
+		"LocationSlotRegistered", "LocationSlotDecommissioned",
+		"FacilityLayoutImported":
+		return true
+	default:
+		return false
+	}
+}
+
+// applyCatalogChange routes one decoded, deduped envelope to its projection
+// method. Scope follows the event: site-scoped events carry the site code,
+// slot events the zone derived from the location code, and catalog-wide
+// definitions (location types, placement rules, imports) land in the empty
+// catalog-wide scope.
+func (c *AnalyticsConsumer) applyCatalogChange(ctx context.Context, env analyticsEnvelope, data analyticsData, name string) error {
 	switch name {
 	case "SiteRegistered":
 		return c.Projection.ApplySiteRegistered(ctx, env.EventId, data.SiteCode, env.OccurredAt)
