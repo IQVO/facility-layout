@@ -54,12 +54,16 @@ type AnalyticsPublisher struct {
 
 // NewAnalyticsPublisher constructs an AnalyticsPublisher writing to
 // AnalyticsTopic on brokers. newId mints the envelope event_id (e.g. a UUID).
+//
+// Balancer is kafkago.Hash, not LeastBytes -- see Publisher.NewPublisher's
+// doc comment (publisher.go) for why LeastBytes silently ignores Key for
+// partition routing; this writer had the same latent gap (ADR 0021).
 func NewAnalyticsPublisher(brokers []string, newId func() string) *AnalyticsPublisher {
 	return &AnalyticsPublisher{
 		Writer: &kafkago.Writer{
 			Addr:                   kafkago.TCP(brokers...),
 			Topic:                  AnalyticsTopic,
-			Balancer:               &kafkago.LeastBytes{},
+			Balancer:               &kafkago.Hash{},
 			AllowAutoTopicCreation: true,
 		},
 		NewId: newId,

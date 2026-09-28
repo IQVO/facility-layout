@@ -20,11 +20,15 @@ type RelaySink struct {
 
 // NewRelaySink constructs a RelaySink writing to brokers with no fixed
 // topic.
+//
+// Balancer is kafkago.Hash, not LeastBytes -- see Publisher.NewPublisher's
+// doc comment (publisher.go) for why LeastBytes silently ignores Key for
+// partition routing; this writer had the same latent gap (ADR 0021).
 func NewRelaySink(brokers []string) *RelaySink {
 	return &RelaySink{
 		Writer: &kafkago.Writer{
 			Addr:                   kafkago.TCP(brokers...),
-			Balancer:               &kafkago.LeastBytes{},
+			Balancer:               &kafkago.Hash{},
 			AllowAutoTopicCreation: true,
 		},
 	}

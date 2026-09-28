@@ -77,12 +77,21 @@ type Publisher struct {
 
 // NewPublisher constructs a Publisher writing to Topic on brokers. newId
 // mints the envelope event_id (e.g. a UUID).
+//
+// Balancer is kafkago.Hash (FNV-1a over Message.Key), not LeastBytes: this
+// package's kafka-go dependency does NOT replicate Kafka's own key-hashing
+// partitioner just because a message carries a non-nil Key — the Balancer
+// alone decides partition placement, and LeastBytes routes purely by
+// cumulative byte volume, ignoring Key entirely. Hash is the balancer that
+// actually gives "same Key always maps to the same partition" (see ADR
+// 0021, mirroring order-management PR #111 / ADR 0027, both prompted by
+// warehouse-infra PR #42's 1->8 partition scaleup).
 func NewPublisher(brokers []string, newId func() string) *Publisher {
 	return &Publisher{
 		Writer: &kafkago.Writer{
 			Addr:                   kafkago.TCP(brokers...),
 			Topic:                  Topic,
-			Balancer:               &kafkago.LeastBytes{},
+			Balancer:               &kafkago.Hash{},
 			AllowAutoTopicCreation: true,
 		},
 		NewId: newId,
