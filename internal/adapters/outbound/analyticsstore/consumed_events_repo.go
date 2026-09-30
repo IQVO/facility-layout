@@ -19,6 +19,19 @@ func NewConsumedEventsRepo(pool *pgxpool.Pool) *ConsumedEventsRepo {
 	return &ConsumedEventsRepo{pool: pool}
 }
 
+// IsProcessed reports whether eventId is already recorded in
+// analytics_consumed_events.
+func (r *ConsumedEventsRepo) IsProcessed(ctx context.Context, eventId string) (bool, error) {
+	var exists bool
+	err := r.pool.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM analytics_consumed_events WHERE event_id = $1)`,
+		eventId).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
 // MarkProcessed records eventId in analytics_consumed_events if absent,
 // returning true iff this call newly recorded it.
 func (r *ConsumedEventsRepo) MarkProcessed(ctx context.Context, eventId string) (bool, error) {

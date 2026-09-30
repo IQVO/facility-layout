@@ -28,7 +28,7 @@ const aisleColumns = `zone_id, aisle_code, sequence_hint, direction, status,
 // Save upserts the aisle.
 func (r *AisleRepo) Save(ctx context.Context, a *aisle.Aisle) error {
 	centreline := a.Centreline()
-	_, err := r.pool.Exec(ctx, `
+	_, err := querierFrom(ctx, r.pool).Exec(ctx, `
 		INSERT INTO aisles (
 			id, zone_id, aisle_code, sequence_hint, direction, status,
 			centreline_start_x_m, centreline_start_y_m, centreline_start_z_m,
@@ -53,7 +53,7 @@ func (r *AisleRepo) Save(ctx context.Context, a *aisle.Aisle) error {
 
 // FindByID returns the aisle, or (nil, nil) when it does not exist.
 func (r *AisleRepo) FindByID(ctx context.Context, id string) (*aisle.Aisle, error) {
-	row := r.pool.QueryRow(ctx, `SELECT `+aisleColumns+` FROM aisles WHERE id = $1`, id)
+	row := querierFrom(ctx, r.pool).QueryRow(ctx, `SELECT `+aisleColumns+` FROM aisles WHERE id = $1`, id)
 	a, err := scanAisle(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -66,7 +66,7 @@ func (r *AisleRepo) FindByID(ctx context.Context, id string) (*aisle.Aisle, erro
 
 // ListByZone returns every aisle in a zone, in walk order.
 func (r *AisleRepo) ListByZone(ctx context.Context, zoneID string) ([]*aisle.Aisle, error) {
-	rows, err := r.pool.Query(ctx, `SELECT `+aisleColumns+`
+	rows, err := querierFrom(ctx, r.pool).Query(ctx, `SELECT `+aisleColumns+`
 		FROM aisles WHERE zone_id = $1 ORDER BY sequence_hint, aisle_code`, zoneID)
 	if err != nil {
 		return nil, err

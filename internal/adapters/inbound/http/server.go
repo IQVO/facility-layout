@@ -5,12 +5,14 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riandyrn/otelchi"
 	otelchimetric "github.com/riandyrn/otelchi/metric"
 
@@ -73,6 +75,27 @@ type Server struct {
 	RegisterCrossAisle        *usecases.RegisterCrossAisle
 	GetZoneTravelGraph        *usecases.GetZoneTravelGraph
 	EstimateTravelDistance    *usecases.EstimateTravelDistance
+
+	// IdempotencyPool, when non-nil, wires RequireIdempotencyKey (see
+	// idempotency.go) onto every true resource-creation POST below. A
+	// nil pool means "no transactional Postgres backing wired" (the
+	// in-memory dev/test configuration) — the middleware needs a real
+	// pgxpool.Pool to begin its own transaction, so it is simply not
+	// applied in that case, mirroring this codebase's existing
+	// convention for every other optional Postgres-backed capability
+	// (UnitOfWork, the outbox relay). Mirrors order-management's
+	// identically-named field (PR #105, ADR 0023).
+	IdempotencyPool *pgxpool.Pool
+
+	// Readiness backs GET /readyz (ADR-0020 §graceful shutdown, mirroring
+	// order-management's ADR-0025 verbatim): flipped to not-ready as the
+	// FIRST step of the composition root's shutdown sequence, before
+	// anything else stops, so a Kubernetes readinessProbe has a chance to
+	// observe the flip and stop routing new traffic during the drain
+	// window that follows. nil (the zero value of *Server, every existing
+	// test) always reports ready -- see Readiness.Ready's nil-receiver
+	// doc comment.
+	Readiness *Readiness
 }
 
 // NewRouter builds the chi router for every endpoint in CLAUDE.md's REST
@@ -118,49 +141,74 @@ func NewRouter(s *Server, logger *slog.Logger, opts ...RouterOption) http.Handle
 	r.Use(corsMiddleware())
 
 	r.Get("/healthz", s.handleHealthz)
+	r.Get("/readyz", HandleReadyz(s.Readiness))
+
+	// idempotent wraps a chi router handler behind RequireIdempotencyKey
+	// when a Postgres-backed IdempotencyPool is configured — every true
+	// resource-creation POST in this router (server-generated or
+	// natural-key id, caller does not supply the resource's identity in
+	// a way that makes a retry naturally safe) is wrapped this way, so a
+	// client retry after a lost response never double-creates. Bulk
+	// import (POST /locations/import) and decommission (POST
+	// /locations/{locationCode}/decommission) are deliberately excluded
+	// — see docs/docs/adr/0019-idempotency-key-middleware.md. IdempotencyPool
+	// nil (in-memory dev/test configuration, no transactional Postgres
+	// backing) is a no-op passthrough, mirroring order-management's
+	// identical nil convention.
+	idempotent := func(r chi.Router) chi.Router {
+		if s.IdempotencyPool != nil {
+			return r.With(RequireIdempotencyKey(s.IdempotencyPool))
+		}
+		return r
+	}
 
 	r.Route("/sites", func(r chi.Router) {
-		r.Post("/", s.handleRegisterSite)
+		idempotent(r).Post("/", s.handleRegisterSite)
 		r.Get("/", s.handleListSites)
 		r.Get("/{siteCode}", s.handleGetSite)
 		r.Get("/{siteCode}/layout", s.handleGetSiteLayout)
 		r.Get("/{siteCode}/locations", s.handleListLocationsByRole)
-		r.Post("/{siteCode}/zones", s.handleRegisterZone)
+		idempotent(r).Post("/{siteCode}/zones", s.handleRegisterZone)
 		r.Get("/{siteCode}/zones", s.handleListZones)
-		r.Post("/{siteCode}/structures", s.handleRegisterFixedStructure)
+		idempotent(r).Post("/{siteCode}/structures", s.handleRegisterFixedStructure)
 		r.Get("/{siteCode}/structures", s.handleListFixedStructures)
 	})
 
 	r.Route("/zones", func(r chi.Router) {
 		r.Get("/{zoneId}", s.handleGetZone)
 		r.Get("/{zoneId}/grid", s.handleGetZoneGrid)
-		r.Post("/{zoneId}/aisles", s.handleRegisterAisle)
+		idempotent(r).Post("/{zoneId}/aisles", s.handleRegisterAisle)
 		r.Get("/{zoneId}/aisles", s.handleListAisles)
 		r.Get("/{zoneId}/aisles/{aisleCode}", s.handleGetAisle)
 		r.Put("/{zoneId}/aisles/{aisleCode}/geometry", s.handleSetAisleGeometry)
-		r.Post("/{zoneId}/cross-aisles", s.handleRegisterCrossAisle)
+		idempotent(r).Post("/{zoneId}/cross-aisles", s.handleRegisterCrossAisle)
 		r.Get("/{zoneId}/travel-graph", s.handleGetZoneTravelGraph)
 	})
 
 	r.Get("/distance", s.handleEstimateTravelDistance)
 
 	r.Route("/location-types", func(r chi.Router) {
-		r.Post("/", s.handleRegisterLocationType)
+		idempotent(r).Post("/", s.handleRegisterLocationType)
 		r.Get("/", s.handleListLocationTypes)
 		r.Get("/{name}", s.handleGetLocationType)
 	})
 
 	r.Route("/placement-rules", func(r chi.Router) {
-		r.Post("/", s.handleDefinePlacementRule)
+		idempotent(r).Post("/", s.handleDefinePlacementRule)
 		r.Get("/", s.handleListPlacementRules)
 		r.Get("/{ruleId}", s.handleGetPlacementRule)
 	})
 
 	r.Route("/locations", func(r chi.Router) {
-		r.Post("/", s.handleRegisterLocationSlot)
+		idempotent(r).Post("/", s.handleRegisterLocationSlot)
+		// POST /locations/import is a BULK/batch import over many rows
+		// (partial-success semantics, ADR-0006) — deliberately excluded,
+		// see the idempotent helper's doc comment above.
 		r.Post("/import", s.handleImportFacilityLayout)
 		r.Get("/{locationCode}", s.handleGetLocationSlot)
 		r.Get("/{locationCode}/classification", s.handleGetLocationClassification)
+		// POST /locations/{locationCode}/decommission acts on an
+		// EXISTING caller-supplied resource, not a creation — excluded.
 		r.Post("/{locationCode}/decommission", s.handleDecommissionLocationSlot)
 		r.Put("/{locationCode}/geometry", s.handleSetLocationGeometry)
 	})
@@ -286,6 +334,10 @@ func (s *Server) handleRegisterAisle(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
+	if req.SequenceHint == nil {
+		writeError(w, r, errMissingSequenceHint)
+		return
+	}
 
 	direction, err := shared.ParseDirection(req.Direction)
 	if err != nil {
@@ -294,7 +346,7 @@ func (s *Server) handleRegisterAisle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	zoneID := chi.URLParam(r, "zoneId")
-	registered, err := s.RegisterAisle.Execute(r.Context(), zoneID, req.AisleCode, req.SequenceHint, direction)
+	registered, err := s.RegisterAisle.Execute(r.Context(), zoneID, req.AisleCode, *req.SequenceHint, direction)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -544,13 +596,19 @@ func (s *Server) handleImportFacilityLayout(w http.ResponseWriter, r *http.Reque
 // --------------------------------------------- "draw the warehouse" reads --
 
 func (s *Server) handleGetSiteLayout(w http.ResponseWriter, r *http.Request) {
+	format := r.URL.Query().Get("format")
+	if format != "" && format != "json" && format != "svg" {
+		writeProblem(w, http.StatusBadRequest, problemInfo{"invalid-layout-format", "Layout format must be json or svg"}, "layout format must be \"json\" or \"svg\", got "+strconv.Quote(format), r.URL.Path)
+		return
+	}
+
 	layout, err := s.GetSiteLayout.Execute(r.Context(), chi.URLParam(r, "siteCode"))
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
 
-	if r.URL.Query().Get("format") == "svg" {
+	if format == "svg" {
 		w.Header().Set("Content-Type", "image/svg+xml")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(renderLayoutSVG(layout)))

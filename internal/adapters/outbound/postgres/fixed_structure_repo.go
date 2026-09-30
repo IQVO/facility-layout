@@ -25,7 +25,7 @@ func NewFixedStructureRepo(pool *pgxpool.Pool) *FixedStructureRepo {
 // Save upserts the structure.
 func (r *FixedStructureRepo) Save(ctx context.Context, f *structure.FixedStructure) error {
 	footprint := f.Footprint()
-	_, err := r.pool.Exec(ctx, `
+	_, err := querierFrom(ctx, r.pool).Exec(ctx, `
 		INSERT INTO fixed_structures (id, site_code, kind, x_m, y_m, z_m, width_m, depth_m, height_m, label)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (id) DO UPDATE SET
@@ -46,7 +46,7 @@ func (r *FixedStructureRepo) Save(ctx context.Context, f *structure.FixedStructu
 
 // FindByID returns the structure, or (nil, nil) when it does not exist.
 func (r *FixedStructureRepo) FindByID(ctx context.Context, id string) (*structure.FixedStructure, error) {
-	row := r.pool.QueryRow(ctx, `
+	row := querierFrom(ctx, r.pool).QueryRow(ctx, `
 		SELECT site_code, kind, x_m, y_m, z_m, width_m, depth_m, height_m, label
 		FROM fixed_structures WHERE id = $1
 	`, id)
@@ -62,7 +62,7 @@ func (r *FixedStructureRepo) FindByID(ctx context.Context, id string) (*structur
 
 // ListBySite returns every structure in a site, ordered by id.
 func (r *FixedStructureRepo) ListBySite(ctx context.Context, siteCode string) ([]*structure.FixedStructure, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := querierFrom(ctx, r.pool).Query(ctx, `
 		SELECT id, site_code, kind, x_m, y_m, z_m, width_m, depth_m, height_m, label
 		FROM fixed_structures WHERE site_code = $1 ORDER BY id
 	`, siteCode)

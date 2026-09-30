@@ -12,6 +12,7 @@ import (
 	"github.com/claudioed/facility-layout/internal/domain/shared"
 	"github.com/claudioed/facility-layout/internal/domain/site"
 	"github.com/claudioed/facility-layout/internal/domain/slot"
+	"github.com/claudioed/facility-layout/internal/domain/structure"
 	"github.com/claudioed/facility-layout/internal/domain/zone"
 )
 
@@ -105,10 +106,19 @@ func (r *faultyAisleRepo) ListByZone(ctx context.Context, zoneID string) ([]*ais
 type faultySlotRepo struct {
 	*memory.SlotRepo
 	failFind, failSave, failListByAisle, failListByZone bool
+	// failFindOnCall, when positive, fails only the Nth FindByCode call
+	// (1-based) — for use cases that look up two different codes, so the
+	// second lookup's error branch is reachable independently of the first.
+	failFindOnCall int
+	findCalls      int
 }
 
 func (r *faultySlotRepo) FindByCode(ctx context.Context, code shared.LocationCode) (*slot.LocationSlot, error) {
 	if r.failFind {
+		return nil, errBoom
+	}
+	r.findCalls++
+	if r.failFindOnCall > 0 && r.findCalls == r.failFindOnCall {
 		return nil, errBoom
 	}
 	return r.SlotRepo.FindByCode(ctx, code)
@@ -193,18 +203,74 @@ type faultyPublisher struct{}
 
 func (faultyPublisher) Publish(context.Context, shared.DomainEvent) error { return errBoom }
 
+type faultyFixedStructureRepo struct {
+	*memory.FixedStructureRepo
+	failFind, failSave, failList bool
+}
+
+func (r *faultyFixedStructureRepo) FindByID(ctx context.Context, id string) (*structure.FixedStructure, error) {
+	if r.failFind {
+		return nil, errBoom
+	}
+	return r.FixedStructureRepo.FindByID(ctx, id)
+}
+
+func (r *faultyFixedStructureRepo) Save(ctx context.Context, f *structure.FixedStructure) error {
+	if r.failSave {
+		return errBoom
+	}
+	return r.FixedStructureRepo.Save(ctx, f)
+}
+
+func (r *faultyFixedStructureRepo) ListBySite(ctx context.Context, siteCode string) ([]*structure.FixedStructure, error) {
+	if r.failList {
+		return nil, errBoom
+	}
+	return r.FixedStructureRepo.ListBySite(ctx, siteCode)
+}
+
+type faultyCrossAisleRepo struct {
+	*memory.CrossAisleRepo
+	failFind, failSave, failList bool
+}
+
+func (r *faultyCrossAisleRepo) FindByAisles(ctx context.Context, zoneID, fromAisle, toAisle, atBay string) (*aisle.CrossAisle, error) {
+	if r.failFind {
+		return nil, errBoom
+	}
+	return r.CrossAisleRepo.FindByAisles(ctx, zoneID, fromAisle, toAisle, atBay)
+}
+
+func (r *faultyCrossAisleRepo) Save(ctx context.Context, c *aisle.CrossAisle) error {
+	if r.failSave {
+		return errBoom
+	}
+	return r.CrossAisleRepo.Save(ctx, c)
+}
+
+func (r *faultyCrossAisleRepo) ListByZone(ctx context.Context, zoneID string) ([]*aisle.CrossAisle, error) {
+	if r.failList {
+		return nil, errBoom
+	}
+	return r.CrossAisleRepo.ListByZone(ctx, zoneID)
+}
+
 // ---------------------------------------------------------------- tests ----
+
+// infrastructureFailureCase couples a scenario name with the wiring + call
+// that must surface errBoom.
+type infrastructureFailureCase struct {
+	name string
+	// run wires the failing dependency into its use case and invokes it.
+	run func(t *testing.T, h *harness) error
+}
 
 func TestUseCasesPropagateInfrastructureFailures(t *testing.T) {
 	code := mustCode(t, "WH1-STOR-AMB-A07-03-02-B")
 	capacity := mustCapacity(t, 1200, 2.4)
 	predicate := mustPredicate(t, "HAZ", "", nil)
 
-	tests := []struct {
-		name string
-		// run wires the failing dependency into its use case and invokes it.
-		run func(t *testing.T, h *harness) error
-	}{
+	tests := []infrastructureFailureCase{
 		{
 			name: "RegisterSite: site lookup fails",
 			run: func(_ *testing.T, h *harness) error {
@@ -629,85 +695,49 @@ func TestUseCasesPropagateInfrastructureFailures(t *testing.T) {
 		{
 			name: "ImportFacilityLayout: site lookup fails",
 			run: func(_ *testing.T, h *harness) error {
-				h.mustRegisterLocationType(placement.PalletRack, 1200, 2.4)
-				uc := importUseCase(h, func(uc *usecases.ImportFacilityLayout) {
+				return runImportWithFault(h, func(uc *usecases.ImportFacilityLayout) {
 					uc.Sites = &faultySiteRepo{SiteRepo: h.sites, failFind: true}
 				})
-				report, err := uc.Execute(h.ctx(), []usecases.ImportRow{row("STOR", "AMB", shared.Ambient, false, "A07", 7, "03", "02", "B", placement.PalletRack)})
-				if err != nil {
-					return err
-				}
-				return errors.New(report.Results[0].Error)
 			},
 		},
 		{
 			name: "ImportFacilityLayout: zone lookup fails",
 			run: func(_ *testing.T, h *harness) error {
-				h.mustRegisterLocationType(placement.PalletRack, 1200, 2.4)
-				uc := importUseCase(h, func(uc *usecases.ImportFacilityLayout) {
+				return runImportWithFault(h, func(uc *usecases.ImportFacilityLayout) {
 					uc.Zones = &faultyZoneRepo{ZoneRepo: h.zones, failFind: true}
 				})
-				report, err := uc.Execute(h.ctx(), []usecases.ImportRow{row("STOR", "AMB", shared.Ambient, false, "A07", 7, "03", "02", "B", placement.PalletRack)})
-				if err != nil {
-					return err
-				}
-				return errors.New(report.Results[0].Error)
 			},
 		},
 		{
 			name: "ImportFacilityLayout: aisle lookup fails",
 			run: func(_ *testing.T, h *harness) error {
-				h.mustRegisterLocationType(placement.PalletRack, 1200, 2.4)
-				uc := importUseCase(h, func(uc *usecases.ImportFacilityLayout) {
+				return runImportWithFault(h, func(uc *usecases.ImportFacilityLayout) {
 					uc.Aisles = &faultyAisleRepo{AisleRepo: h.aisles, failFind: true}
 				})
-				report, err := uc.Execute(h.ctx(), []usecases.ImportRow{row("STOR", "AMB", shared.Ambient, false, "A07", 7, "03", "02", "B", placement.PalletRack)})
-				if err != nil {
-					return err
-				}
-				return errors.New(report.Results[0].Error)
 			},
 		},
 		{
 			name: "ImportFacilityLayout: site save fails",
 			run: func(_ *testing.T, h *harness) error {
-				h.mustRegisterLocationType(placement.PalletRack, 1200, 2.4)
-				uc := importUseCase(h, func(uc *usecases.ImportFacilityLayout) {
+				return runImportWithFault(h, func(uc *usecases.ImportFacilityLayout) {
 					uc.Sites = &faultySiteRepo{SiteRepo: h.sites, failSave: true}
 				})
-				report, err := uc.Execute(h.ctx(), []usecases.ImportRow{row("STOR", "AMB", shared.Ambient, false, "A07", 7, "03", "02", "B", placement.PalletRack)})
-				if err != nil {
-					return err
-				}
-				return errors.New(report.Results[0].Error)
 			},
 		},
 		{
 			name: "ImportFacilityLayout: zone save fails",
 			run: func(_ *testing.T, h *harness) error {
-				h.mustRegisterLocationType(placement.PalletRack, 1200, 2.4)
-				uc := importUseCase(h, func(uc *usecases.ImportFacilityLayout) {
+				return runImportWithFault(h, func(uc *usecases.ImportFacilityLayout) {
 					uc.Zones = &faultyZoneRepo{ZoneRepo: h.zones, failSave: true}
 				})
-				report, err := uc.Execute(h.ctx(), []usecases.ImportRow{row("STOR", "AMB", shared.Ambient, false, "A07", 7, "03", "02", "B", placement.PalletRack)})
-				if err != nil {
-					return err
-				}
-				return errors.New(report.Results[0].Error)
 			},
 		},
 		{
 			name: "ImportFacilityLayout: aisle save fails",
 			run: func(_ *testing.T, h *harness) error {
-				h.mustRegisterLocationType(placement.PalletRack, 1200, 2.4)
-				uc := importUseCase(h, func(uc *usecases.ImportFacilityLayout) {
+				return runImportWithFault(h, func(uc *usecases.ImportFacilityLayout) {
 					uc.Aisles = &faultyAisleRepo{AisleRepo: h.aisles, failSave: true}
 				})
-				report, err := uc.Execute(h.ctx(), []usecases.ImportRow{row("STOR", "AMB", shared.Ambient, false, "A07", 7, "03", "02", "B", placement.PalletRack)})
-				if err != nil {
-					return err
-				}
-				return errors.New(report.Results[0].Error)
 			},
 		},
 		{
@@ -716,6 +746,238 @@ func TestUseCasesPropagateInfrastructureFailures(t *testing.T) {
 				h.seedAmbientAisle()
 				uc := importUseCase(h, func(uc *usecases.ImportFacilityLayout) { uc.Events = faultyPublisher{} })
 				_, err := uc.Execute(h.ctx(), []usecases.ImportRow{row("STOR", "AMB", shared.Ambient, false, "A07", 7, "03", "02", "B", placement.PalletRack)})
+				return err
+			},
+		},
+		{
+			name: "SetLocationGeometry: lookup fails",
+			run: func(_ *testing.T, h *harness) error {
+				uc := &usecases.SetLocationGeometry{Slots: &faultySlotRepo{SlotRepo: h.slots, failFind: true}, Events: h.publisher, Clock: h.clock}
+				_, err := uc.Execute(h.ctx(), code, mustGeomPoint(h.t, 1, 2, 0), mustGeomDimensions(h.t, 1, 1, 1), nil)
+				return err
+			},
+		},
+		{
+			name: "SetLocationGeometry: save fails",
+			run: func(_ *testing.T, h *harness) error {
+				h.seedAmbientAisle()
+				h.mustRegisterSlot(code.String(), placement.PalletRack)
+				uc := &usecases.SetLocationGeometry{Slots: &faultySlotRepo{SlotRepo: h.slots, failSave: true}, Events: h.publisher, Clock: h.clock}
+				_, err := uc.Execute(h.ctx(), code, mustGeomPoint(h.t, 1, 2, 0), mustGeomDimensions(h.t, 1, 1, 1), nil)
+				return err
+			},
+		},
+		{
+			name: "SetLocationGeometry: publish fails",
+			run: func(_ *testing.T, h *harness) error {
+				h.seedAmbientAisle()
+				h.mustRegisterSlot(code.String(), placement.PalletRack)
+				uc := &usecases.SetLocationGeometry{Slots: h.slots, Events: faultyPublisher{}, Clock: h.clock}
+				_, err := uc.Execute(h.ctx(), code, mustGeomPoint(h.t, 1, 2, 0), mustGeomDimensions(h.t, 1, 1, 1), nil)
+				return err
+			},
+		},
+		{
+			name: "SetAisleGeometry: lookup fails",
+			run: func(_ *testing.T, h *harness) error {
+				return runSetAisleGeometryWithFault(h, func(uc *usecases.SetAisleGeometry) {
+					uc.Aisles = &faultyAisleRepo{AisleRepo: h.aisles, failFind: true}
+				})
+			},
+		},
+		{
+			name: "SetAisleGeometry: save fails",
+			run: func(_ *testing.T, h *harness) error {
+				h.seedAmbientAisle()
+				return runSetAisleGeometryWithFault(h, func(uc *usecases.SetAisleGeometry) {
+					uc.Aisles = &faultyAisleRepo{AisleRepo: h.aisles, failSave: true}
+				})
+			},
+		},
+		{
+			name: "SetAisleGeometry: publish fails",
+			run: func(_ *testing.T, h *harness) error {
+				h.seedAmbientAisle()
+				return runSetAisleGeometryWithFault(h, func(uc *usecases.SetAisleGeometry) {
+					uc.Events = faultyPublisher{}
+				})
+			},
+		},
+		{
+			name: "RegisterFixedStructure: site lookup fails",
+			run: func(_ *testing.T, h *harness) error {
+				uc := &usecases.RegisterFixedStructure{Sites: &faultySiteRepo{SiteRepo: h.sites, failFind: true}, Structures: h.structures, Events: h.publisher, Clock: h.clock}
+				_, err := uc.Execute(h.ctx(), "STR-1", "WH1", structure.Wall, mustFootprintForUsecase(h.t), "North wall")
+				return err
+			},
+		},
+		{
+			name: "RegisterFixedStructure: duplicate check fails",
+			run: func(_ *testing.T, h *harness) error {
+				h.mustRegisterSite("WH1", "Fulfilment Centre One")
+				uc := &usecases.RegisterFixedStructure{Sites: h.sites, Structures: &faultyFixedStructureRepo{FixedStructureRepo: h.structures, failFind: true}, Events: h.publisher, Clock: h.clock}
+				_, err := uc.Execute(h.ctx(), "STR-1", "WH1", structure.Wall, mustFootprintForUsecase(h.t), "North wall")
+				return err
+			},
+		},
+		{
+			name: "RegisterFixedStructure: save fails",
+			run: func(_ *testing.T, h *harness) error {
+				h.mustRegisterSite("WH1", "Fulfilment Centre One")
+				uc := &usecases.RegisterFixedStructure{Sites: h.sites, Structures: &faultyFixedStructureRepo{FixedStructureRepo: h.structures, failSave: true}, Events: h.publisher, Clock: h.clock}
+				_, err := uc.Execute(h.ctx(), "STR-1", "WH1", structure.Wall, mustFootprintForUsecase(h.t), "North wall")
+				return err
+			},
+		},
+		{
+			name: "RegisterFixedStructure: publish fails",
+			run: func(_ *testing.T, h *harness) error {
+				h.mustRegisterSite("WH1", "Fulfilment Centre One")
+				uc := &usecases.RegisterFixedStructure{Sites: h.sites, Structures: h.structures, Events: faultyPublisher{}, Clock: h.clock}
+				_, err := uc.Execute(h.ctx(), "STR-1", "WH1", structure.Wall, mustFootprintForUsecase(h.t), "North wall")
+				return err
+			},
+		},
+		{
+			name: "ListFixedStructures: site lookup fails",
+			run: func(_ *testing.T, h *harness) error {
+				uc := &usecases.ListFixedStructures{Sites: &faultySiteRepo{SiteRepo: h.sites, failFind: true}, Structures: h.structures}
+				_, err := uc.Execute(h.ctx(), "WH1")
+				return err
+			},
+		},
+		{
+			name: "ListFixedStructures: structure list fails",
+			run: func(_ *testing.T, h *harness) error {
+				h.mustRegisterSite("WH1", "Fulfilment Centre One")
+				uc := &usecases.ListFixedStructures{Sites: h.sites, Structures: &faultyFixedStructureRepo{FixedStructureRepo: h.structures, failList: true}}
+				_, err := uc.Execute(h.ctx(), "WH1")
+				return err
+			},
+		},
+		{
+			name: "RegisterCrossAisle: zone lookup fails",
+			run: func(_ *testing.T, h *harness) error {
+				seedThreeAisleZone(h)
+				uc := &usecases.RegisterCrossAisle{Zones: &faultyZoneRepo{ZoneRepo: h.zones, failFind: true}, Aisles: h.aisles, CrossAisles: h.crossAisles, Events: h.publisher, Clock: h.clock}
+				_, err := uc.Execute(h.ctx(), "WH1-STOR-AMB", "A07", "A08", "02")
+				return err
+			},
+		},
+		{
+			name: "RegisterCrossAisle: aisle list fails",
+			run: func(_ *testing.T, h *harness) error {
+				seedThreeAisleZone(h)
+				uc := &usecases.RegisterCrossAisle{Zones: h.zones, Aisles: &faultyAisleRepo{AisleRepo: h.aisles, failList: true}, CrossAisles: h.crossAisles, Events: h.publisher, Clock: h.clock}
+				_, err := uc.Execute(h.ctx(), "WH1-STOR-AMB", "A07", "A08", "02")
+				return err
+			},
+		},
+		{
+			name: "RegisterCrossAisle: duplicate check fails",
+			run: func(_ *testing.T, h *harness) error {
+				seedThreeAisleZone(h)
+				uc := &usecases.RegisterCrossAisle{Zones: h.zones, Aisles: h.aisles, CrossAisles: &faultyCrossAisleRepo{CrossAisleRepo: h.crossAisles, failFind: true}, Events: h.publisher, Clock: h.clock}
+				_, err := uc.Execute(h.ctx(), "WH1-STOR-AMB", "A07", "A08", "02")
+				return err
+			},
+		},
+		{
+			name: "RegisterCrossAisle: save fails",
+			run: func(_ *testing.T, h *harness) error {
+				seedThreeAisleZone(h)
+				uc := &usecases.RegisterCrossAisle{Zones: h.zones, Aisles: h.aisles, CrossAisles: &faultyCrossAisleRepo{CrossAisleRepo: h.crossAisles, failSave: true}, Events: h.publisher, Clock: h.clock}
+				_, err := uc.Execute(h.ctx(), "WH1-STOR-AMB", "A07", "A08", "02")
+				return err
+			},
+		},
+		{
+			name: "RegisterCrossAisle: publish fails",
+			run: func(_ *testing.T, h *harness) error {
+				seedThreeAisleZone(h)
+				uc := &usecases.RegisterCrossAisle{Zones: h.zones, Aisles: h.aisles, CrossAisles: h.crossAisles, Events: faultyPublisher{}, Clock: h.clock}
+				_, err := uc.Execute(h.ctx(), "WH1-STOR-AMB", "A07", "A08", "02")
+				return err
+			},
+		},
+		{
+			name: "ListLocationsByRole: site lookup fails",
+			run: func(_ *testing.T, h *harness) error {
+				uc := &usecases.ListLocationsByRole{Sites: &faultySiteRepo{SiteRepo: h.sites, failFind: true}, Zones: h.zones, Slots: h.slots}
+				_, err := uc.Execute(h.ctx(), "WH1", placement.Storage)
+				return err
+			},
+		},
+		{
+			name: "ListLocationsByRole: zone list fails",
+			run: func(_ *testing.T, h *harness) error {
+				h.mustRegisterSite("WH1", "Fulfilment Centre One")
+				uc := &usecases.ListLocationsByRole{Sites: h.sites, Zones: &faultyZoneRepo{ZoneRepo: h.zones, failList: true}, Slots: h.slots}
+				_, err := uc.Execute(h.ctx(), "WH1", placement.Storage)
+				return err
+			},
+		},
+		{
+			name: "ListLocationsByRole: slot list fails",
+			run: func(_ *testing.T, h *harness) error {
+				h.mustRegisterSite("WH1", "Fulfilment Centre One")
+				h.mustRegisterZone("WH1", "STOR", "AMB", shared.Ambient, false)
+				uc := &usecases.ListLocationsByRole{Sites: h.sites, Zones: h.zones, Slots: &faultySlotRepo{SlotRepo: h.slots, failListByZone: true}}
+				_, err := uc.Execute(h.ctx(), "WH1", placement.Storage)
+				return err
+			},
+		},
+		{
+			name: "EstimateTravelDistance: from-slot lookup fails",
+			run: func(_ *testing.T, h *harness) error {
+				seedThreeAisleZone(h)
+				uc := &usecases.EstimateTravelDistance{Zones: h.zones, Aisles: h.aisles, Slots: &faultySlotRepo{SlotRepo: h.slots, failFind: true}, CrossAisles: h.crossAisles}
+				_, err := uc.Execute(h.ctx(), mustCode(h.t, "WH1-STOR-AMB-A07-01-01-A"), mustCode(h.t, "WH1-STOR-AMB-A07-03-01-A"))
+				return err
+			},
+		},
+		{
+			name: "EstimateTravelDistance: to-slot lookup fails",
+			run: func(_ *testing.T, h *harness) error {
+				seedThreeAisleZone(h)
+				uc := &usecases.EstimateTravelDistance{Zones: h.zones, Aisles: h.aisles, Slots: &faultySlotRepo{SlotRepo: h.slots, failFindOnCall: 2}, CrossAisles: h.crossAisles}
+				_, err := uc.Execute(h.ctx(), mustCode(h.t, "WH1-STOR-AMB-A07-01-01-A"), mustCode(h.t, "WH1-STOR-AMB-A07-03-01-A"))
+				return err
+			},
+		},
+		{
+			name: "EstimateTravelDistance: zone lookup fails",
+			run: func(_ *testing.T, h *harness) error {
+				seedThreeAisleZone(h)
+				uc := &usecases.EstimateTravelDistance{Zones: &faultyZoneRepo{ZoneRepo: h.zones, failFind: true}, Aisles: h.aisles, Slots: h.slots, CrossAisles: h.crossAisles}
+				_, err := uc.Execute(h.ctx(), mustCode(h.t, "WH1-STOR-AMB-A07-01-01-A"), mustCode(h.t, "WH1-STOR-AMB-A07-03-01-A"))
+				return err
+			},
+		},
+		{
+			name: "EstimateTravelDistance: aisle list fails",
+			run: func(_ *testing.T, h *harness) error {
+				seedThreeAisleZone(h)
+				uc := &usecases.EstimateTravelDistance{Zones: h.zones, Aisles: &faultyAisleRepo{AisleRepo: h.aisles, failList: true}, Slots: h.slots, CrossAisles: h.crossAisles}
+				_, err := uc.Execute(h.ctx(), mustCode(h.t, "WH1-STOR-AMB-A07-01-01-A"), mustCode(h.t, "WH1-STOR-AMB-A07-03-01-A"))
+				return err
+			},
+		},
+		{
+			name: "EstimateTravelDistance: slot list fails",
+			run: func(_ *testing.T, h *harness) error {
+				seedThreeAisleZone(h)
+				uc := &usecases.EstimateTravelDistance{Zones: h.zones, Aisles: h.aisles, Slots: &faultySlotRepo{SlotRepo: h.slots, failListByZone: true}, CrossAisles: h.crossAisles}
+				_, err := uc.Execute(h.ctx(), mustCode(h.t, "WH1-STOR-AMB-A07-01-01-A"), mustCode(h.t, "WH1-STOR-AMB-A07-03-01-A"))
+				return err
+			},
+		},
+		{
+			name: "EstimateTravelDistance: cross-aisle list fails",
+			run: func(_ *testing.T, h *harness) error {
+				seedThreeAisleZone(h)
+				uc := &usecases.EstimateTravelDistance{Zones: h.zones, Aisles: h.aisles, Slots: h.slots, CrossAisles: &faultyCrossAisleRepo{CrossAisleRepo: h.crossAisles, failList: true}}
+				_, err := uc.Execute(h.ctx(), mustCode(h.t, "WH1-STOR-AMB-A07-01-01-A"), mustCode(h.t, "WH1-STOR-AMB-A07-03-01-A"))
 				return err
 			},
 		},
@@ -733,6 +995,32 @@ func TestUseCasesPropagateInfrastructureFailures(t *testing.T) {
 			}
 		})
 	}
+}
+
+// runImportWithFault runs a one-row import with one dependency faulted, so a
+// row-level failure surfaces through report.Results[0] rather than Execute's
+// own error. The PalletRack location type the row needs is registered first.
+func runImportWithFault(h *harness, inject func(*usecases.ImportFacilityLayout)) error {
+	h.mustRegisterLocationType(placement.PalletRack, 1200, 2.4)
+	uc := importUseCase(h, inject)
+	report, err := uc.Execute(h.ctx(), []usecases.ImportRow{row("STOR", "AMB", shared.Ambient, false, "A07", 7, "03", "02", "B", placement.PalletRack)})
+	if err != nil {
+		return err
+	}
+	return errors.New(report.Results[0].Error)
+}
+
+// runSetAisleGeometryWithFault sets a valid A07 centreline with one
+// dependency faulted, so the fault surfaces from Execute.
+func runSetAisleGeometryWithFault(h *harness, inject func(*usecases.SetAisleGeometry)) error {
+	centreline, err := shared.NewSegment(mustGeomPoint(h.t, 0, 0, 0), mustGeomPoint(h.t, 10, 0, 0))
+	if err != nil {
+		return err
+	}
+	uc := &usecases.SetAisleGeometry{Aisles: h.aisles, Events: h.publisher, Clock: h.clock}
+	inject(uc)
+	_, err = uc.Execute(h.ctx(), "WH1-STOR-AMB-A07", centreline)
+	return err
 }
 
 // slotUseCase builds a fully wired RegisterLocationSlot over the harness's

@@ -6,6 +6,7 @@ import (
 	"github.com/claudioed/facility-layout/internal/application/usecases"
 	"github.com/claudioed/facility-layout/internal/domain/aisle"
 	"github.com/claudioed/facility-layout/internal/domain/shared"
+	"github.com/claudioed/facility-layout/internal/domain/slot"
 	"github.com/claudioed/facility-layout/internal/domain/structure"
 )
 
@@ -65,6 +66,28 @@ func TestSetLocationGeometry(t *testing.T) {
 		h := newHarness(t)
 		_, err := h.setLocationGeometry.Execute(h.ctx(), mustCode(t, "WH1-STOR-AMB-A07-03-02-B"), position, dimensions, nil)
 		assertErrorIs(t, err, usecases.ErrLocationSlotNotFound)
+	})
+
+	t.Run("propagates the domain rejection of a decommissioned slot", func(t *testing.T) {
+		h := newHarness(t)
+		h.seedAmbientAisle()
+		h.mustRegisterSlot("WH1-STOR-AMB-A07-03-02-B", "PalletRack")
+		if err := h.decommissionSlot.Execute(h.ctx(), mustCode(t, "WH1-STOR-AMB-A07-03-02-B")); err != nil {
+			t.Fatalf("decommission: %v", err)
+		}
+
+		_, err := h.setLocationGeometry.Execute(h.ctx(), mustCode(t, "WH1-STOR-AMB-A07-03-02-B"), position, dimensions, nil)
+		assertErrorIs(t, err, slot.ErrSlotDecommissioned)
+	})
+
+	t.Run("rejects a negative pick sequence", func(t *testing.T) {
+		h := newHarness(t)
+		h.seedAmbientAisle()
+		h.mustRegisterSlot("WH1-STOR-AMB-A07-03-02-B", "PalletRack")
+
+		seq := -1
+		_, err := h.setLocationGeometry.Execute(h.ctx(), mustCode(t, "WH1-STOR-AMB-A07-03-02-B"), position, dimensions, &seq)
+		assertErrorIs(t, err, slot.ErrNegativePickSequence)
 	})
 }
 
@@ -148,6 +171,27 @@ func TestRegisterFixedStructure(t *testing.T) {
 		}
 		_, err := h.registerFixedStructure.Execute(h.ctx(), "STR-1", "WH1", structure.Column, footprint, "Different label")
 		assertErrorIs(t, err, usecases.ErrDuplicateFixedStructure)
+	})
+
+	t.Run("rejects an invalid structure definition", func(t *testing.T) {
+		tests := []struct {
+			name    string
+			kind    structure.Kind
+			label   string
+			wantErr error
+		}{
+			{name: "unknown kind", kind: "Escalator", label: "North wall", wantErr: structure.ErrUnknownKind},
+			{name: "empty label", kind: structure.Wall, label: "", wantErr: structure.ErrEmptyLabel},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				h := newHarness(t)
+				h.mustRegisterSite("WH1", "Fulfilment Centre One")
+				_, err := h.registerFixedStructure.Execute(h.ctx(), "STR-1", "WH1", tc.kind, footprint, tc.label)
+				assertErrorIs(t, err, tc.wantErr)
+				h.assertNotPublished("FixedStructureRegistered")
+			})
+		}
 	})
 }
 

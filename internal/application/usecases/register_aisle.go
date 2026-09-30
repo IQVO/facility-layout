@@ -15,6 +15,8 @@ type RegisterAisle struct {
 	Aisles ports.AisleRepo
 	Events ports.EventPublisher
 	Clock  ports.Clock
+	// UnitOfWork brackets Save + Publish atomically (ADR-0018, optional).
+	UnitOfWork ports.UnitOfWork
 }
 
 // Execute registers the aisle and publishes AisleRegistered.
@@ -43,11 +45,14 @@ func (uc *RegisterAisle) Execute(ctx context.Context, zoneID, aisleCode string, 
 		return nil, ErrDuplicateAisle
 	}
 
-	if err := uc.Aisles.Save(ctx, a); err != nil {
-		return nil, err
-	}
-	event := shared.NewAisleRegistered(uc.Clock.Now(), a.ID(), a.ZoneID(), a.AisleCode(), a.SequenceHint(), a.Direction())
-	if err := uc.Events.Publish(ctx, event); err != nil {
+	err = atomically(ctx, uc.UnitOfWork, func(ctx context.Context) error {
+		if err := uc.Aisles.Save(ctx, a); err != nil {
+			return err
+		}
+		event := shared.NewAisleRegistered(uc.Clock.Now(), a.ID(), a.ZoneID(), a.AisleCode(), a.SequenceHint(), a.Direction())
+		return uc.Events.Publish(ctx, event)
+	})
+	if err != nil {
 		return nil, err
 	}
 	return a, nil

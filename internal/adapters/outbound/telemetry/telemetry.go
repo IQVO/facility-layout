@@ -95,48 +95,91 @@ func Setup(ctx context.Context, serviceName, serviceVersion, otlpEndpoint string
 		return nil, err
 	}
 
+	tracerProvider, err := newTracerProvider(ctx, res, otlpEndpoint)
+	if err != nil {
+		return fail(err)
+	}
+	shutdowns = append(shutdowns, tracerProvider.Shutdown)
+
+	meterProvider, err := newMeterProvider(ctx, res, otlpEndpoint)
+	if err != nil {
+		return fail(err)
+	}
+	shutdowns = append(shutdowns, meterProvider.Shutdown)
+
+	loggerProvider, err := newLoggerProvider(ctx, res, otlpEndpoint)
+	if err != nil {
+		return fail(err)
+	}
+	shutdowns = append(shutdowns, loggerProvider.Shutdown)
+
+	installGlobals(tracerProvider, meterProvider, loggerProvider)
+
+	if err := runtime.Start(runtime.WithMeterProvider(meterProvider)); err != nil {
+		return fail(err)
+	}
+
+	return shutdown, nil
+}
+
+// newTracerProvider builds the trace signal's OTLP/gRPC exporter and batched
+// tracer provider. The exporter is non-blocking: an unreachable Collector
+// degrades to "spans silently dropped", never to a setup failure.
+func newTracerProvider(ctx context.Context, res *resource.Resource, otlpEndpoint string) (*sdktrace.TracerProvider, error) {
 	traceExporter, err := otlptracegrpc.New(ctx,
 		otlptracegrpc.WithEndpoint(otlpEndpoint),
 		otlptracegrpc.WithInsecure(),
 		otlptracegrpc.WithTimeout(exportTimeout),
 	)
 	if err != nil {
-		return fail(err)
+		return nil, err
 	}
-	tracerProvider := sdktrace.NewTracerProvider(
+	return sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(traceExporter),
 		sdktrace.WithResource(res),
-	)
-	shutdowns = append(shutdowns, tracerProvider.Shutdown)
+	), nil
+}
 
+// newMeterProvider builds the metric signal's OTLP/gRPC exporter and periodic
+// reader, under the same non-blocking reachability contract as the trace
+// exporter.
+func newMeterProvider(ctx context.Context, res *resource.Resource, otlpEndpoint string) (*sdkmetric.MeterProvider, error) {
 	metricExporter, err := otlpmetricgrpc.New(ctx,
 		otlpmetricgrpc.WithEndpoint(otlpEndpoint),
 		otlpmetricgrpc.WithInsecure(),
 		otlpmetricgrpc.WithTimeout(exportTimeout),
 	)
 	if err != nil {
-		return fail(err)
+		return nil, err
 	}
-	meterProvider := sdkmetric.NewMeterProvider(
+	return sdkmetric.NewMeterProvider(
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExporter)),
 		sdkmetric.WithResource(res),
-	)
-	shutdowns = append(shutdowns, meterProvider.Shutdown)
+	), nil
+}
 
+// newLoggerProvider builds the log signal's OTLP/gRPC exporter and batched
+// log provider, under the same non-blocking reachability contract as the
+// trace exporter.
+func newLoggerProvider(ctx context.Context, res *resource.Resource, otlpEndpoint string) (*sdklog.LoggerProvider, error) {
 	logExporter, err := otlploggrpc.New(ctx,
 		otlploggrpc.WithEndpoint(otlpEndpoint),
 		otlploggrpc.WithInsecure(),
 		otlploggrpc.WithTimeout(exportTimeout),
 	)
 	if err != nil {
-		return fail(err)
+		return nil, err
 	}
-	loggerProvider := sdklog.NewLoggerProvider(
+	return sdklog.NewLoggerProvider(
 		sdklog.WithProcessor(sdklog.NewBatchProcessor(logExporter)),
 		sdklog.WithResource(res),
-	)
-	shutdowns = append(shutdowns, loggerProvider.Shutdown)
+	), nil
+}
 
+// installGlobals registers the built providers and the W3C trace-context
+// propagator as the process-wide OTel globals, and routes the SDK's export
+// errors to debug-level logging.
+func installGlobals(tracerProvider *sdktrace.TracerProvider, meterProvider *sdkmetric.MeterProvider, loggerProvider *sdklog.LoggerProvider) {
 	otel.SetTracerProvider(tracerProvider)
 	otel.SetMeterProvider(meterProvider)
 	logglobal.SetLoggerProvider(loggerProvider)
@@ -150,12 +193,6 @@ func Setup(ctx context.Context, serviceName, serviceVersion, otlpEndpoint string
 	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
 		slog.Debug("opentelemetry error", "error", err)
 	}))
-
-	if err := runtime.Start(runtime.WithMeterProvider(meterProvider)); err != nil {
-		return fail(err)
-	}
-
-	return shutdown, nil
 }
 
 // newResource describes this process to the Collector: which service it is,

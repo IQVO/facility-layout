@@ -212,13 +212,17 @@ func TestListSites(t *testing.T) {
 	}
 }
 
+// siteLayoutCase is one row of the getSiteLayout table: either an input the
+// tool must reject (wantErr) or one whose DTO must satisfy assert.
+type siteLayoutCase struct {
+	name     string
+	siteCode string
+	wantErr  bool
+	assert   func(t *testing.T, out siteLayoutDTO)
+}
+
 func TestGetSiteLayout(t *testing.T) {
-	tests := []struct {
-		name     string
-		siteCode string
-		wantErr  bool
-		assert   func(t *testing.T, out siteLayoutDTO)
-	}{
+	tests := []siteLayoutCase{
 		{
 			name:     "empty siteCode rejected",
 			siteCode: "",
@@ -232,42 +236,7 @@ func TestGetSiteLayout(t *testing.T) {
 		{
 			name:     "full nested drawable structure",
 			siteCode: "WH1",
-			assert: func(t *testing.T, out siteLayoutDTO) {
-				if out.Site.Code != "WH1" || out.Site.Name != "Fulfilment Centre One" {
-					t.Fatalf("unexpected site header %+v", out.Site)
-				}
-				if len(out.Zones) != 2 {
-					t.Fatalf("expected 2 zones, got %d", len(out.Zones))
-				}
-				// Zones ordered by id: RCV before STOR.
-				if out.Zones[0].ZoneID != "WH1-RCV-AMB" || out.Zones[1].ZoneID != "WH1-STOR-AMB" {
-					t.Fatalf("zones out of order: %s then %s", out.Zones[0].ZoneID, out.Zones[1].ZoneID)
-				}
-				storage := out.Zones[1]
-				if storage.TemperatureClass != string(shared.Ambient) || storage.Hazmat {
-					t.Fatalf("unexpected zone attrs %+v", storage)
-				}
-				if len(storage.Aisles) != 2 {
-					t.Fatalf("expected 2 aisles in STOR, got %d", len(storage.Aisles))
-				}
-				// Walk order (sequenceHint), not registration order: A07 (7) before A09 (9).
-				if storage.Aisles[0].AisleCode != "A07" || storage.Aisles[1].AisleCode != "A09" {
-					t.Fatalf("aisles not in walk order: %s then %s", storage.Aisles[0].AisleCode, storage.Aisles[1].AisleCode)
-				}
-				a07 := storage.Aisles[0]
-				if a07.SequenceHint != 7 || a07.Direction != string(shared.TwoWay) {
-					t.Fatalf("unexpected aisle meta %+v", a07)
-				}
-				want := []string{"WH1-STOR-AMB-A07-03-01-A", "WH1-STOR-AMB-A07-03-02-A", "WH1-STOR-AMB-A07-03-02-B"}
-				if len(a07.SlotCodes) != len(want) {
-					t.Fatalf("expected %d slot codes, got %v", len(want), a07.SlotCodes)
-				}
-				for i, code := range want {
-					if a07.SlotCodes[i] != code {
-						t.Fatalf("slot %d = %q, want %q", i, a07.SlotCodes[i], code)
-					}
-				}
-			},
+			assert:   assertMCPSiteLayout,
 		},
 	}
 
@@ -290,55 +259,70 @@ func TestGetSiteLayout(t *testing.T) {
 	}
 }
 
+// assertMCPSiteLayout checks the nested drawable structure: site header,
+// zone order, inlined zone behaviour, aisle walk order, and slot order.
+func assertMCPSiteLayout(t *testing.T, out siteLayoutDTO) {
+	t.Helper()
+	if out.Site.Code != "WH1" || out.Site.Name != "Fulfilment Centre One" {
+		t.Fatalf("unexpected site header %+v", out.Site)
+	}
+	if len(out.Zones) != 2 {
+		t.Fatalf("expected 2 zones, got %d", len(out.Zones))
+	}
+	// Zones ordered by id: RCV before STOR.
+	if out.Zones[0].ZoneID != "WH1-RCV-AMB" || out.Zones[1].ZoneID != "WH1-STOR-AMB" {
+		t.Fatalf("zones out of order: %s then %s", out.Zones[0].ZoneID, out.Zones[1].ZoneID)
+	}
+	storage := out.Zones[1]
+	if storage.TemperatureClass != string(shared.Ambient) || storage.Hazmat {
+		t.Fatalf("unexpected zone attrs %+v", storage)
+	}
+	if len(storage.Aisles) != 2 {
+		t.Fatalf("expected 2 aisles in STOR, got %d", len(storage.Aisles))
+	}
+	assertMCPSiteLayoutAisles(t, storage.Aisles)
+}
+
+// assertMCPSiteLayoutAisles checks the aisle walk order and the slot
+// order inside the first (walk-order-first) aisle.
+func assertMCPSiteLayoutAisles(t *testing.T, aisles []aisleLayoutDTO) {
+	t.Helper()
+	// Walk order (sequenceHint), not registration order: A07 (7) before A09 (9).
+	if aisles[0].AisleCode != "A07" || aisles[1].AisleCode != "A09" {
+		t.Fatalf("aisles not in walk order: %s then %s", aisles[0].AisleCode, aisles[1].AisleCode)
+	}
+	a07 := aisles[0]
+	if a07.SequenceHint != 7 || a07.Direction != string(shared.TwoWay) {
+		t.Fatalf("unexpected aisle meta %+v", a07)
+	}
+	want := []string{"WH1-STOR-AMB-A07-03-01-A", "WH1-STOR-AMB-A07-03-02-A", "WH1-STOR-AMB-A07-03-02-B"}
+	if len(a07.SlotCodes) != len(want) {
+		t.Fatalf("expected %d slot codes, got %v", len(want), a07.SlotCodes)
+	}
+	for i, code := range want {
+		if a07.SlotCodes[i] != code {
+			t.Fatalf("slot %d = %q, want %q", i, a07.SlotCodes[i], code)
+		}
+	}
+}
+
+// zoneGridCase is one row of the getZoneGrid table: either an input the tool
+// must reject (wantErr) or one whose DTO must satisfy assert.
+type zoneGridCase struct {
+	name    string
+	zoneID  string
+	wantErr bool
+	assert  func(t *testing.T, out zoneGridDTO)
+}
+
 func TestGetZoneGrid(t *testing.T) {
-	tests := []struct {
-		name    string
-		zoneID  string
-		wantErr bool
-		assert  func(t *testing.T, out zoneGridDTO)
-	}{
-		{"empty zoneId rejected", "", true, nil},
-		{"unknown zone rejected", "WH1-NOPE-XXX", true, nil},
+	tests := []zoneGridCase{
+		{name: "empty zoneId rejected", zoneID: "", wantErr: true},
+		{name: "unknown zone rejected", zoneID: "WH1-NOPE-XXX", wantErr: true},
 		{
 			name:   "grid for the storage zone",
 			zoneID: "WH1-STOR-AMB",
-			assert: func(t *testing.T, out zoneGridDTO) {
-				if out.ZoneID != "WH1-STOR-AMB" {
-					t.Fatalf("unexpected zone id %q", out.ZoneID)
-				}
-				if len(out.Columns) == 0 {
-					t.Fatal("expected at least one column")
-				}
-				// Columns carry each aisle's walk-order hint.
-				for _, c := range out.Columns {
-					if c.AisleCode == "A07" && c.SequenceHint != 7 {
-						t.Fatalf("A07 column has wrong sequence hint %d", c.SequenceHint)
-					}
-				}
-				if len(out.Levels) == 0 || len(out.Rows) == 0 {
-					t.Fatal("expected levels and rows")
-				}
-				// Every row's cells are index-aligned with columns.
-				for _, r := range out.Rows {
-					if len(r.Cells) != len(out.Columns) {
-						t.Fatalf("row %q has %d cells, want %d", r.Level, len(r.Cells), len(out.Columns))
-					}
-				}
-				// At least one cell must carry a known slot code.
-				found := false
-				for _, r := range out.Rows {
-					for _, cell := range r.Cells {
-						for _, code := range cell.SlotCodes {
-							if code == "WH1-STOR-AMB-A07-03-02-B" {
-								found = true
-							}
-						}
-					}
-				}
-				if !found {
-					t.Fatal("expected slot WH1-STOR-AMB-A07-03-02-B somewhere in the grid")
-				}
-			},
+			assert: assertMCPZoneGrid,
 		},
 	}
 
@@ -361,80 +345,137 @@ func TestGetZoneGrid(t *testing.T) {
 	}
 }
 
-func TestListFunctionalLocations(t *testing.T) {
-	seedFunctional := func(t *testing.T) *harness {
-		t.Helper()
-		h := newHarness(t)
-		h.mustRegisterSite("WH1", "Fulfilment Centre One")
-		h.mustRegisterZone("WH1", "DOCK", "OB", shared.Ambient, false)
-		h.mustRegisterAisle("WH1-DOCK-OB", "D01", 1, shared.TwoWay)
-		h.mustRegisterDockLocationType("DockDoor", placement.Dock)
-		h.mustRegisterFunctionalSlot("WH1-DOCK-OB-D01-01-01-A", "DockDoor", "Outbound", nil)
-		h.mustRegisterFunctionalSlot("WH1-DOCK-OB-D01-01-02-A", "DockDoor", "Inbound", nil)
-
-		h.mustRegisterZone("WH1", "STOR", "AMB", shared.Ambient, false)
-		h.mustRegisterAisle("WH1-STOR-AMB", "A07", 7, shared.TwoWay)
-		h.mustRegisterLocationType(placement.PalletRack, 1200, 2.4)
-		h.mustRegisterSlot("WH1-STOR-AMB-A07-03-02-B", placement.PalletRack)
-		return h
+// assertMCPZoneGrid checks the grid's shape: zone header, walk-order hints on
+// columns, level/row alignment, and that a known slot really appears.
+func assertMCPZoneGrid(t *testing.T, out zoneGridDTO) {
+	t.Helper()
+	if out.ZoneID != "WH1-STOR-AMB" {
+		t.Fatalf("unexpected zone id %q", out.ZoneID)
 	}
+	if len(out.Columns) == 0 {
+		t.Fatal("expected at least one column")
+	}
+	// Columns carry each aisle's walk-order hint.
+	for _, c := range out.Columns {
+		if c.AisleCode == "A07" && c.SequenceHint != 7 {
+			t.Fatalf("A07 column has wrong sequence hint %d", c.SequenceHint)
+		}
+	}
+	if len(out.Levels) == 0 || len(out.Rows) == 0 {
+		t.Fatal("expected levels and rows")
+	}
+	// Every row's cells are index-aligned with columns.
+	for _, r := range out.Rows {
+		if len(r.Cells) != len(out.Columns) {
+			t.Fatalf("row %q has %d cells, want %d", r.Level, len(r.Cells), len(out.Columns))
+		}
+	}
+	if !gridContainsSlot(out, "WH1-STOR-AMB-A07-03-02-B") {
+		t.Fatal("expected slot WH1-STOR-AMB-A07-03-02-B somewhere in the grid")
+	}
+}
 
-	t.Run("empty siteCode rejected", func(t *testing.T) {
-		h := newHarness(t)
-		if _, err := h.deps.listFunctionalLocations(h.ctx(), listFunctionalLocationsInput{Role: "Dock"}); err == nil {
-			t.Fatal("expected error, got nil")
-		}
-	})
-
-	t.Run("unknown role rejected", func(t *testing.T) {
-		h := seedFunctional(t)
-		if _, err := h.deps.listFunctionalLocations(h.ctx(), listFunctionalLocationsInput{SiteCode: "WH1", Role: "Warehouse"}); err == nil {
-			t.Fatal("expected error, got nil")
-		}
-	})
-
-	t.Run("unknown site rejected", func(t *testing.T) {
-		h := seedFunctional(t)
-		if _, err := h.deps.listFunctionalLocations(h.ctx(), listFunctionalLocationsInput{SiteCode: "NOPE", Role: "Dock"}); err == nil {
-			t.Fatal("expected error, got nil")
-		}
-	})
-
-	t.Run("returns only the matching role's locations, ordered by coordinate", func(t *testing.T) {
-		h := seedFunctional(t)
-		out, err := h.deps.listFunctionalLocations(h.ctx(), listFunctionalLocationsInput{SiteCode: "WH1", Role: "Dock"})
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(out.Locations) != 2 {
-			t.Fatalf("expected 2 dock locations, got %d: %+v", len(out.Locations), out.Locations)
-		}
-		if out.Locations[0].LocationCode != "WH1-DOCK-OB-D01-01-01-A" || out.Locations[0].DockFlow != "Outbound" {
-			t.Fatalf("unexpected first location %+v", out.Locations[0])
-		}
-		if out.Locations[1].LocationCode != "WH1-DOCK-OB-D01-01-02-A" || out.Locations[1].DockFlow != "Inbound" {
-			t.Fatalf("unexpected second location %+v", out.Locations[1])
-		}
-		for _, loc := range out.Locations {
-			if loc.Role != "Dock" {
-				t.Fatalf("expected role Dock, got %q", loc.Role)
-			}
-			if len(loc.Activities) != 0 {
-				t.Fatalf("expected no activities on a Dock location, got %v", loc.Activities)
+// gridContainsSlot reports whether any cell of the grid carries code.
+func gridContainsSlot(out zoneGridDTO, code string) bool {
+	for _, r := range out.Rows {
+		for _, cell := range r.Cells {
+			for _, got := range cell.SlotCodes {
+				if got == code {
+					return true
+				}
 			}
 		}
-	})
+	}
+	return false
+}
 
-	t.Run("a role with no matching locations returns an empty, non-nil list", func(t *testing.T) {
-		h := seedFunctional(t)
-		out, err := h.deps.listFunctionalLocations(h.ctx(), listFunctionalLocationsInput{SiteCode: "WH1", Role: "Yard"})
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
+func TestListFunctionalLocations(t *testing.T) {
+	t.Run("empty siteCode rejected", testFunctionalLocationsEmptySite)
+	t.Run("unknown role rejected", testFunctionalLocationsUnknownRole)
+	t.Run("unknown site rejected", testFunctionalLocationsUnknownSite)
+	t.Run("returns only the matching role's locations, ordered by coordinate", testFunctionalLocationsRoleFilter)
+	t.Run("a role with no matching locations returns an empty, non-nil list", testFunctionalLocationsEmptyRole)
+}
+
+// seedFunctionalHarness builds a site with two dock doors and one storage
+// slot, the fixture every functional-location case needs.
+func seedFunctionalHarness(t *testing.T) *harness {
+	t.Helper()
+	h := newHarness(t)
+	h.mustRegisterSite("WH1", "Fulfilment Centre One")
+	h.mustRegisterZone("WH1", "DOCK", "OB", shared.Ambient, false)
+	h.mustRegisterAisle("WH1-DOCK-OB", "D01", 1, shared.TwoWay)
+	h.mustRegisterDockLocationType("DockDoor", placement.Dock)
+	h.mustRegisterFunctionalSlot("WH1-DOCK-OB-D01-01-01-A", "DockDoor", "Outbound", nil)
+	h.mustRegisterFunctionalSlot("WH1-DOCK-OB-D01-01-02-A", "DockDoor", "Inbound", nil)
+
+	h.mustRegisterZone("WH1", "STOR", "AMB", shared.Ambient, false)
+	h.mustRegisterAisle("WH1-STOR-AMB", "A07", 7, shared.TwoWay)
+	h.mustRegisterLocationType(placement.PalletRack, 1200, 2.4)
+	h.mustRegisterSlot("WH1-STOR-AMB-A07-03-02-B", placement.PalletRack)
+	return h
+}
+
+func testFunctionalLocationsEmptySite(t *testing.T) {
+	t.Helper()
+	h := newHarness(t)
+	if _, err := h.deps.listFunctionalLocations(h.ctx(), listFunctionalLocationsInput{Role: "Dock"}); err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func testFunctionalLocationsUnknownRole(t *testing.T) {
+	t.Helper()
+	h := seedFunctionalHarness(t)
+	if _, err := h.deps.listFunctionalLocations(h.ctx(), listFunctionalLocationsInput{SiteCode: "WH1", Role: "Warehouse"}); err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func testFunctionalLocationsUnknownSite(t *testing.T) {
+	t.Helper()
+	h := seedFunctionalHarness(t)
+	if _, err := h.deps.listFunctionalLocations(h.ctx(), listFunctionalLocationsInput{SiteCode: "NOPE", Role: "Dock"}); err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func testFunctionalLocationsRoleFilter(t *testing.T) {
+	t.Helper()
+	h := seedFunctionalHarness(t)
+	out, err := h.deps.listFunctionalLocations(h.ctx(), listFunctionalLocationsInput{SiteCode: "WH1", Role: "Dock"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(out.Locations) != 2 {
+		t.Fatalf("expected 2 dock locations, got %d: %+v", len(out.Locations), out.Locations)
+	}
+	if out.Locations[0].LocationCode != "WH1-DOCK-OB-D01-01-01-A" || out.Locations[0].DockFlow != "Outbound" {
+		t.Fatalf("unexpected first location %+v", out.Locations[0])
+	}
+	if out.Locations[1].LocationCode != "WH1-DOCK-OB-D01-01-02-A" || out.Locations[1].DockFlow != "Inbound" {
+		t.Fatalf("unexpected second location %+v", out.Locations[1])
+	}
+	for _, loc := range out.Locations {
+		if loc.Role != "Dock" {
+			t.Fatalf("expected role Dock, got %q", loc.Role)
 		}
-		if out.Locations == nil || len(out.Locations) != 0 {
-			t.Fatalf("expected an empty, non-nil list, got %+v", out.Locations)
+		if len(loc.Activities) != 0 {
+			t.Fatalf("expected no activities on a Dock location, got %v", loc.Activities)
 		}
-	})
+	}
+}
+
+func testFunctionalLocationsEmptyRole(t *testing.T) {
+	t.Helper()
+	h := seedFunctionalHarness(t)
+	out, err := h.deps.listFunctionalLocations(h.ctx(), listFunctionalLocationsInput{SiteCode: "WH1", Role: "Yard"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out.Locations == nil || len(out.Locations) != 0 {
+		t.Fatalf("expected an empty, non-nil list, got %+v", out.Locations)
+	}
 }
 
 func TestGetZoneTravelGraphTool(t *testing.T) {

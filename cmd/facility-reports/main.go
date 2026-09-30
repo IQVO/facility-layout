@@ -22,6 +22,7 @@ import (
 
 	inboundhttp "github.com/claudioed/facility-layout/internal/adapters/inbound/http"
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/analyticsstore"
+	"github.com/claudioed/facility-layout/internal/adapters/outbound/bootretry"
 )
 
 // errMissingAnalyticsURL is returned when ANALYTICS_DATABASE_URL is unset.
@@ -53,8 +54,23 @@ func run() error {
 		return err
 	}
 	defer pool.Close()
+	// Retried, because in this fleet EVERY injected pod's first outbound TCP
+	// dial is reset ~10s after the app starts (Istio native sidecars). A
+	// single attempt turns that known, transient condition into
+	// CrashLoopBackOff; the retry still refuses to boot once the budget is
+	// exhausted, reporting the real underlying error.
+	if err := bootretry.Retry(rootCtx, logger, "ping analytics database", func() error {
+		return pool.Ping(rootCtx)
+	}); err != nil {
+		return err
+	}
 
 	handlers := &inboundhttp.ReportsHandlers{Store: analyticsstore.NewPostgresReport(pool)}
+	// readiness backs GET /readyz (ADR-0020 §graceful shutdown): flipped
+	// to not-ready as the FIRST step of the shutdown sequence below,
+	// before the HTTP server itself stops accepting connections.
+	readiness := &inboundhttp.Readiness{}
+	handlers.Readiness = readiness
 	router := inboundhttp.NewReportsRouter(handlers, logger)
 
 	srv := &http.Server{Addr: httpAddr, Handler: router, ReadHeaderTimeout: 5 * time.Second}
@@ -69,6 +85,14 @@ func run() error {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
+
+	// Graceful shutdown (ADR-0020, mirroring order-management's ADR-0025
+	// §graceful shutdown verbatim): flip readiness to not-ready FIRST,
+	// then drain in-flight HTTP requests, then (via the deferred
+	// pool.Close() registered above) close the read-only pgx pool LAST.
+	// This process has no Kafka consumer/producer to stop -- it is a
+	// pure read-only reader over Postgres.
+	readiness.SetNotReady()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

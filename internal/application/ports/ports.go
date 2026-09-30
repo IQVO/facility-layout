@@ -91,6 +91,23 @@ type EventPublisher interface {
 	Publish(ctx context.Context, event shared.DomainEvent) error
 }
 
+// UnitOfWork brackets a use case's aggregate save(s) and the domain
+// event(s) it raises so both commit or neither does (ADR-0018,
+// transactional outbox).
+//
+// Execute runs fn inside one atomic scope. Every Repo.Save and
+// EventPublisher.Publish made with the ctx handed to fn is bound to that
+// same scope: if fn returns an error the scope is rolled back and nothing
+// — neither the aggregate row nor the outbox row — is visible afterwards.
+//
+// Adapters with no transactional backing (the in-memory repos, the log
+// publisher) never need a UnitOfWork: a nil value means "no transactional
+// backing" and use cases run Save/Publish back to back, which is exactly
+// the in-memory dev configuration.
+type UnitOfWork interface {
+	Execute(ctx context.Context, fn func(ctx context.Context) error) error
+}
+
 // Clock abstracts current time so use cases and tests are deterministic.
 type Clock interface {
 	Now() time.Time

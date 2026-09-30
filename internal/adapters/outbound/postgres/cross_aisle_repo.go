@@ -22,7 +22,7 @@ func NewCrossAisleRepo(pool *pgxpool.Pool) *CrossAisleRepo {
 
 // Save upserts the cross-aisle.
 func (r *CrossAisleRepo) Save(ctx context.Context, c *aisle.CrossAisle) error {
-	_, err := r.pool.Exec(ctx, `
+	_, err := querierFrom(ctx, r.pool).Exec(ctx, `
 		INSERT INTO cross_aisles (zone_id, from_aisle, to_aisle, at_bay, decommissioned)
 		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (zone_id, from_aisle, to_aisle, at_bay) DO UPDATE SET
@@ -37,7 +37,7 @@ func (r *CrossAisleRepo) Save(ctx context.Context, c *aisle.CrossAisle) error {
 func (r *CrossAisleRepo) FindByAisles(ctx context.Context, zoneID, fromAisle, toAisle, atBay string) (*aisle.CrossAisle, error) {
 	var decommissioned bool
 	var storedFrom, storedTo string
-	err := r.pool.QueryRow(ctx, `
+	err := querierFrom(ctx, r.pool).QueryRow(ctx, `
 		SELECT from_aisle, to_aisle, decommissioned FROM cross_aisles
 		WHERE zone_id = $1 AND at_bay = $2
 			AND ((from_aisle = $3 AND to_aisle = $4) OR (from_aisle = $4 AND to_aisle = $3))
@@ -54,7 +54,7 @@ func (r *CrossAisleRepo) FindByAisles(ctx context.Context, zoneID, fromAisle, to
 // ListByZone returns every cross-aisle in a zone, ordered by from_aisle,
 // to_aisle, at_bay.
 func (r *CrossAisleRepo) ListByZone(ctx context.Context, zoneID string) ([]*aisle.CrossAisle, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := querierFrom(ctx, r.pool).Query(ctx, `
 		SELECT from_aisle, to_aisle, at_bay, decommissioned FROM cross_aisles
 		WHERE zone_id = $1 ORDER BY from_aisle, to_aisle, at_bay
 	`, zoneID)

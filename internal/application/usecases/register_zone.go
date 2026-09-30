@@ -15,6 +15,8 @@ type RegisterZone struct {
 	Zones  ports.ZoneRepo
 	Events ports.EventPublisher
 	Clock  ports.Clock
+	// UnitOfWork brackets Save + Publish atomically (ADR-0018, optional).
+	UnitOfWork ports.UnitOfWork
 }
 
 // Execute registers the zone and publishes ZoneRegistered.
@@ -43,11 +45,14 @@ func (uc *RegisterZone) Execute(ctx context.Context, siteCode, areaCode, zoneCod
 		return nil, ErrDuplicateZone
 	}
 
-	if err := uc.Zones.Save(ctx, z); err != nil {
-		return nil, err
-	}
-	event := shared.NewZoneRegistered(uc.Clock.Now(), z.ID(), z.SiteCode(), z.AreaCode(), z.ZoneCode(), z.TemperatureClass(), z.Hazmat())
-	if err := uc.Events.Publish(ctx, event); err != nil {
+	err = atomically(ctx, uc.UnitOfWork, func(ctx context.Context) error {
+		if err := uc.Zones.Save(ctx, z); err != nil {
+			return err
+		}
+		event := shared.NewZoneRegistered(uc.Clock.Now(), z.ID(), z.SiteCode(), z.AreaCode(), z.ZoneCode(), z.TemperatureClass(), z.Hazmat())
+		return uc.Events.Publish(ctx, event)
+	})
+	if err != nil {
 		return nil, err
 	}
 	return z, nil

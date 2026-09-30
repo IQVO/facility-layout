@@ -67,6 +67,10 @@ type fakeProcessed struct {
 
 func newFakeProcessed() *fakeProcessed { return &fakeProcessed{seen: map[string]bool{}} }
 
+func (p *fakeProcessed) IsProcessed(_ context.Context, eventId string) (bool, error) {
+	return p.seen[eventId], nil
+}
+
 func (p *fakeProcessed) MarkProcessed(_ context.Context, eventId string) (bool, error) {
 	if p.seen[eventId] {
 		return false, nil
@@ -98,52 +102,69 @@ func envelope(t *testing.T, eventId, eventType string, at time.Time, data map[st
 
 const prefix = "com.warehouse.wms.facility-layout."
 
+// routedEventCase is one row of the routing table: an inbound event_type and
+// the projection method + scope it must be routed to.
+type routedEventCase struct {
+	name       string
+	eventType  string
+	data       map[string]any
+	wantMethod string
+	wantScope  string
+}
+
 func TestAnalyticsConsumer_RoutesEachEventTypeWithScope(t *testing.T) {
 	at := time.Date(2026, 5, 1, 8, 0, 0, 0, time.UTC)
 
-	tests := []struct {
-		name       string
-		eventType  string
-		data       map[string]any
-		wantMethod string
-		wantScope  string
-	}{
-		{"site", prefix + "site.SiteRegistered", map[string]any{"siteCode": "WH1"}, "site", "WH1"},
-		{"zone", prefix + "zone.ZoneRegistered", map[string]any{"zoneId": "WH1-STOR-AMB", "siteCode": "WH1"}, "zone", "WH1"},
-		{"aisle", prefix + "aisle.AisleRegistered", map[string]any{"aisleId": "WH1-STOR-AMB-A07", "zoneId": "WH1-STOR-AMB"}, "aisle", "WH1-STOR-AMB"},
-		{"loctype", prefix + "locationtype.LocationTypeRegistered", map[string]any{"locationType": "PalletRack"}, "loctype", ""},
-		{"rule", prefix + "placementrule.PlacementRuleDefined", map[string]any{"ruleId": "r-1"}, "rule", ""},
-		{"slot", prefix + "locationslot.LocationSlotRegistered", map[string]any{"locationCode": "WH1-STOR-AMB-A07-03-02-B", "zoneId": "WH1-STOR-AMB"}, "slot", "WH1-STOR-AMB"},
-		{"decomm", prefix + "locationslot.LocationSlotDecommissioned", map[string]any{"locationCode": "WH1-STOR-AMB-A07-03-02-B"}, "decomm", "WH1-STOR-AMB"},
-		{"import", prefix + "locationslot.FacilityLayoutImported", map[string]any{"rowsSubmitted": 10, "slotsImported": 9, "rowsRejected": 1}, "import", ""},
+	tests := []routedEventCase{
+		{name: "site", eventType: prefix + "site.SiteRegistered", data: map[string]any{"siteCode": "WH1"}, wantMethod: "site", wantScope: "WH1"},
+		{name: "zone", eventType: prefix + "zone.ZoneRegistered", data: map[string]any{"zoneId": "WH1-STOR-AMB", "siteCode": "WH1"}, wantMethod: "zone", wantScope: "WH1"},
+		{name: "aisle", eventType: prefix + "aisle.AisleRegistered", data: map[string]any{"aisleId": "WH1-STOR-AMB-A07", "zoneId": "WH1-STOR-AMB"}, wantMethod: "aisle", wantScope: "WH1-STOR-AMB"},
+		{name: "loctype", eventType: prefix + "locationtype.LocationTypeRegistered", data: map[string]any{"locationType": "PalletRack"}, wantMethod: "loctype", wantScope: ""},
+		{name: "rule", eventType: prefix + "placementrule.PlacementRuleDefined", data: map[string]any{"ruleId": "r-1"}, wantMethod: "rule", wantScope: ""},
+		{name: "slot", eventType: prefix + "locationslot.LocationSlotRegistered", data: map[string]any{"locationCode": "WH1-STOR-AMB-A07-03-02-B", "zoneId": "WH1-STOR-AMB"}, wantMethod: "slot", wantScope: "WH1-STOR-AMB"},
+		{name: "decomm", eventType: prefix + "locationslot.LocationSlotDecommissioned", data: map[string]any{"locationCode": "WH1-STOR-AMB-A07-03-02-B"}, wantMethod: "decomm", wantScope: "WH1-STOR-AMB"},
+		{name: "import", eventType: prefix + "locationslot.FacilityLayoutImported", data: map[string]any{"rowsSubmitted": 10, "slotsImported": 9, "rowsRejected": 1}, wantMethod: "import", wantScope: ""},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			proj := &fakeProjection{}
-			c := &inboundkafka.AnalyticsConsumer{Projection: proj, Processed: newFakeProcessed(), Logger: slog.Default()}
-
-			raw := envelope(t, "e-"+tt.name, tt.eventType, at, tt.data)
-			if err := c.HandleMessage(context.Background(), raw); err != nil {
-				t.Fatalf("HandleMessage: %v", err)
-			}
-			if len(proj.calls) != 1 {
-				t.Fatalf("calls = %d, want 1", len(proj.calls))
-			}
-			got := proj.calls[0]
-			if got.method != tt.wantMethod {
-				t.Errorf("method = %q, want %q", got.method, tt.wantMethod)
-			}
-			if got.scope != tt.wantScope {
-				t.Errorf("scope = %q, want %q", got.scope, tt.wantScope)
-			}
-			if !got.at.Equal(at) {
-				t.Errorf("at = %v, want %v", got.at, at)
-			}
-			if tt.name == "import" && (got.submitted != 10 || got.imported != 9 || got.rejected != 1) {
-				t.Errorf("import tallies = %+v", got)
-			}
+			assertRoutedEvent(t, tt, at)
 		})
+	}
+}
+
+// assertRoutedEvent feeds one table row's envelope through HandleMessage and
+// checks the single projection call it produced.
+func assertRoutedEvent(t *testing.T, tt routedEventCase, at time.Time) {
+	t.Helper()
+	proj := &fakeProjection{}
+	c := &inboundkafka.AnalyticsConsumer{Projection: proj, Processed: newFakeProcessed(), Logger: slog.Default()}
+
+	raw := envelope(t, "e-"+tt.name, tt.eventType, at, tt.data)
+	if err := c.HandleMessage(context.Background(), raw); err != nil {
+		t.Fatalf("HandleMessage: %v", err)
+	}
+	if len(proj.calls) != 1 {
+		t.Fatalf("calls = %d, want 1", len(proj.calls))
+	}
+	got := proj.calls[0]
+	if got.method != tt.wantMethod {
+		t.Errorf("method = %q, want %q", got.method, tt.wantMethod)
+	}
+	if got.scope != tt.wantScope {
+		t.Errorf("scope = %q, want %q", got.scope, tt.wantScope)
+	}
+	if !got.at.Equal(at) {
+		t.Errorf("at = %v, want %v", got.at, at)
+	}
+	assertImportTallies(t, tt, got)
+}
+
+// assertImportTallies checks the row counters only the import event carries.
+func assertImportTallies(t *testing.T, tt routedEventCase, got call) {
+	t.Helper()
+	if tt.name == "import" && (got.submitted != 10 || got.imported != 9 || got.rejected != 1) {
+		t.Errorf("import tallies = %+v", got)
 	}
 }
 

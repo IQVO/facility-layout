@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	kafkago "github.com/segmentio/kafka-go"
 
 	"github.com/claudioed/facility-layout/internal/analytics/report"
@@ -27,12 +28,41 @@ import (
 // track their offsets independently.
 const AnalyticsConsumerGroup = "facility-analytics"
 
-// ProcessedEvents is the consumer's idempotency gate: MarkProcessed records an
-// event id if it has not been seen and reports whether this call was the first
-// to record it. It is declared here (rather than in application/ports) because
-// it is an analytics-only concern the OLTP layers never touch; the analyticsstore
-// ConsumedEventsRepo implements it.
+// dlqTopicSuffix names the dead-letter topic this consumer publishes a poison
+// message to, relative to its OWN source topic (never a fixed constant) — see
+// ADR-0020's DLQ section, which copies order-management's ADR-0025 §DLQ
+// pattern verbatim for this consumer. NewAnalyticsConsumer's isolated test
+// topics each get their own matching "<topic>.dlq" the same way.
+const dlqTopicSuffix = ".dlq"
+
+// maxHandlerAttempts bounds HandleMessage's in-process retry (ADR-0020 §DLQ)
+// before a message is dead-lettered: 1 initial attempt plus up to 2 retries.
+const maxHandlerAttempts = 3
+
+const (
+	retryInitialInterval = 100 * time.Millisecond
+	retryMaxInterval     = 2 * time.Second
+)
+
+// ProcessedEvents is the consumer's idempotency gate. IsProcessed is a
+// read-only pre-check: HandleMessage consults it BEFORE applying, so a
+// genuine at-least-once redelivery of an event that was already fully
+// applied is skipped without re-running Apply. MarkProcessed then records an
+// event id as applied — HandleMessage calls it only AFTER Apply has
+// succeeded (see HandleMessage's doc comment for why apply-then-claim, not
+// claim-then-apply, is required for ADR-0020 §DLQ's in-process retry to
+// actually retry). It is declared here (rather than in application/ports)
+// because it is an analytics-only concern the OLTP layers never touch; the
+// analyticsstore ConsumedEventsRepo implements it.
 type ProcessedEvents interface {
+	// IsProcessed reports whether eventId has already been recorded by a
+	// prior, successful MarkProcessed call.
+	IsProcessed(ctx context.Context, eventId string) (bool, error)
+	// MarkProcessed records eventId as applied. Its bool return is kept
+	// for callers that still want "was this the first recording" (true
+	// under normal use, since HandleMessage always checks IsProcessed
+	// first); ON CONFLICT DO NOTHING makes a duplicate call harmless
+	// either way.
 	MarkProcessed(ctx context.Context, eventId string) (bool, error)
 }
 
@@ -72,10 +102,19 @@ type AnalyticsConsumer struct {
 	Projection report.ProjectionStore
 	Processed  ProcessedEvents
 	Logger     *slog.Logger
+	// dlqWriter publishes a poison message (ADR-0020 §DLQ, mirroring
+	// order-management's ADR-0025 §DLQ verbatim) to topic+dlqTopicSuffix
+	// after maxHandlerAttempts in-process retries of HandleMessage all
+	// fail. nil in a zero-value struct built directly by unit tests that
+	// exercise HandleMessage in isolation (they never reach Run's DLQ
+	// path) — dlqPublish itself guards against a nil writer so those
+	// tests keep compiling/passing unchanged.
+	dlqWriter *kafkago.Writer
 }
 
 // NewAnalyticsConsumer constructs an AnalyticsConsumer reading topic from
-// brokers under AnalyticsConsumerGroup.
+// brokers under AnalyticsConsumerGroup, with a dead-letter writer targeting
+// topic+".dlq" (ADR-0020 §DLQ).
 func NewAnalyticsConsumer(brokers []string, topic string, projection report.ProjectionStore, processed ProcessedEvents, logger *slog.Logger) *AnalyticsConsumer {
 	if logger == nil {
 		logger = slog.Default()
@@ -94,38 +133,136 @@ func NewAnalyticsConsumer(brokers []string, topic string, projection report.Proj
 		// affects the first join.
 		StartOffset: kafkago.FirstOffset,
 	})
-	return &AnalyticsConsumer{Reader: reader, Projection: projection, Processed: processed, Logger: logger}
+	return &AnalyticsConsumer{
+		Reader:     reader,
+		Projection: projection,
+		Processed:  processed,
+		Logger:     logger,
+		dlqWriter: &kafkago.Writer{
+			Addr:  kafkago.TCP(brokers...),
+			Topic: topic + dlqTopicSuffix,
+		},
+	}
 }
 
-// Run reads and handles messages until ctx is cancelled or the reader returns a
-// fatal error. A handling error is logged and the loop continues so one bad
-// message cannot wedge the projector.
+// Run fetches and handles messages until ctx is cancelled or the reader
+// returns a fatal error. Unlike a plain ReadMessage loop (which commits the
+// offset BEFORE the handler ever runs when a GroupID is configured), Run
+// explicitly fetches, retries the handler in-process, and only commits after
+// either a success or a dead-letter publish (ADR-0020 §DLQ) — so a message
+// whose handler keeps failing is retried up to maxHandlerAttempts times and
+// then dead-lettered, rather than being silently dropped or wedging the
+// partition.
 func (c *AnalyticsConsumer) Run(ctx context.Context) error {
 	for {
-		msg, err := c.Reader.ReadMessage(ctx)
+		msg, err := c.Reader.FetchMessage(ctx)
 		if err != nil {
-			if errors.Is(err, context.Canceled) {
+			if ctx.Err() != nil {
 				return nil
 			}
 			return err
 		}
-		if err := c.HandleMessage(ctx, msg.Value); err != nil {
-			c.Logger.ErrorContext(ctx, "analytics message handling failed", "error", err)
+		if err := c.handleMessage(ctx, msg); err != nil {
+			return err
 		}
 	}
 }
 
-// Close releases the underlying Kafka reader.
+// handleMessage retries HandleMessage(msg.Value) up to maxHandlerAttempts
+// times with jittered exponential backoff; once all attempts are exhausted
+// it dead-letters the raw message (ADR-0020 §DLQ) and commits the offset
+// anyway — one poison message must never permanently block every event
+// behind it on this partition. Only a commit failure or a DLQ publish
+// failure aborts the consume loop.
+func (c *AnalyticsConsumer) handleMessage(ctx context.Context, msg kafkago.Message) error {
+	err := c.handleWithRetry(ctx, msg.Value)
+	if err == nil {
+		return c.commit(ctx, msg)
+	}
+
+	c.Logger.ErrorContext(ctx, "analytics: exhausted retries, sending to dead-letter topic",
+		"topic", c.Reader.Config().Topic, "dlq_topic", c.Reader.Config().Topic+dlqTopicSuffix,
+		"attempts", maxHandlerAttempts, "error", err)
+	if dlqErr := c.dlqPublish(ctx, msg, err); dlqErr != nil {
+		return fmt.Errorf("analytics: publish to dead-letter topic: %w", dlqErr)
+	}
+	return c.commit(ctx, msg)
+}
+
+// handleWithRetry retries HandleMessage with jittered exponential backoff
+// (ADR-0020 §DLQ), bounded by ctx's own deadline/cancellation.
+func (c *AnalyticsConsumer) handleWithRetry(ctx context.Context, raw []byte) error {
+	policy := backoff.NewExponentialBackOff(
+		backoff.WithInitialInterval(retryInitialInterval),
+		backoff.WithMaxInterval(retryMaxInterval),
+	)
+	bounded := backoff.WithContext(backoff.WithMaxRetries(policy, maxHandlerAttempts-1), ctx)
+
+	return backoff.Retry(func() error {
+		return c.HandleMessage(ctx, raw)
+	}, bounded)
+}
+
+// dlqPublish writes the raw, unmodified message payload plus error context
+// (as headers, so the raw body stays byte-identical for a manual replay
+// tool) to the dead-letter topic. A nil dlqWriter (the zero-value
+// AnalyticsConsumer some unit tests construct directly, which never
+// exercises this path) is a documented no-op rather than a nil-pointer
+// panic.
+func (c *AnalyticsConsumer) dlqPublish(ctx context.Context, msg kafkago.Message, cause error) error {
+	if c.dlqWriter == nil {
+		return nil
+	}
+	headers := append([]kafkago.Header{}, msg.Headers...)
+	headers = append(headers,
+		kafkago.Header{Key: "x-dlq-source-topic", Value: []byte(c.Reader.Config().Topic)},
+		kafkago.Header{Key: "x-dlq-error", Value: []byte(cause.Error())},
+		kafkago.Header{Key: "x-dlq-failed-at", Value: []byte(time.Now().UTC().Format(time.RFC3339))},
+	)
+	return c.dlqWriter.WriteMessages(ctx, kafkago.Message{
+		Key:     msg.Key,
+		Value:   msg.Value,
+		Headers: headers,
+	})
+}
+
+// commit acknowledges msg so it is never redelivered. Only a commit failure
+// itself aborts the consume loop.
+func (c *AnalyticsConsumer) commit(ctx context.Context, msg kafkago.Message) error {
+	return c.Reader.CommitMessages(ctx, msg)
+}
+
+// Close releases the underlying Kafka reader and, if configured, the DLQ
+// writer.
 func (c *AnalyticsConsumer) Close() error {
-	return c.Reader.Close()
+	readerErr := c.Reader.Close()
+	if c.dlqWriter == nil {
+		return readerErr
+	}
+	return errors.Join(readerErr, c.dlqWriter.Close())
 }
 
 // HandleMessage decodes raw as an analyticsEnvelope and applies the matching
 // projection method for its event_type. Event types outside the projection
 // contract are ignored (and not marked processed). For a projecting event it
-// dedupes on event_id via ProcessedEvents before applying, so a redelivery is a
-// no-op. It is exported separately from Run so tests can feed raw envelopes
-// without a live broker.
+// first consults ProcessedEvents.IsProcessed (a read-only check) to skip a
+// genuine redelivery of an event already fully applied, then applies, then
+// -- only once Apply has actually succeeded -- calls MarkProcessed. It is
+// exported separately from Run so tests can feed raw envelopes without a
+// live broker.
+//
+// Note on ordering (apply-then-claim is deliberate, not incidental):
+// PostgresProjection.Apply* is already idempotent per event_id (it claims
+// analytics_processed_events inside the SAME transaction as its effect), so
+// calling it more than once for the same event_id on a retry is always
+// safe. The OLDER claim-BEFORE-apply order (MarkProcessed, then Apply) had
+// exactly the bug ADR-0020 §DLQ exists to prevent: if Apply then failed, the
+// in-process retry's next attempt saw the event already marked processed
+// and returned nil WITHOUT ever calling Apply again -- silently treating a
+// still-failing poison message as handled instead of genuinely retrying it
+// and eventually dead-lettering it. Checking IsProcessed (read-only, no
+// side effect) up front instead gives the same at-least-once-redelivery
+// short-circuit without creating that false-claim race.
 func (c *AnalyticsConsumer) HandleMessage(ctx context.Context, raw []byte) error {
 	var env analyticsEnvelope
 	if err := json.Unmarshal(raw, &env); err != nil {
@@ -136,20 +273,15 @@ func (c *AnalyticsConsumer) HandleMessage(ctx context.Context, raw []byte) error
 	// event_type is acknowledged without touching the read model or the
 	// processed set, so a later contract change could still reprocess it.
 	name := eventName(env.EventType)
-	switch name {
-	case "SiteRegistered", "ZoneRegistered", "AisleRegistered",
-		"LocationTypeRegistered", "PlacementRuleDefined",
-		"LocationSlotRegistered", "LocationSlotDecommissioned",
-		"FacilityLayoutImported":
-	default:
+	if !isCatalogChangeEvent(name) {
 		return nil
 	}
 
-	isNew, err := c.Processed.MarkProcessed(ctx, env.EventId)
+	alreadyProcessed, err := c.Processed.IsProcessed(ctx, env.EventId)
 	if err != nil {
-		return fmt.Errorf("analytics: mark processed: %w", err)
+		return fmt.Errorf("analytics: check processed: %w", err)
 	}
-	if !isNew {
+	if alreadyProcessed {
 		return nil
 	}
 
@@ -158,6 +290,40 @@ func (c *AnalyticsConsumer) HandleMessage(ctx context.Context, raw []byte) error
 		return fmt.Errorf("analytics: decode data: %w", err)
 	}
 
+	if err := c.applyCatalogChange(ctx, env, data, name); err != nil {
+		return err
+	}
+
+	// Record consumption only now that Apply has actually succeeded. A
+	// MarkProcessed failure here is reported (so at-least-once delivery
+	// can redeliver and re-run this now-safe-to-repeat apply) rather than
+	// silently swallowed.
+	if _, err := c.Processed.MarkProcessed(ctx, env.EventId); err != nil {
+		return fmt.Errorf("analytics: mark processed: %w", err)
+	}
+	return nil
+}
+
+// isCatalogChangeEvent reports whether name belongs to the catalog-change
+// event set the Layout Catalog Growth & Change report derives from.
+func isCatalogChangeEvent(name string) bool {
+	switch name {
+	case "SiteRegistered", "ZoneRegistered", "AisleRegistered",
+		"LocationTypeRegistered", "PlacementRuleDefined",
+		"LocationSlotRegistered", "LocationSlotDecommissioned",
+		"FacilityLayoutImported":
+		return true
+	default:
+		return false
+	}
+}
+
+// applyCatalogChange routes one decoded, deduped envelope to its projection
+// method. Scope follows the event: site-scoped events carry the site code,
+// slot events the zone derived from the location code, and catalog-wide
+// definitions (location types, placement rules, imports) land in the empty
+// catalog-wide scope.
+func (c *AnalyticsConsumer) applyCatalogChange(ctx context.Context, env analyticsEnvelope, data analyticsData, name string) error {
 	switch name {
 	case "SiteRegistered":
 		return c.Projection.ApplySiteRegistered(ctx, env.EventId, data.SiteCode, env.OccurredAt)

@@ -15,6 +15,8 @@ type DefinePlacementRule struct {
 	Rules         ports.PlacementRuleRepo
 	Events        ports.EventPublisher
 	Clock         ports.Clock
+	// UnitOfWork brackets Save + Publish atomically (ADR-0018, optional).
+	UnitOfWork ports.UnitOfWork
 }
 
 // Execute defines the rule and publishes PlacementRuleDefined.
@@ -39,11 +41,14 @@ func (uc *DefinePlacementRule) Execute(ctx context.Context, id, locationType str
 	if err != nil {
 		return placement.PlacementRule{}, err
 	}
-	if err := uc.Rules.Save(ctx, rule); err != nil {
-		return placement.PlacementRule{}, err
-	}
-	event := shared.NewPlacementRuleDefined(uc.Clock.Now(), rule.ID(), rule.LocationType(), string(rule.Effect()), rule.Predicate().String())
-	if err := uc.Events.Publish(ctx, event); err != nil {
+	err = atomically(ctx, uc.UnitOfWork, func(ctx context.Context) error {
+		if err := uc.Rules.Save(ctx, rule); err != nil {
+			return err
+		}
+		event := shared.NewPlacementRuleDefined(uc.Clock.Now(), rule.ID(), rule.LocationType(), string(rule.Effect()), rule.Predicate().String())
+		return uc.Events.Publish(ctx, event)
+	})
+	if err != nil {
 		return placement.PlacementRule{}, err
 	}
 	return rule, nil

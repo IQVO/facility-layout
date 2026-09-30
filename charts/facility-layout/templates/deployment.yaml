@@ -6,7 +6,7 @@ metadata:
     {{- include "facility-layout.labels" . | nindent 4 }}
     app.kubernetes.io/component: api
 spec:
-  {{- if not .Values.autoscaling.enabled }}
+  {{- if not .Values.autoscaling.api.enabled }}
   replicas: {{ .Values.replicaCount }}
   {{- end }}
   selector:
@@ -34,6 +34,9 @@ spec:
       serviceAccountName: {{ include "facility-layout.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.terminationGracePeriodSeconds }}
+      terminationGracePeriodSeconds: {{ . }}
+      {{- end }}
       containers:
         - name: {{ .Chart.Name }}
           securityContext:
@@ -61,6 +64,20 @@ spec:
                 secretKeyRef:
                   name: {{ include "facility-layout.databaseSecretName" . }}
                   key: {{ .Values.database.existingSecretKey }}
+            {{- if .Values.database.migrationsExistingSecretKey }}
+            # See values.yaml's database.migrationsExistingSecretKey comment
+            # and ADR-0023: a direct (non-pooled) connection used only for
+            # the migration step below, never for the runtime pgxpool.
+            # `optional: true` so a secret without this key yet (predates
+            # this chart version) still starts the pod -- the binary falls
+            # back to DATABASE_URL itself when this env var is unset.
+            - name: MIGRATIONS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "facility-layout.databaseSecretName" . }}
+                  key: {{ .Values.database.migrationsExistingSecretKey }}
+                  optional: true
+            {{- end }}
             {{- end }}
             {{- if .Values.otel.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
@@ -75,6 +92,10 @@ spec:
             {{- range .Values.extraEnv }}
             - {{ toYaml . | nindent 14 | trim }}
             {{- end }}
+          {{- with .Values.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           {{- with .Values.livenessProbe }}
           livenessProbe:
             {{- toYaml . | nindent 12 }}

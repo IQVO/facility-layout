@@ -46,6 +46,28 @@ type Writer interface {
 	WriteMessages(ctx context.Context, msgs ...kafkago.Message) error
 }
 
+// Encoded is one already-encoded, wire-ready Kafka message: the topic it
+// belongs on (so a multi-topic outbox/relay can route it correctly), the
+// partition key, and the JSON-marshalled envelope. It is the unit the
+// transactional outbox (postgres.OutboxPublisher) stores and the outbox
+// relay later hands to a Sink, so the direct-publish and outbox paths can
+// never disagree about what a message looks like.
+type Encoded struct {
+	Topic     string
+	EventType string
+	Key       []byte
+	Value     []byte
+}
+
+// Encoder turns one domain event into its Kafka wire form for one topic,
+// without sending it. Both Publisher (this file, the integration topic)
+// and AnalyticsPublisher (analytics_publisher.go) implement it, so
+// postgres.NewOutboxPublisher can fan a single event out to both topics
+// inside one transaction.
+type Encoder interface {
+	Encode(ctx context.Context, event shared.DomainEvent, eventId string) (Encoded, error)
+}
+
 // Publisher publishes facility-layout domain events onto Kafka. It satisfies
 // ports.EventPublisher.
 type Publisher struct {
@@ -55,29 +77,38 @@ type Publisher struct {
 
 // NewPublisher constructs a Publisher writing to Topic on brokers. newId
 // mints the envelope event_id (e.g. a UUID).
+//
+// Balancer is kafkago.Hash (FNV-1a over Message.Key), not LeastBytes: this
+// package's kafka-go dependency does NOT replicate Kafka's own key-hashing
+// partitioner just because a message carries a non-nil Key — the Balancer
+// alone decides partition placement, and LeastBytes routes purely by
+// cumulative byte volume, ignoring Key entirely. Hash is the balancer that
+// actually gives "same Key always maps to the same partition" (see ADR
+// 0021, mirroring order-management PR #111 / ADR 0027, both prompted by
+// warehouse-infra PR #42's 1->8 partition scaleup).
 func NewPublisher(brokers []string, newId func() string) *Publisher {
 	return &Publisher{
 		Writer: &kafkago.Writer{
 			Addr:                   kafkago.TCP(brokers...),
 			Topic:                  Topic,
-			Balancer:               &kafkago.LeastBytes{},
+			Balancer:               &kafkago.Hash{},
 			AllowAutoTopicCreation: true,
 		},
 		NewId: newId,
 	}
 }
 
-// Publish emits event onto Topic wrapped in an Envelope. The message key is
-// the event's aggregate identity (so all events for one aggregate land on the
-// same partition, preserving per-aggregate order); event.EventType() is the
-// service's Published Language type.
-func (p *Publisher) Publish(ctx context.Context, event shared.DomainEvent) error {
+// Encode translates event into its Kafka wire form on Topic, without
+// sending it. eventId is supplied by the caller (rather than minted here)
+// so the outbox can persist the same id it will later publish under,
+// making redelivery detectable by consumers.
+func (p *Publisher) Encode(_ context.Context, event shared.DomainEvent, eventId string) (Encoded, error) {
 	data, err := json.Marshal(event)
 	if err != nil {
-		return fmt.Errorf("kafka: marshal event data: %w", err)
+		return Encoded{}, fmt.Errorf("kafka: marshal event data: %w", err)
 	}
 	env := Envelope{
-		EventId:    p.NewId(),
+		EventId:    eventId,
 		EventType:  event.EventType(),
 		OccurredAt: event.OccurredAt(),
 		Source:     "facility-layout",
@@ -85,14 +116,33 @@ func (p *Publisher) Publish(ctx context.Context, event shared.DomainEvent) error
 	}
 	payload, err := json.Marshal(env)
 	if err != nil {
-		return fmt.Errorf("kafka: marshal envelope: %w", err)
+		return Encoded{}, fmt.Errorf("kafka: marshal envelope: %w", err)
 	}
+	return Encoded{Topic: Topic, EventType: event.EventType(), Key: []byte(aggregateKey(event)), Value: payload}, nil
+}
 
-	msg := kafkago.Message{Key: []byte(aggregateKey(event)), Value: payload}
-	if err := p.Writer.WriteMessages(ctx, msg); err != nil {
+// Publish emits event onto Topic wrapped in an Envelope. The message key is
+// the event's aggregate identity (so all events for one aggregate land on the
+// same partition, preserving per-aggregate order); event.EventType() is the
+// service's Published Language type.
+func (p *Publisher) Publish(ctx context.Context, event shared.DomainEvent) error {
+	enc, err := p.Encode(ctx, event, p.NewId())
+	if err != nil {
+		return err
+	}
+	if err := p.send(ctx, enc); err != nil {
 		return fmt.Errorf("kafka: publish %s: %w", event.EventName(), err)
 	}
 	return nil
+}
+
+// send writes one already-encoded message to Topic (the Writer's fixed
+// topic — kafka-go rejects a message with Topic set when the Writer also
+// has one, so enc.Topic is not applied here; RelaySink is the adapter
+// that applies it per-message for a topic-less writer).
+func (p *Publisher) send(ctx context.Context, enc Encoded) error {
+	msg := kafkago.Message{Key: enc.Key, Value: enc.Value}
+	return p.Writer.WriteMessages(ctx, msg)
 }
 
 // aggregateKey returns the partition/ordering key for an event: the identity

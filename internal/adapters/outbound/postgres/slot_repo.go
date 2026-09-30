@@ -35,7 +35,7 @@ func (r *SlotRepo) Save(ctx context.Context, s *slot.LocationSlot) error {
 	functional := s.Functional()
 	position := s.Position()
 	dimensions := s.Dimensions()
-	_, err := r.pool.Exec(ctx, `
+	_, err := querierFrom(ctx, r.pool).Exec(ctx, `
 		INSERT INTO location_slots (
 			code, site_segment, area_segment, zone_segment, aisle_segment,
 			bay_segment, level_segment, position_segment,
@@ -73,7 +73,7 @@ func (r *SlotRepo) Save(ctx context.Context, s *slot.LocationSlot) error {
 
 // FindByCode returns the slot, or (nil, nil) when it does not exist.
 func (r *SlotRepo) FindByCode(ctx context.Context, code shared.LocationCode) (*slot.LocationSlot, error) {
-	row := r.pool.QueryRow(ctx, `SELECT `+slotColumns+` FROM location_slots WHERE code = $1`, code.String())
+	row := querierFrom(ctx, r.pool).QueryRow(ctx, `SELECT `+slotColumns+` FROM location_slots WHERE code = $1`, code.String())
 
 	s, err := scanSlot(row)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -98,7 +98,7 @@ func (r *SlotRepo) ListByZone(ctx context.Context, zoneID string) ([]*slot.Locat
 }
 
 func (r *SlotRepo) list(ctx context.Context, query, arg string) ([]*slot.LocationSlot, error) {
-	rows, err := r.pool.Query(ctx, query, arg)
+	rows, err := querierFrom(ctx, r.pool).Query(ctx, query, arg)
 	if err != nil {
 		return nil, err
 	}

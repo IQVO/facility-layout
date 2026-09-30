@@ -7,7 +7,9 @@ metadata:
     {{- include "facility-layout.labels" . | nindent 4 }}
     app.kubernetes.io/component: analytics-projector
 spec:
+  {{- if not .Values.autoscaling.projector.enabled }}
   replicas: {{ .Values.analytics.projector.replicaCount }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "facility-layout.selectorLabels" . | nindent 6 }}
@@ -25,6 +27,9 @@ spec:
       serviceAccountName: {{ include "facility-layout.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with $.Values.terminationGracePeriodSeconds }}
+      terminationGracePeriodSeconds: {{ . }}
+      {{- end }}
       containers:
         - name: projector
           securityContext:
@@ -58,6 +63,12 @@ spec:
             - name: ENVIRONMENT
               value: {{ .Values.environment | quote }}
             {{- end }}
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: admin
+            periodSeconds: 2
+            failureThreshold: 30
           livenessProbe:
             httpGet:
               path: /healthz
@@ -65,8 +76,11 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
           readinessProbe:
+            # ADR-0020 §graceful shutdown, mirroring order-management's
+            # ADR-0025 §8: distinct from /healthz above so a draining pod
+            # can flip readiness without failing liveness.
             httpGet:
-              path: /healthz
+              path: /readyz
               port: admin
             initialDelaySeconds: 3
             periodSeconds: 5

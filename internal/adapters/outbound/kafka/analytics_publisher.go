@@ -54,28 +54,32 @@ type AnalyticsPublisher struct {
 
 // NewAnalyticsPublisher constructs an AnalyticsPublisher writing to
 // AnalyticsTopic on brokers. newId mints the envelope event_id (e.g. a UUID).
+//
+// Balancer is kafkago.Hash, not LeastBytes -- see Publisher.NewPublisher's
+// doc comment (publisher.go) for why LeastBytes silently ignores Key for
+// partition routing; this writer had the same latent gap (ADR 0021).
 func NewAnalyticsPublisher(brokers []string, newId func() string) *AnalyticsPublisher {
 	return &AnalyticsPublisher{
 		Writer: &kafkago.Writer{
 			Addr:                   kafkago.TCP(brokers...),
 			Topic:                  AnalyticsTopic,
-			Balancer:               &kafkago.LeastBytes{},
+			Balancer:               &kafkago.Hash{},
 			AllowAutoTopicCreation: true,
 		},
 		NewId: newId,
 	}
 }
 
-// Publish emits event onto AnalyticsTopic wrapped in an AnalyticsEnvelope. The
-// message key is the event's aggregate identity (so all events for one
-// aggregate land on the same partition, preserving per-aggregate order).
-func (p *AnalyticsPublisher) Publish(ctx context.Context, event shared.DomainEvent) error {
+// Encode translates event into its Kafka wire form on AnalyticsTopic,
+// without sending it. eventId is supplied by the caller so the outbox can
+// persist the same id it will later publish under.
+func (p *AnalyticsPublisher) Encode(_ context.Context, event shared.DomainEvent, eventId string) (Encoded, error) {
 	data, err := json.Marshal(event)
 	if err != nil {
-		return fmt.Errorf("kafka: marshal analytics event data: %w", err)
+		return Encoded{}, fmt.Errorf("kafka: marshal analytics event data: %w", err)
 	}
 	env := AnalyticsEnvelope{
-		EventId:       p.NewId(),
+		EventId:       eventId,
 		EventType:     event.EventType(),
 		OccurredAt:    event.OccurredAt(),
 		Source:        "facility-layout",
@@ -84,14 +88,31 @@ func (p *AnalyticsPublisher) Publish(ctx context.Context, event shared.DomainEve
 	}
 	payload, err := json.Marshal(env)
 	if err != nil {
-		return fmt.Errorf("kafka: marshal analytics envelope: %w", err)
+		return Encoded{}, fmt.Errorf("kafka: marshal analytics envelope: %w", err)
 	}
+	return Encoded{Topic: AnalyticsTopic, EventType: event.EventType(), Key: []byte(aggregateKey(event)), Value: payload}, nil
+}
 
-	msg := kafkago.Message{Key: []byte(aggregateKey(event)), Value: payload}
-	if err := p.Writer.WriteMessages(ctx, msg); err != nil {
+// Publish emits event onto AnalyticsTopic wrapped in an AnalyticsEnvelope. The
+// message key is the event's aggregate identity (so all events for one
+// aggregate land on the same partition, preserving per-aggregate order).
+func (p *AnalyticsPublisher) Publish(ctx context.Context, event shared.DomainEvent) error {
+	enc, err := p.Encode(ctx, event, p.NewId())
+	if err != nil {
+		return err
+	}
+	if err := p.send(ctx, enc); err != nil {
 		return fmt.Errorf("kafka: publish %s analytics event: %w", event.EventName(), err)
 	}
 	return nil
+}
+
+// send writes one already-encoded message to AnalyticsTopic (the Writer's
+// fixed topic; see Publisher.send's doc comment for why enc.Topic is not
+// applied here).
+func (p *AnalyticsPublisher) send(ctx context.Context, enc Encoded) error {
+	msg := kafkago.Message{Key: enc.Key, Value: enc.Value}
+	return p.Writer.WriteMessages(ctx, msg)
 }
 
 // Close releases the underlying Kafka writer.

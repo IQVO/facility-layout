@@ -105,3 +105,25 @@ func TestRuleSetIgnoresRulesForOtherZones(t *testing.T) {
 		t.Fatalf("rules for other zones must not apply: %v", err)
 	}
 }
+
+func TestRuleSetAllowListMessageNamesEveryMatchingAllowRule(t *testing.T) {
+	hazZone := placement.ZoneAttributes{ZoneID: "WH1-STOR-HAZ", ZoneCode: "HAZ", TemperatureClass: shared.Ambient, Hazmat: true}
+
+	rules := placement.RuleSet{
+		mustRule(t, "RULE-HAZ-ONLY-RACK", placement.PalletRack, placement.Allow, mustPredicate(t, "HAZ", "", nil)),
+		mustRule(t, "RULE-HAZ-ONLY-SHELF", placement.Shelf, placement.Allow, mustPredicate(t, "", shared.Ambient, nil)),
+	}
+
+	err := rules.Check(placement.BulkFloor, hazZone)
+	if !errors.Is(err, placement.ErrPlacementRuleViolated) {
+		t.Fatalf("expected ErrPlacementRuleViolated, got %v", err)
+	}
+	// The rejection must spell out the whole allow-list: both matching Allow
+	// rules, joined so a reader can tell them apart.
+	if !strings.Contains(err.Error(), "RULE-HAZ-ONLY-RACK") || !strings.Contains(err.Error(), "RULE-HAZ-ONLY-SHELF") {
+		t.Fatalf("expected both allow rules named, got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "]; [") {
+		t.Fatalf("expected the allow rules joined by \"; \", got %q", err.Error())
+	}
+}
