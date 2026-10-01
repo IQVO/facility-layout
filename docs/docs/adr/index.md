@@ -58,8 +58,8 @@ updated. The history of what was believed and when is the point.
 | [0006](./0006-partial-success-bulk-import.md) | Bulk import reports partial success per row | Accepted |
 | [0007](./0007-mcp-inbound-adapter.md) | Model Context Protocol as an inbound adapter, not a new service | Accepted |
 | [0008](./0008-location-classification-read-endpoint.md) | Location classification read endpoint | Accepted |
-| [0009](./0009-kafka-integration-publisher.md) | Kafka integration publisher for the Published Language | Accepted |
-| [0010](./0010-analytical-data-product.md) | Per-service analytical data product (report) via a separate analytics topic | Accepted |
+| [0009](./0009-kafka-integration-publisher.md) | Kafka integration publisher for the Published Language | Accepted (envelope superseded by ADR-0024) |
+| [0010](./0010-analytical-data-product.md) | Per-service analytical data product (report) via a separate analytics topic | Accepted (envelope superseded by ADR-0024) |
 | [0011](./0011-micro-frontend-console-adoption.md) | Adoption of the fleet-wide micro-frontend console architecture (warehouse-ops-agent ADR-0002) | Accepted |
 | [0012](./0012-standard-metrics-convention.md) | Standard metrics convention across the fleet | Accepted |
 | [0013](./0013-first-published-language-consumer.md) | inventory-storage is the first real consumer of the Published Language | Accepted |
@@ -73,6 +73,7 @@ updated. The history of what was believed and when is the point.
 | [0021](./0021-kafka-writer-balancer-hash.md) | Kafka writer Balancer switched from LeastBytes to Hash | Accepted |
 | [0022](./0022-horizontal-autoscaling-and-pgxpool-tuning.md) | Per-workload HorizontalPodAutoscaler and pgxpool MaxConns/statement_timeout tuning | Accepted |
 | [0023](./0023-migrations-direct-postgres-connection.md) | Run golang-migrate against a direct Postgres connection, not PgBouncer | Accepted |
+| [0024](./0024-cloudevents-mandatory-envelope.md) | CloudEvents 1.0 as the mandatory event envelope | Accepted |
 
 ## The Kafka record that was deferred until the adapter existed
 

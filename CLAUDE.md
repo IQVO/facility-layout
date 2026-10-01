@@ -65,7 +65,8 @@ internal/
     outbound/postgres/            pgxpool repos + migrations
     outbound/memory/              in-memory repos for tests/local
     outbound/events/              log/outbox publisher (default when EVENT_PUBLISHER unset)
-    outbound/kafka/               integration + analytics publishers
+    kafka/cloudevents/            the ONLY CloudEvents 1.0 helper (New/Decode/ContentTypeHeader)
+    outbound/kafka/               integration + analytics publishers (CloudEvents only)
     outbound/analyticsstore/      analytics read-side Postgres repos
     outbound/telemetry/           OTel wiring
   analytics/report/               read-only analytics report queries (no domain/app imports)
@@ -96,7 +97,7 @@ Language.
   `warehouse.facility.analytics`. Separate `ANALYTICS_DATABASE_URL`,
   `migrations/analytics/`, read-only reader role. Three processes:
   `cmd/facility` (OLTP), `cmd/facility-projector` (only analytics writer,
-  consumes from FirstOffset, idempotent on `event_id`), `cmd/facility-reports`
+  consumes from FirstOffset, idempotent on the CloudEvents `id`), `cmd/facility-reports`
   (read-only, `GET /reports/...`); an MCP report tool exposes the same data.
 - **Report**: **Layout Catalog Growth & Change**, per site/zone × DAY
   bucket. `GET /reports/.../freshness` reports lag.
@@ -148,6 +149,32 @@ Full testing discipline, coverage gates, and CI parity: `.claude/rules/testing-a
 - gofmt/go vet clean; every package has a doc comment.
 - `web/` (the `facility-mfe` frontend) has its own `package.json`/build/dev
   server and is NOT part of the Go module or its quality gate.
+
+## Events: CloudEvents 1.0 is MANDATORY
+
+Every Kafka message this service produces or consumes (integration
+`warehouse.<ctx>.events` AND analytics `warehouse.<ctx>.analytics`) is a
+CloudEvents 1.0 event in structured content mode. This is a hard fleet rule,
+not a preference:
+
+- No flat envelope (`event_id`/`event_type`/`occurred_at`), no dual-write,
+  no dual-read, no envelope toggle env var (`EVENT_ENVELOPE_MODE` is gone).
+- Build/validate/(un)marshal with `github.com/cloudevents/sdk-go/v2/event`
+  via `internal/adapters/kafka/cloudevents/`; transport stays kafka-go.
+- Kafka header `content-type: application/cloudevents+json; charset=UTF-8`.
+- Required attributes: `specversion=1.0`, `id` (UUID, stable across outbox
+  redelivery), `source=/warehouse/facility-layout`, `type`, `subject` (aggregate id), `time`
+  (occurred-at, UTC), `datacontenttype=application/json`,
+  `dataschema=urn:warehouse:facility-layout:<events|analytics>:<EventName>:v<N>`.
+- `type` = `com.warehouse.<subdomain>.<bounded-context>.<entity>.<EventName>`;
+  for this service: `com.warehouse.wms.facility-layout.<entity>.<EventName>`. Breaking payload
+  change => new `.v2` type + new dataschema version, never mutate.
+- Consumers dispatch on the FULL `type`, ignore unknown types, dedupe on
+  `id`, and DLQ/skip (never crash, never parse a legacy shape) anything that
+  fails CloudEvents validation.
+
+Full standard and the fleet's cross-service type catalogue: ADR-0024
+(`docs/docs/adr/`).
 
 ## Rules directory map (`.claude/rules/`)
 

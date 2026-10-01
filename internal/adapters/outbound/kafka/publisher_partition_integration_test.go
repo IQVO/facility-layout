@@ -12,6 +12,7 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	tckafka "github.com/testcontainers/testcontainers-go/modules/kafka"
 
+	"github.com/claudioed/facility-layout/internal/adapters/kafka/cloudevents"
 	adapter "github.com/claudioed/facility-layout/internal/adapters/outbound/kafka"
 	"github.com/claudioed/facility-layout/internal/domain/shared"
 )
@@ -143,6 +144,7 @@ func TestPublisherKeysMessagesForSameAggregateOntoTheSamePartition(t *testing.T)
 					return // timeout: no more messages on this partition
 				}
 				key := string(msg.Key)
+				assertCloudEventOnWire(t, msg, key)
 				partitionOf[key] = p
 				countByKeyPartition[fmt.Sprintf("%s|%d", key, p)]++
 			}
@@ -165,5 +167,29 @@ func TestPublisherKeysMessagesForSameAggregateOntoTheSamePartition(t *testing.T)
 	gotCount := countByKeyPartition[fmt.Sprintf("%s|%d", sameZone, samePartition)]
 	if gotCount != 3 {
 		t.Errorf("found %d of %s's 3 messages on partition %d, want 3 (all events for one aggregate must share a partition)", gotCount, sameZone, samePartition)
+	}
+}
+
+// assertCloudEventOnWire checks a message read back from a real broker is a
+// structured-mode CloudEvents 1.0 event (ADR-0024) with the content-type
+// header and the aggregate id as subject.
+func assertCloudEventOnWire(t *testing.T, msg kafkago.Message, key string) {
+	t.Helper()
+	evt, err := cloudevents.Decode(msg.Value)
+	if err != nil {
+		t.Errorf("message on wire is not a CloudEvent: %v", err)
+		return
+	}
+	if evt.Type() != "com.warehouse.wms.facility-layout.zone.ZoneRegistered" || evt.Subject() != key {
+		t.Errorf("type=%q subject=%q, want ZoneRegistered/%q", evt.Type(), evt.Subject(), key)
+	}
+	ct := ""
+	for _, h := range msg.Headers {
+		if h.Key == "content-type" {
+			ct = string(h.Value)
+		}
+	}
+	if ct != cloudevents.MediaType {
+		t.Errorf("content-type header = %q, want %q", ct, cloudevents.MediaType)
 	}
 }

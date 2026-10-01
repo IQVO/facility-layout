@@ -71,11 +71,16 @@ The report is projected from the catalog-change event set on
 `PlacementRuleDefined`, `LocationSlotRegistered`, `LocationSlotDecommissioned`,
 `FacilityLayoutImported`.
 
-Each arrives wrapped in **Envelope v1** (`event_id`, `event_type`, `occurred_at`,
-`source`, `schema_version`, `data`). The `data` field carries the domain event's
-own JSON verbatim (the same choice the ADR-0009 integration publisher makes).
-Consumers **switch on `event_type` and ignore unknown types**, and **dedupe on
-`event_id`** so the at-least-once stream projects exactly once.
+Each arrives as a **CloudEvents 1.0** event in structured content mode
+([ADR-0024](../adr/0024-cloudevents-mandatory-envelope.md)): `specversion`,
+`id`, `source=/warehouse/facility-layout`, `type`
+(`com.warehouse.wms.facility-layout.<entity>.<EventName>`), `subject`
+(aggregate id), `time`, `datacontenttype=application/json` and
+`dataschema=urn:warehouse:facility-layout:analytics:<EventName>:v1`, with the
+Kafka header `content-type: application/cloudevents+json; charset=UTF-8`. The
+`data` field carries the domain event's own JSON verbatim. The projector
+**dispatches on the full `type` and ignores unknown types**, **dedupes on the
+CloudEvents `id`**, and dead-letters anything that is not a valid CloudEvent.
 
 ## REST contract
 
@@ -140,6 +145,7 @@ tolerate this lag.
 
 ## Versioning
 
-The analytics envelope is `schema_version: 1`. The `data` payloads evolve
-additively (new fields only). A breaking change bumps the schema version and is
-handled as a new contract, never an in-place change.
+Every analytics event carries
+`dataschema=urn:warehouse:facility-layout:analytics:<EventName>:v1`. The `data`
+payloads evolve additively (new fields only). A breaking change publishes a new
+`.v2` type with a `:v2` dataschema as a new contract, never an in-place change.

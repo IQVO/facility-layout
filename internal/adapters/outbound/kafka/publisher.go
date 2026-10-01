@@ -8,19 +8,21 @@
 // forwards a single enriched event, this publisher therefore emits EVERY
 // domain event to the integration topic — the whole Published Language.
 //
-// The events already serialize themselves to JSON (their struct tags are the
-// wire shape), so the CloudEvents-like Envelope carries the event's own JSON
-// as its data field verbatim; no per-event marshalling switch is needed.
+// Every message is a CloudEvents 1.0 event in structured content mode
+// (ADR-0024), built by internal/adapters/kafka/cloudevents. The events
+// already serialize themselves to JSON (their struct tags are the wire
+// shape), so the CloudEvent's `data` is the domain event's own JSON
+// verbatim; no per-event marshalling switch is needed.
 package kafka
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"time"
+	"strings"
 
 	kafkago "github.com/segmentio/kafka-go"
 
+	"github.com/claudioed/facility-layout/internal/adapters/kafka/cloudevents"
 	"github.com/claudioed/facility-layout/internal/domain/shared"
 )
 
@@ -30,16 +32,6 @@ import (
 // topics so a single broker convention holds across the mesh.
 const Topic = "warehouse.facility.events"
 
-// Envelope is the CloudEvents-like wrapper shared across the warehouse-systems
-// services' integration topics. data carries the domain event's own JSON.
-type Envelope struct {
-	EventId    string          `json:"event_id"`
-	EventType  string          `json:"event_type"`
-	OccurredAt time.Time       `json:"occurred_at"`
-	Source     string          `json:"source"`
-	Data       json.RawMessage `json:"data"`
-}
-
 // Writer is the subset of *kafkago.Writer the Publisher needs, so tests can
 // substitute a fake without a live broker.
 type Writer interface {
@@ -48,7 +40,7 @@ type Writer interface {
 
 // Encoded is one already-encoded, wire-ready Kafka message: the topic it
 // belongs on (so a multi-topic outbox/relay can route it correctly), the
-// partition key, and the JSON-marshalled envelope. It is the unit the
+// partition key, and the structured-mode CloudEvent JSON. It is the unit the
 // transactional outbox (postgres.OutboxPublisher) stores and the outbox
 // relay later hands to a Sink, so the direct-publish and outbox paths can
 // never disagree about what a message looks like.
@@ -76,7 +68,7 @@ type Publisher struct {
 }
 
 // NewPublisher constructs a Publisher writing to Topic on brokers. newId
-// mints the envelope event_id (e.g. a UUID).
+// mints the CloudEvents `id` (a UUID).
 //
 // Balancer is kafkago.Hash (FNV-1a over Message.Key), not LeastBytes: this
 // package's kafka-go dependency does NOT replicate Kafka's own key-hashing
@@ -100,28 +92,55 @@ func NewPublisher(brokers []string, newId func() string) *Publisher {
 
 // Encode translates event into its Kafka wire form on Topic, without
 // sending it. eventId is supplied by the caller (rather than minted here)
-// so the outbox can persist the same id it will later publish under,
-// making redelivery detectable by consumers.
+// so the outbox can persist the same CloudEvents id it will later publish
+// under, making redelivery detectable by consumers.
 func (p *Publisher) Encode(_ context.Context, event shared.DomainEvent, eventId string) (Encoded, error) {
-	data, err := json.Marshal(event)
-	if err != nil {
-		return Encoded{}, fmt.Errorf("kafka: marshal event data: %w", err)
-	}
-	env := Envelope{
-		EventId:    eventId,
-		EventType:  event.EventType(),
-		OccurredAt: event.OccurredAt(),
-		Source:     "facility-layout",
-		Data:       data,
-	}
-	payload, err := json.Marshal(env)
-	if err != nil {
-		return Encoded{}, fmt.Errorf("kafka: marshal envelope: %w", err)
-	}
-	return Encoded{Topic: Topic, EventType: event.EventType(), Key: []byte(aggregateKey(event)), Value: payload}, nil
+	return encodeCloudEvent(Topic, cloudevents.StreamEvents, event, eventId)
 }
 
-// Publish emits event onto Topic wrapped in an Envelope. The message key is
+// encodeCloudEvent builds the structured-mode CloudEvent for event on one
+// stream (integration or analytics). The `type` is the event's own
+// Published Language type, `subject` its aggregate id, `time` its
+// occurred-at, and `data` the event's own JSON.
+func encodeCloudEvent(topic, stream string, event shared.DomainEvent, eventId string) (Encoded, error) {
+	entity, err := entityOf(event)
+	if err != nil {
+		return Encoded{}, err
+	}
+	value, err := cloudevents.New(cloudevents.Spec{
+		ID:        eventId,
+		Entity:    entity,
+		EventName: event.EventName(),
+		Subject:   SubjectOf(event),
+		Time:      event.OccurredAt(),
+		Stream:    stream,
+		Version:   1,
+		Data:      event,
+	})
+	if err != nil {
+		return Encoded{}, fmt.Errorf("kafka: encode %s for %s: %w", event.EventName(), topic, err)
+	}
+	return Encoded{Topic: topic, EventType: event.EventType(), Key: []byte(aggregateKey(event)), Value: value}, nil
+}
+
+// entityOf extracts the `<entity>` segment from the event's own Published
+// Language type (com.warehouse.wms.facility-layout.<entity>.<EventName>)
+// so the CloudEvent `type` is byte-identical to shared.DomainEvent.EventType.
+func entityOf(event shared.DomainEvent) (string, error) {
+	t := event.EventType()
+	want := cloudevents.Type("", event.EventName())
+	prefix, suffix, _ := strings.Cut(want, "..")
+	if !strings.HasPrefix(t, prefix+".") || !strings.HasSuffix(t, "."+suffix) {
+		return "", fmt.Errorf("kafka: event type %q is not in this service's CloudEvents namespace", t)
+	}
+	entity := strings.TrimSuffix(strings.TrimPrefix(t, prefix+"."), "."+suffix)
+	if entity == "" || strings.Contains(entity, ".") {
+		return "", fmt.Errorf("kafka: event type %q has no single entity segment", t)
+	}
+	return entity, nil
+}
+
+// Publish emits event onto Topic as a CloudEvent. The message key is
 // the event's aggregate identity (so all events for one aggregate land on the
 // same partition, preserving per-aggregate order); event.EventType() is the
 // service's Published Language type.
@@ -130,20 +149,49 @@ func (p *Publisher) Publish(ctx context.Context, event shared.DomainEvent) error
 	if err != nil {
 		return err
 	}
-	if err := p.send(ctx, enc); err != nil {
+	if err := p.Send(ctx, enc); err != nil {
 		return fmt.Errorf("kafka: publish %s: %w", event.EventName(), err)
 	}
 	return nil
 }
 
-// send writes one already-encoded message to Topic (the Writer's fixed
+// Send writes one already-encoded message to Topic (the Writer's fixed
 // topic — kafka-go rejects a message with Topic set when the Writer also
 // has one, so enc.Topic is not applied here; RelaySink is the adapter
 // that applies it per-message for a topic-less writer).
-func (p *Publisher) send(ctx context.Context, enc Encoded) error {
-	msg := kafkago.Message{Key: enc.Key, Value: enc.Value}
+func (p *Publisher) Send(ctx context.Context, enc Encoded) error {
+	msg := kafkago.Message{Key: enc.Key, Value: enc.Value, Headers: []kafkago.Header{cloudevents.ContentTypeHeader()}}
 	return p.Writer.WriteMessages(ctx, msg)
 }
+
+// SubjectOf returns the CloudEvents `subject`: the id of the aggregate
+// instance the event is about. It differs from aggregateKey only where the
+// partition key historically falls back to the event type (kept unchanged
+// for partition affinity): there the subject still names the real
+// aggregate (location code, aisle id, structure id, or the cross-aisle's
+// composite identity). FacilityLayoutImported is a batch outcome with no
+// single aggregate instance, so its subject is the fixed batch identity
+// ImportSubject.
+func SubjectOf(event shared.DomainEvent) string {
+	switch e := event.(type) {
+	case shared.LocationGeometryUpdated:
+		return e.LocationCode
+	case shared.AisleGeometryUpdated:
+		return e.AisleID
+	case shared.FixedStructureRegistered:
+		return e.StructureID
+	case shared.CrossAisleRegistered:
+		return e.ZoneID + "/" + e.FromAisle + "-" + e.ToAisle + "@" + e.AtBay
+	case shared.FacilityLayoutImported:
+		return ImportSubject
+	default:
+		return aggregateKey(event)
+	}
+}
+
+// ImportSubject is the CloudEvents `subject` of FacilityLayoutImported,
+// which summarises a whole bulk-import call rather than one aggregate.
+const ImportSubject = "layout-import"
 
 // aggregateKey returns the partition/ordering key for an event: the identity
 // of the aggregate that raised it. Falls back to the event type when an event

@@ -25,7 +25,6 @@ import (
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/telemetry"
 	"github.com/claudioed/facility-layout/internal/application/ports"
 	"github.com/claudioed/facility-layout/internal/application/usecases"
-	"github.com/claudioed/facility-layout/internal/domain/shared"
 )
 
 // serviceVersion is overridable at build time with
@@ -355,7 +354,7 @@ func memoryAdapters(cfg publisherConfig, logger *slog.Logger, kafkaEnabled bool)
 		brokers := strings.Split(cfg.kafkaBrokers, ",")
 		kafkaPublisher := kafka.NewPublisher(brokers, uuidLike)
 		analyticsPublisher := kafka.NewAnalyticsPublisher(brokers, uuidLike)
-		pub = fanOutPublisher{kafkaPublisher, analyticsPublisher}
+		pub = kafka.FanOut{NewId: uuidLike, Targets: []kafka.EncodeSender{kafkaPublisher, analyticsPublisher}}
 		closeKafka = func() error {
 			return errors.Join(kafkaPublisher.Close(), analyticsPublisher.Close())
 		}
@@ -501,27 +500,10 @@ func durationEnv(key string, fallback time.Duration) time.Duration {
 	return d
 }
 
-// uuidLike mints the event_id stamped on each published integration event.
+// uuidLike mints the CloudEvents `id` (UUID v4) — once per domain event —
+// stamped on each published event (ADR-0024).
 func uuidLike() string {
 	return uuid.NewString()
-}
-
-// fanOutPublisher forwards every domain event to each wrapped EventPublisher in
-// order, so a single EVENT_PUBLISHER=kafka run with no Postgres publishes to
-// BOTH the integration topic and the analytics topic directly (no outbox — no
-// transaction to bind them to). A publish failure on any target aborts and is
-// returned, so the caller sees the first error rather than silently dropping
-// a stream.
-type fanOutPublisher []ports.EventPublisher
-
-// Publish forwards event to every wrapped publisher, stopping at the first error.
-func (f fanOutPublisher) Publish(ctx context.Context, event shared.DomainEvent) error {
-	for _, p := range f {
-		if err := p.Publish(ctx, event); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // resolveServiceVersion reports this build's version: the ldflags-injected

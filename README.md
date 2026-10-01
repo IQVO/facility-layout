@@ -158,6 +158,14 @@ With `EVENT_PUBLISHER=kafka` all twelve are published to
 `ZoneRegistered`, `LocationSlotRegistered` and `LocationSlotDecommissioned`
 from the integration topic.
 
+Every Kafka message (integration and analytics topics) is a **CloudEvents 1.0**
+event in structured content mode — mandatory, no other envelope
+([ADR-0024](docs/docs/adr/0024-cloudevents-mandatory-envelope.md)):
+`source=/warehouse/facility-layout`, `subject`=aggregate id,
+`dataschema=urn:warehouse:facility-layout:<events|analytics>:<EventName>:v1`,
+`data`=the domain event's own JSON, Kafka header
+`content-type: application/cloudevents+json; charset=UTF-8`.
+
 CloudEvents `type` convention, identical to the other warehouse-systems services:
 
 ```
@@ -784,7 +792,7 @@ Content-Type: application/problem+json
 `apis/openapi.yaml` (OpenAPI 3.0.3) documents every route with full
 request/response schemas, a shared `Problem` component, and real
 domain-grounded examples. `apis/asyncapi.yaml` (AsyncAPI 2.6.0) specifies the
-`warehouse.facility.events` topic, its envelope and all twelve messages. The
+`warehouse.facility.events` topic, its CloudEvents 1.0 envelope (ADR-0024) and all twelve messages. The
 OpenAPI document is linted in CI:
 
 ```sh

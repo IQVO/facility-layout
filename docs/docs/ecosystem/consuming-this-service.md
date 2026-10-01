@@ -69,9 +69,16 @@ Consumers that need a local read model subscribe to this context's
 Kafka topic, specified in
 [`apis/asyncapi.yaml`](https://github.com/claudioed/facility-layout/blob/main/apis/asyncapi.yaml).
 The service publishes there when it runs with `EVENT_PUBLISHER=kafka`. Each
-message is a flat envelope (`event_id`, `event_type`, `occurred_at`,
-`source`, `data`), keyed by the identity of the aggregate that raised it, so
-per-aggregate order is preserved.
+message is a CloudEvents 1.0 event in structured content mode
+([ADR-0024](../adr/0024-cloudevents-mandatory-envelope.md)) — `specversion`,
+`id`, `source=/warehouse/facility-layout`, `type`, `subject` (aggregate id),
+`time`, `datacontenttype`, `dataschema` and `data` (the domain event's own
+JSON) — with the Kafka header
+`content-type: application/cloudevents+json; charset=UTF-8`, keyed by the
+identity of the aggregate that raised it, so per-aggregate order is
+preserved. Dispatch on the **full** `type` string (e.g.
+`com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered`),
+dedupe on `id`, and DLQ/skip anything that fails CloudEvents validation.
 
 The events a consumer is most likely to care about:
 

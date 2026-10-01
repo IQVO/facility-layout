@@ -36,7 +36,7 @@ Every log line is a single JSON object written to stdout via
 ```json
 {"time":"2026-08-23T12:00:00Z","level":"INFO","msg":"http server listening","addr":":8080"}
 {"time":"2026-08-23T12:00:01Z","level":"INFO","msg":"http request","method":"POST","path":"/sites","status":201,"duration_ms":4,"bytes":128,"request_id":"abc123","trace_id":"69b0970c53414467b350b36f7a1b04ac","span_id":"27d2246a94c0462b"}
-{"time":"2026-08-23T12:00:01Z","level":"INFO","msg":"domain event published","event_name":"SiteRegistered","event_type":"com.claudioed.facility-layout.site.registered","payload":{"...":"..."}}
+{"time":"2026-08-23T12:00:01Z","level":"INFO","msg":"domain event published","event_name":"SiteRegistered","event_type":"com.warehouse.wms.facility-layout.site.SiteRegistered","payload":{"...":"..."}}
 ```
 
 ## Where it's wired in

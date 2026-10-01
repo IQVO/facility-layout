@@ -10,7 +10,12 @@ description: "An analytical read model — the 'Layout Catalog Growth & Change' 
 
 ## Status
 
-**Accepted.**
+**Accepted; analytics envelope (Envelope v1 / `schema_version`) superseded by
+[ADR-0024](./0024-cloudevents-mandatory-envelope.md).** The analytics topic,
+projector, analytical database and reports binary still stand; the
+analytics stream now carries CloudEvents 1.0 with
+`dataschema=urn:warehouse:facility-layout:analytics:<EventName>:v1` instead
+of `schema_version` (Superseded by ADR-0024).
 
 ## Context
 
@@ -63,7 +68,9 @@ are unmodified.**
 A **second** outbound adapter (`internal/adapters/outbound/kafka/analytics_publisher.go`)
 publishes the catalog-change event set to **`warehouse.facility.analytics`**,
 using the shared **Envelope v1** wrapper (`event_id`, `event_type`,
-`occurred_at`, `source`, `schema_version`, `data`). The ADR-0009 integration
+`occurred_at`, `source`, `schema_version`, `data`) — *superseded by
+[ADR-0024](./0024-cloudevents-mandatory-envelope.md): now a CloudEvents 1.0
+event with an analytics `dataschema`*. The ADR-0009 integration
 publisher (`publisher.go`) and `warehouse.facility.events` are **left
 untouched**. Because facility-layout has no observability/OTel package, the
 analytics publisher and consumer are **trace-free**, consistent with the
