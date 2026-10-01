@@ -144,6 +144,12 @@ func newDLQWriter(brokers []string, dlqTopic string) *kafkago.Writer {
 		Addr:                   kafkago.TCP(brokers...),
 		Topic:                  dlqTopic,
 		AllowAutoTopicCreation: true,
+		// BatchTimeout: a DLQ write is a synchronous single message; with
+		// kafka-go's 1s default the writer holds every write for a full second
+		// waiting to fill a batch, capping dead-lettering at ~1 msg/s/partition
+		// (observed live: a backlog of legacy messages took hours to drain while
+		// the consumer processed nothing else).
+		BatchTimeout: dlqBatchTimeout,
 	}
 }
 
@@ -444,3 +450,6 @@ func isTopicNotReady(err error) bool {
 	}
 	return errors.Is(err, kafkago.UnknownTopicOrPartition) || errors.Is(err, kafkago.LeaderNotAvailable)
 }
+
+// dlqBatchTimeout flushes a dead-letter write almost immediately.
+const dlqBatchTimeout = 10 * time.Millisecond

@@ -20,6 +20,9 @@ func TestNewDLQWriter_AutoCreatesTopic(t *testing.T) {
 	if !w.AllowAutoTopicCreation {
 		t.Fatal("DLQ writer must set AllowAutoTopicCreation")
 	}
+	if w.BatchTimeout != dlqBatchTimeout {
+		t.Fatalf("DLQ BatchTimeout = %v, want %v (kafka-go's 1s default caps dead-lettering at ~1 msg/s)", w.BatchTimeout, dlqBatchTimeout)
+	}
 }
 
 type scriptedDLQWriter struct {
