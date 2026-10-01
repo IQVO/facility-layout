@@ -43,31 +43,40 @@ removing anything on `ZoneRegistered`, `LocationSlotRegistered`, or
 `LocationSlotDecommissioned` — those three are the fields actually
 depended on today, not aspirational.
 
-### 2. Envelope: CloudEvents-like, structured mode
+### 2. Envelope: CloudEvents 1.0, structured mode (MANDATORY, ADR-0024)
 
-Every message on `warehouse.facility.events` (see `Topic` constant,
-`internal/adapters/outbound/kafka/publisher.go:31`) is an `Envelope`:
+Every message on `warehouse.facility.events` (`Topic`) AND
+`warehouse.facility.analytics` (`AnalyticsTopic`) is a CloudEvents 1.0
+event, built ONLY through `internal/adapters/kafka/cloudevents`
+(`cloudevents.New`, wrapping `github.com/cloudevents/sdk-go/v2/event`).
+There is no flat envelope, no dual mode, no envelope toggle — never add
+one. A message on the wire looks like:
 
-```go
-type Envelope struct {
-    EventId    string          `json:"event_id"`
-    EventType  string          `json:"event_type"`
-    OccurredAt time.Time       `json:"occurred_at"`
-    Source     string          `json:"source"`
-    Data       json.RawMessage `json:"data"`
+```json
+{
+  "specversion": "1.0",
+  "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+  "source": "/warehouse/facility-layout",
+  "type": "com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered",
+  "subject": "WH1-STOR-AMB-A07-03-02-B",
+  "time": "2026-02-03T04:05:06Z",
+  "datacontenttype": "application/json",
+  "dataschema": "urn:warehouse:facility-layout:events:LocationSlotRegistered:v1",
+  "data": { "eventName": "LocationSlotRegistered", "...": "the event's own JSON" }
 }
 ```
 
-`Data` carries the domain event's own JSON verbatim — the events already
-serialize themselves to their wire shape (their struct tags ARE the
-contract), so there is no per-event marshalling switch in the publisher.
-The analytics topic (`warehouse.facility.analytics`,
-`analytics_publisher.go`) uses the same shape plus a `schema_version`
-int — a SEPARATE adapter (`AnalyticsPublisher`, not `Publisher`) so the
-integration and analytics streams evolve independently; the composition
-root fans out to both.
+with Kafka header `content-type: application/cloudevents+json; charset=UTF-8`.
+`data` is the domain event's own JSON verbatim (struct tags ARE the
+contract). `type` is the event's own `EventType()`; the `<entity>` segment
+is parsed from it, so a new event only needs `newBase("<entity>", ...)` in
+`internal/domain/shared/events.go`. The analytics publisher emits the same
+`type` and `id` with `dataschema=urn:warehouse:facility-layout:analytics:<EventName>:v1`.
+`id` is minted once per event by `OutboxPublisher` and persisted in the
+outbox row, so redelivery keeps the same id. A breaking payload change =
+new `.v2` type + `:v2` dataschema, never a mutation.
 
-### 3. Partition key: the aggregate's identity, with a real fallback
+### 3. Partition key and `subject`: the aggregate's identity
 
 `aggregateKey(event)` (`publisher.go:101`) type-switches on the event and
 returns its aggregate id (`SiteCode`, `ZoneID`, `AisleID`, etc.) so all
@@ -76,7 +85,9 @@ per-aggregate order. Adding a new event type means adding a `case` here
 too — `FacilityLayoutImported` and the `default` both fall back to
 `event.EventType()` because a bulk-import event has no single natural
 aggregate id; that fallback still gives a stable, non-empty key rather
-than an empty string.
+than an empty string. The CloudEvents `subject` comes from `SubjectOf`
+(`publisher.go`): it must ALWAYS be the real aggregate id (never the type
+fallback) — add a `case` there too if the key falls back.
 
 ### 4. Contract + docs
 
@@ -90,7 +101,9 @@ than an empty string.
 
 ### 5. Test
 
-Unit test the marshal shape and the aggregate-key switch against a fake
+Add a row to `goldenCases` in `publisher_test.go` — it asserts the exact
+CloudEvent JSON (every attribute, type, data) and the content-type header
+for BOTH the integration and analytics publishers, against a fake
 `Writer` (see `publisher_test.go`/`analytics_publisher_test.go` — never a
 real broker in a unit test). This repo's own architecture fitness test
 `TestKafkaIntegrationTestsUseTestcontainers`
@@ -173,9 +186,20 @@ group. This repo's existing analytics projector sidesteps the whole
 question by using Pattern A with `StartOffset: kafkago.FirstOffset`
 (`analytics_consumer.go:95`, only affecting the FIRST join since a
 committed offset takes precedence after that) plus idempotent
-`ProcessedEvents.MarkProcessed` per `event_id` — no separate readiness
+`ProcessedEvents.MarkProcessed` per CloudEvents `id` — no separate readiness
 concept was needed because the projector's own read path already handles
 "haven't caught up yet" by simply not having the data.
+
+### 4. Decode with `cloudevents.Decode`, dispatch on the full type
+
+Every consumer decodes with `cloudevents.Decode` (SDK unmarshal +
+`Validate()`), dispatches on the FULL `type` string (never a suffix or a
+short name; unknown types are ignored), reads `time`/`subject` from the
+attributes and the payload via `DataAs`, and dedupes on `id`. A value that
+fails decoding (`cloudevents.ErrNotCloudEvent`, e.g. a legacy flat
+message) is deterministic poison: DLQ it immediately (no retries) or, with
+no DLQ, WARN-log topic/partition/offset and commit past it. See
+`analytics_consumer.go`.
 
 ## Verify before opening the PR
 

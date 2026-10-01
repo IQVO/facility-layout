@@ -10,7 +10,6 @@ package kafka
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -18,8 +17,10 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
+	ce "github.com/cloudevents/sdk-go/v2/event"
 	kafkago "github.com/segmentio/kafka-go"
 
+	"github.com/claudioed/facility-layout/internal/adapters/kafka/cloudevents"
 	"github.com/claudioed/facility-layout/internal/analytics/report"
 )
 
@@ -66,22 +67,9 @@ type ProcessedEvents interface {
 	MarkProcessed(ctx context.Context, eventId string) (bool, error)
 }
 
-// analyticsEnvelope is the inbound decode shape of the Envelope v1 wrapper on
-// the analytics topic. The data payload is left as a RawMessage and decoded per
-// event_type. It is declared here (rather than imported from the outbound
-// publisher) so this inbound adapter does not depend on an outbound adapter.
-type analyticsEnvelope struct {
-	EventId       string          `json:"event_id"`
-	EventType     string          `json:"event_type"`
-	OccurredAt    time.Time       `json:"occurred_at"`
-	Source        string          `json:"source"`
-	SchemaVersion int             `json:"schema_version"`
-	Data          json.RawMessage `json:"data"`
-}
-
 // analyticsData is the union of fields the projecting event payloads carry (the
-// domain events' own camelCase JSON, forwarded verbatim as the envelope data).
-// Each event_type populates the subset it needs.
+// domain events' own camelCase JSON, carried verbatim as the CloudEvent data).
+// Each event type populates the subset it needs.
 type analyticsData struct {
 	SiteCode      string `json:"siteCode"`
 	ZoneID        string `json:"zoneId"`
@@ -95,8 +83,8 @@ type analyticsData struct {
 }
 
 // AnalyticsConsumer reads analytics events off the analytics topic and applies
-// each to the catalog-growth ProjectionStore, exactly once per event_id despite
-// Kafka's at-least-once delivery.
+// each to the catalog-growth ProjectionStore, exactly once per CloudEvents id
+// despite Kafka's at-least-once delivery.
 type AnalyticsConsumer struct {
 	Reader     *kafkago.Reader
 	Projection report.ProjectionStore
@@ -174,9 +162,21 @@ func (c *AnalyticsConsumer) Run(ctx context.Context) error {
 // anyway — one poison message must never permanently block every event
 // behind it on this partition. Only a commit failure or a DLQ publish
 // failure aborts the consume loop.
+//
+// A value that is not a valid CloudEvents 1.0 event (ErrNotCloudEvent,
+// e.g. a retired flat-envelope message) is deterministic poison: it skips
+// the retries and is dead-lettered immediately (ADR-0024).
 func (c *AnalyticsConsumer) handleMessage(ctx context.Context, msg kafkago.Message) error {
 	err := c.handleWithRetry(ctx, msg.Value)
 	if err == nil {
+		return c.commit(ctx, msg)
+	}
+	if errors.Is(err, cloudevents.ErrNotCloudEvent) {
+		c.Logger.WarnContext(ctx, "analytics: message is not a valid CloudEvent, sending to dead-letter topic",
+			"topic", msg.Topic, "partition", msg.Partition, "offset", msg.Offset, "error", err)
+		if dlqErr := c.dlqPublish(ctx, msg, err); dlqErr != nil {
+			return fmt.Errorf("analytics: publish to dead-letter topic: %w", dlqErr)
+		}
 		return c.commit(ctx, msg)
 	}
 
@@ -199,7 +199,11 @@ func (c *AnalyticsConsumer) handleWithRetry(ctx context.Context, raw []byte) err
 	bounded := backoff.WithContext(backoff.WithMaxRetries(policy, maxHandlerAttempts-1), ctx)
 
 	return backoff.Retry(func() error {
-		return c.HandleMessage(ctx, raw)
+		err := c.HandleMessage(ctx, raw)
+		if errors.Is(err, cloudevents.ErrNotCloudEvent) {
+			return backoff.Permanent(err)
+		}
+		return err
 	}, bounded)
 }
 
@@ -242,42 +246,45 @@ func (c *AnalyticsConsumer) Close() error {
 	return errors.Join(readerErr, c.dlqWriter.Close())
 }
 
-// HandleMessage decodes raw as an analyticsEnvelope and applies the matching
-// projection method for its event_type. Event types outside the projection
-// contract are ignored (and not marked processed). For a projecting event it
-// first consults ProcessedEvents.IsProcessed (a read-only check) to skip a
-// genuine redelivery of an event already fully applied, then applies, then
-// -- only once Apply has actually succeeded -- calls MarkProcessed. It is
-// exported separately from Run so tests can feed raw envelopes without a
-// live broker.
+// HandleMessage decodes raw as a CloudEvents 1.0 event (cloudevents.Decode,
+// which validates) and applies the matching projection method for its FULL
+// `type`. A value that is not a valid CloudEvent (including the retired flat
+// envelope) returns an error wrapping cloudevents.ErrNotCloudEvent, which
+// Run dead-letters without retrying -- it is never parsed as a legacy shape.
+// Types outside the projection contract are ignored (and not marked
+// processed). For a projecting event it first consults
+// ProcessedEvents.IsProcessed with the CloudEvents `id` (a read-only check)
+// to skip a genuine redelivery of an event already fully applied, then
+// applies, then -- only once Apply has actually succeeded -- calls
+// MarkProcessed. It is exported separately from Run so tests can feed raw
+// events without a live broker.
 //
 // Note on ordering (apply-then-claim is deliberate, not incidental):
-// PostgresProjection.Apply* is already idempotent per event_id (it claims
+// PostgresProjection.Apply* is already idempotent per event id (it claims
 // analytics_processed_events inside the SAME transaction as its effect), so
-// calling it more than once for the same event_id on a retry is always
-// safe. The OLDER claim-BEFORE-apply order (MarkProcessed, then Apply) had
-// exactly the bug ADR-0020 §DLQ exists to prevent: if Apply then failed, the
-// in-process retry's next attempt saw the event already marked processed
-// and returned nil WITHOUT ever calling Apply again -- silently treating a
-// still-failing poison message as handled instead of genuinely retrying it
-// and eventually dead-lettering it. Checking IsProcessed (read-only, no
-// side effect) up front instead gives the same at-least-once-redelivery
-// short-circuit without creating that false-claim race.
+// calling it more than once for the same id on a retry is always safe. The
+// OLDER claim-BEFORE-apply order (MarkProcessed, then Apply) had exactly the
+// bug ADR-0020 §DLQ exists to prevent: if Apply then failed, the in-process
+// retry's next attempt saw the event already marked processed and returned
+// nil WITHOUT ever calling Apply again -- silently treating a still-failing
+// poison message as handled instead of genuinely retrying it and eventually
+// dead-lettering it. Checking IsProcessed (read-only, no side effect) up
+// front instead gives the same at-least-once-redelivery short-circuit
+// without creating that false-claim race.
 func (c *AnalyticsConsumer) HandleMessage(ctx context.Context, raw []byte) error {
-	var env analyticsEnvelope
-	if err := json.Unmarshal(raw, &env); err != nil {
-		return fmt.Errorf("analytics: decode envelope: %w", err)
+	evt, err := cloudevents.Decode(raw)
+	if err != nil {
+		return fmt.Errorf("analytics: %w", err)
 	}
 
 	// The report is derived from the catalog-change event set. Any other
-	// event_type is acknowledged without touching the read model or the
+	// type is acknowledged without touching the read model or the
 	// processed set, so a later contract change could still reprocess it.
-	name := eventName(env.EventType)
-	if !isCatalogChangeEvent(name) {
+	if !isCatalogChangeEvent(evt.Type()) {
 		return nil
 	}
 
-	alreadyProcessed, err := c.Processed.IsProcessed(ctx, env.EventId)
+	alreadyProcessed, err := c.Processed.IsProcessed(ctx, evt.ID())
 	if err != nil {
 		return fmt.Errorf("analytics: check processed: %w", err)
 	}
@@ -286,11 +293,11 @@ func (c *AnalyticsConsumer) HandleMessage(ctx context.Context, raw []byte) error
 	}
 
 	var data analyticsData
-	if err := json.Unmarshal(env.Data, &data); err != nil {
+	if err := evt.DataAs(&data); err != nil {
 		return fmt.Errorf("analytics: decode data: %w", err)
 	}
 
-	if err := c.applyCatalogChange(ctx, env, data, name); err != nil {
+	if err := c.applyCatalogChange(ctx, evt, data); err != nil {
 		return err
 	}
 
@@ -298,66 +305,70 @@ func (c *AnalyticsConsumer) HandleMessage(ctx context.Context, raw []byte) error
 	// MarkProcessed failure here is reported (so at-least-once delivery
 	// can redeliver and re-run this now-safe-to-repeat apply) rather than
 	// silently swallowed.
-	if _, err := c.Processed.MarkProcessed(ctx, env.EventId); err != nil {
+	if _, err := c.Processed.MarkProcessed(ctx, evt.ID()); err != nil {
 		return fmt.Errorf("analytics: mark processed: %w", err)
 	}
 	return nil
 }
 
-// isCatalogChangeEvent reports whether name belongs to the catalog-change
-// event set the Layout Catalog Growth & Change report derives from.
-func isCatalogChangeEvent(name string) bool {
-	switch name {
-	case "SiteRegistered", "ZoneRegistered", "AisleRegistered",
-		"LocationTypeRegistered", "PlacementRuleDefined",
-		"LocationSlotRegistered", "LocationSlotDecommissioned",
-		"FacilityLayoutImported":
+// The full CloudEvents `type` strings this consumer projects (ADR-0024).
+// Dispatch is on the exact string, never a suffix or a short name.
+var (
+	typeSiteRegistered             = cloudevents.Type("site", "SiteRegistered")
+	typeZoneRegistered             = cloudevents.Type("zone", "ZoneRegistered")
+	typeAisleRegistered            = cloudevents.Type("aisle", "AisleRegistered")
+	typeLocationTypeRegistered     = cloudevents.Type("locationtype", "LocationTypeRegistered")
+	typePlacementRuleDefined       = cloudevents.Type("placementrule", "PlacementRuleDefined")
+	typeLocationSlotRegistered     = cloudevents.Type("locationslot", "LocationSlotRegistered")
+	typeLocationSlotDecommissioned = cloudevents.Type("locationslot", "LocationSlotDecommissioned")
+	typeFacilityLayoutImported     = cloudevents.Type("locationslot", "FacilityLayoutImported")
+)
+
+// isCatalogChangeEvent reports whether the full CloudEvents type belongs to
+// the catalog-change event set the Layout Catalog Growth & Change report
+// derives from.
+func isCatalogChangeEvent(eventType string) bool {
+	switch eventType {
+	case typeSiteRegistered, typeZoneRegistered, typeAisleRegistered,
+		typeLocationTypeRegistered, typePlacementRuleDefined,
+		typeLocationSlotRegistered, typeLocationSlotDecommissioned,
+		typeFacilityLayoutImported:
 		return true
 	default:
 		return false
 	}
 }
 
-// applyCatalogChange routes one decoded, deduped envelope to its projection
-// method. Scope follows the event: site-scoped events carry the site code,
-// slot events the zone derived from the location code, and catalog-wide
-// definitions (location types, placement rules, imports) land in the empty
-// catalog-wide scope.
-func (c *AnalyticsConsumer) applyCatalogChange(ctx context.Context, env analyticsEnvelope, data analyticsData, name string) error {
-	switch name {
-	case "SiteRegistered":
-		return c.Projection.ApplySiteRegistered(ctx, env.EventId, data.SiteCode, env.OccurredAt)
-	case "ZoneRegistered":
+// applyCatalogChange routes one decoded, deduped CloudEvent to its projection
+// method, using the event's `id` and `time` attributes. Scope follows the
+// event: site-scoped events carry the site code, slot events the zone derived
+// from the location code, and catalog-wide definitions (location types,
+// placement rules, imports) land in the empty catalog-wide scope.
+func (c *AnalyticsConsumer) applyCatalogChange(ctx context.Context, evt ce.Event, data analyticsData) error {
+	id, at := evt.ID(), evt.Time()
+	switch evt.Type() {
+	case typeSiteRegistered:
+		return c.Projection.ApplySiteRegistered(ctx, id, data.SiteCode, at)
+	case typeZoneRegistered:
 		// A zone is a growth of its site, so it is scoped to the site code.
-		return c.Projection.ApplyZoneRegistered(ctx, env.EventId, data.SiteCode, env.OccurredAt)
-	case "AisleRegistered":
-		return c.Projection.ApplyAisleRegistered(ctx, env.EventId, data.ZoneID, env.OccurredAt)
-	case "LocationTypeRegistered":
+		return c.Projection.ApplyZoneRegistered(ctx, id, data.SiteCode, at)
+	case typeAisleRegistered:
+		return c.Projection.ApplyAisleRegistered(ctx, id, data.ZoneID, at)
+	case typeLocationTypeRegistered:
 		// A location type is a catalog-wide definition, not scoped to a site or
 		// zone: it lands in the empty catalog-wide scope.
-		return c.Projection.ApplyLocationTypeRegistered(ctx, env.EventId, "", env.OccurredAt)
-	case "PlacementRuleDefined":
-		return c.Projection.ApplyPlacementRuleDefined(ctx, env.EventId, "", env.OccurredAt)
-	case "LocationSlotRegistered":
-		return c.Projection.ApplyLocationSlotRegistered(ctx, env.EventId, zoneOf(data.LocationCode), env.OccurredAt)
-	case "LocationSlotDecommissioned":
-		return c.Projection.ApplyLocationSlotDecommissioned(ctx, env.EventId, zoneOf(data.LocationCode), env.OccurredAt)
-	case "FacilityLayoutImported":
-		return c.Projection.ApplyFacilityLayoutImported(ctx, env.EventId, "", data.RowsSubmitted, data.SlotsImported, data.RowsRejected, env.OccurredAt)
+		return c.Projection.ApplyLocationTypeRegistered(ctx, id, "", at)
+	case typePlacementRuleDefined:
+		return c.Projection.ApplyPlacementRuleDefined(ctx, id, "", at)
+	case typeLocationSlotRegistered:
+		return c.Projection.ApplyLocationSlotRegistered(ctx, id, zoneOf(data.LocationCode), at)
+	case typeLocationSlotDecommissioned:
+		return c.Projection.ApplyLocationSlotDecommissioned(ctx, id, zoneOf(data.LocationCode), at)
+	case typeFacilityLayoutImported:
+		return c.Projection.ApplyFacilityLayoutImported(ctx, id, "", data.RowsSubmitted, data.SlotsImported, data.RowsRejected, at)
 	default:
 		return nil
 	}
-}
-
-// eventName extracts the trailing PascalCase event name from a CloudEvents-style
-// type such as "com.warehouse.wms.facility-layout.slot.LocationSlotRegistered".
-// If the type carries no dot it is returned unchanged, so a bare event name
-// (as some tests use) still matches.
-func eventName(eventType string) string {
-	if i := strings.LastIndex(eventType, "."); i >= 0 {
-		return eventType[i+1:]
-	}
-	return eventType
 }
 
 // zoneOf derives the zone id (SITE-AREA-ZONE) from a full location code by

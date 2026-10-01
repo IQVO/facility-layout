@@ -17,7 +17,8 @@ With `EVENT_PUBLISHER=kafka`, every domain event is published to the
 call, to the separate `warehouse.facility.analytics` topic that feeds the
 [analytical data product](../analytics/catalog-growth-report.md)
 ([ADR 0010](../adr/0010-analytical-data-product.md)). The integration topic,
-its envelope and all twelve messages are specified in
+its CloudEvents 1.0 envelope
+([ADR 0024](../adr/0024-cloudevents-mandatory-envelope.md)) and all twelve messages are specified in
 [`apis/asyncapi.yaml`](https://github.com/claudioed/facility-layout/blob/main/apis/asyncapi.yaml)
 (AsyncAPI 2.6.0).
 
@@ -270,8 +271,8 @@ A walkable connection between two aisles of the same zone was declared.
 
 | Adapter | Use |
 |---|---|
-| `outbound/kafka` — `Publisher` | `EVENT_PUBLISHER=kafka`. Wraps each event in the flat integration envelope (`event_id`, `event_type`, `occurred_at`, `source: facility-layout`, `data`) and writes it to `warehouse.facility.events`, keyed by the raising aggregate's identity. |
-| `outbound/kafka` — `AnalyticsPublisher` | `EVENT_PUBLISHER=kafka`, alongside the one above (the composition root fans out to both). Writes the same event, with a `schema_version`, to `warehouse.facility.analytics`. |
+| `outbound/kafka` — `Publisher` | `EVENT_PUBLISHER=kafka`. Encodes each event as a CloudEvents 1.0 event (structured mode, `source=/warehouse/facility-layout`, `type` = the event type, `subject` = aggregate id, `dataschema=urn:warehouse:facility-layout:events:<EventName>:v1`, `data` = the event's own JSON; [ADR-0024](../adr/0024-cloudevents-mandatory-envelope.md)) and writes it to `warehouse.facility.events`, keyed by the raising aggregate's identity. |
+| `outbound/kafka` — `AnalyticsPublisher` | `EVENT_PUBLISHER=kafka`, alongside the one above (the composition root fans out to both). Writes the same occurrence (same `type` and `id`) as a CloudEvent with `dataschema=urn:warehouse:facility-layout:analytics:<EventName>:v1` to `warehouse.facility.analytics`. |
 | `outbound/postgres` — event publisher | Default with `DATABASE_URL` set. Appends to the `events` table (`event_name`, `event_type`, `occurred_at`, `payload JSONB`). |
 | `outbound/events` — log publisher | Default in-memory mode. Writes each event to the service log. |
 | `outbound/events` — buffered publisher | Tests. Collects events in memory for assertion. |

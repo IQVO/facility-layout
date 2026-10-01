@@ -2,7 +2,7 @@
 id: 0021-kafka-writer-balancer-hash
 slug: /adr/0021-kafka-writer-balancer-hash
 title: 21. Kafka writer Balancer switched from LeastBytes to Hash
-sidebar_label: 21. Kafka Balancer: LeastBytes -> Hash
+sidebar_label: "21. Kafka Balancer: LeastBytes -> Hash"
 sidebar_position: 21
 description: "ADR 0021 -- every kafkago.Writer in internal/adapters/outbound/kafka (Publisher, AnalyticsPublisher, RelaySink) used &kafkago.LeastBytes{}, which ignores Message.Key entirely for partition routing. This service's Message.Key was already set correctly for every event (aggregateKey), but LeastBytes silently defeated it, so per-aggregate event ordering was not actually guaranteed once warehouse-infra PR #42 took every business topic from 1 to 8 partitions. Fix: switch every writer's Balancer to &kafkago.Hash{} (FNV-1a over Key), verified with a real-broker Testcontainers test on an 8-partition topic. Sourced from order-management PR #111 / ADR 0027, which found and fixed the identical bug."
 ---

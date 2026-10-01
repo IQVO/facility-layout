@@ -17,6 +17,7 @@ import (
 	tckafka "github.com/testcontainers/testcontainers-go/modules/kafka"
 
 	inboundkafka "github.com/claudioed/facility-layout/internal/adapters/inbound/kafka"
+	"github.com/claudioed/facility-layout/internal/adapters/kafka/cloudevents"
 )
 
 // These tests drive the real DLQ/retry logic (ADR-0020, mirroring
@@ -184,23 +185,19 @@ func (p *itestProcessed) MarkProcessed(_ context.Context, eventId string) (bool,
 	return true, nil
 }
 
-func siteRegisteredEnvelopeJSON(t *testing.T, eventID, siteCode string) []byte {
+func siteRegisteredCloudEventJSON(t *testing.T, eventID, siteCode string) []byte {
 	t.Helper()
-	data, err := json.Marshal(map[string]any{"siteCode": siteCode})
+	b, err := cloudevents.New(cloudevents.Spec{
+		ID:        eventID,
+		Entity:    "site",
+		EventName: "SiteRegistered",
+		Subject:   siteCode,
+		Time:      time.Now().UTC(),
+		Stream:    cloudevents.StreamAnalytics,
+		Data:      map[string]any{"siteCode": siteCode},
+	})
 	if err != nil {
-		t.Fatalf("marshal data: %v", err)
-	}
-	env := map[string]any{
-		"event_id":       eventID,
-		"event_type":     "com.warehouse.wms.facility-layout.site.SiteRegistered",
-		"occurred_at":    time.Now().UTC().Format(time.RFC3339Nano),
-		"source":         "facility-layout",
-		"schema_version": 1,
-		"data":           json.RawMessage(data),
-	}
-	b, err := json.Marshal(env)
-	if err != nil {
-		t.Fatalf("marshal envelope: %v", err)
+		t.Fatalf("build CloudEvent: %v", err)
 	}
 	return b
 }
@@ -266,7 +263,7 @@ func TestAnalyticsConsumer_PoisonMessage_GoesToDeadLetterTopicWithoutBlockingPar
 	defer func() { _ = writer.Close() }()
 	if err := writer.WriteMessages(ctx, kafkago.Message{
 		Key:   []byte(poisonEventID),
-		Value: siteRegisteredEnvelopeJSON(t, poisonEventID, "WH-POISON"),
+		Value: siteRegisteredCloudEventJSON(t, poisonEventID, "WH-POISON"),
 	}); err != nil {
 		t.Fatalf("publish poison SiteRegistered: %v", err)
 	}
@@ -284,8 +281,8 @@ func TestAnalyticsConsumer_PoisonMessage_GoesToDeadLetterTopicWithoutBlockingPar
 	if err := json.Unmarshal(dlqMsg.Value, &dlqPayload); err != nil {
 		t.Fatalf("DLQ message value is not the raw original JSON payload: %v", err)
 	}
-	if dlqPayload["event_id"] != poisonEventID {
-		t.Errorf("DLQ payload event_id = %v, want %q -- payload must be byte-identical to the original for manual replay", dlqPayload["event_id"], poisonEventID)
+	if dlqPayload["id"] != poisonEventID {
+		t.Errorf("DLQ payload id = %v, want %q -- payload must be byte-identical to the original for manual replay", dlqPayload["event_id"], poisonEventID)
 	}
 	if got := headerValue(dlqMsg.Headers, "x-dlq-source-topic"); got != topic {
 		t.Errorf("x-dlq-source-topic = %q, want %q", got, topic)
@@ -302,7 +299,7 @@ func TestAnalyticsConsumer_PoisonMessage_GoesToDeadLetterTopicWithoutBlockingPar
 	// not blocked behind the poison message.
 	if err := writer.WriteMessages(ctx, kafkago.Message{
 		Key:   []byte(healthyEventID),
-		Value: siteRegisteredEnvelopeJSON(t, healthyEventID, "WH-HEALTHY"),
+		Value: siteRegisteredCloudEventJSON(t, healthyEventID, "WH-HEALTHY"),
 	}); err != nil {
 		t.Fatalf("publish well-formed SiteRegistered: %v", err)
 	}
@@ -343,6 +340,85 @@ func TestAnalyticsConsumer_PoisonMessage_GoesToDeadLetterTopicWithoutBlockingPar
 	for _, id := range projection.Applied() {
 		if id == poisonEventID {
 			t.Errorf("poison event %s should never have been applied to the projection", poisonEventID)
+		}
+	}
+}
+
+// TestAnalyticsConsumer_LegacyFlatEnvelope_DeadLetteredWithoutRetry proves a
+// retired flat-envelope message is deterministic poison (ADR-0024): it is
+// dead-lettered unparsed, never applied, and the next valid CloudEvent on
+// the same partition is still applied.
+func TestAnalyticsConsumer_LegacyFlatEnvelope_DeadLetteredWithoutRetry(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	brokers := startBroker(t)
+	topic := uniqueTopic(t)
+	dlqTopic := topic + ".dlq"
+	createTopic(t, brokers, topic)
+	createTopic(t, brokers, dlqTopic)
+
+	healthyEventID := fmt.Sprintf("evt-ce-good-%d", time.Now().UnixNano())
+	projection := &poisonProjection{}
+	consumer := inboundkafka.NewAnalyticsConsumer(brokers, topic, projection, newItestProcessed(), slog.Default())
+	defer func() { _ = consumer.Close() }()
+
+	consumeCtx, consumeCancel := context.WithCancel(ctx)
+	defer consumeCancel()
+	go func() { _ = consumer.Run(consumeCtx) }()
+
+	dlqReader := kafkago.NewReader(kafkago.ReaderConfig{
+		Brokers:     brokers,
+		Topic:       dlqTopic,
+		GroupID:     fmt.Sprintf("dlq-legacy-reader-%d", time.Now().UnixNano()),
+		StartOffset: kafkago.FirstOffset,
+	})
+	defer func() { _ = dlqReader.Close() }()
+
+	legacy := []byte(`{"event_id":"legacy-1","event_type":"com.warehouse.wms.facility-layout.site.SiteRegistered","occurred_at":"2026-05-01T08:00:00Z","source":"facility-layout","schema_version":1,"data":{"siteCode":"WH-LEGACY"}}`)
+	writer := &kafkago.Writer{Addr: kafkago.TCP(brokers...), Topic: topic}
+	defer func() { _ = writer.Close() }()
+	msgs := []kafkago.Message{
+		{Key: []byte("legacy-1"), Value: legacy},
+		{Key: []byte(healthyEventID), Value: siteRegisteredCloudEventJSON(t, healthyEventID, "WH-HEALTHY")},
+	}
+	// A just-created topic's metadata can lag on the broker; retry the
+	// transient "unknown topic" briefly rather than flake.
+	var werr error
+	for attempt := 0; attempt < 20; attempt++ {
+		if werr = writer.WriteMessages(ctx, msgs...); werr == nil {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	if werr != nil {
+		t.Fatalf("publish: %v", werr)
+	}
+
+	dlqCtx, dlqCancel := context.WithTimeout(ctx, 60*time.Second)
+	defer dlqCancel()
+	dlqMsg, err := dlqReader.ReadMessage(dlqCtx)
+	if err != nil {
+		t.Fatalf("read DLQ message: %v", err)
+	}
+	if string(dlqMsg.Value) != string(legacy) {
+		t.Errorf("DLQ value = %s, want the raw legacy payload", dlqMsg.Value)
+	}
+
+	waitCtx, waitCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer waitCancel()
+	for {
+		applied := projection.Applied()
+		if len(applied) == 1 && applied[0] == healthyEventID {
+			break
+		}
+		if len(applied) > 1 {
+			t.Fatalf("unexpected applies: %v", applied)
+		}
+		select {
+		case <-waitCtx.Done():
+			t.Fatalf("healthy CloudEvent never applied after the legacy message (applied=%v)", projection.Applied())
+		case <-time.After(200 * time.Millisecond):
 		}
 	}
 }

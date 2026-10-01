@@ -55,7 +55,10 @@ Also binding, though less obvious:
 
 - **The CloudEvents type suffix.** The consumer matches on the trailing
   event name (`...zone.ZoneRegistered` → `ZoneRegistered`), so renaming an
-  event is breaking even if the namespace is untouched.
+  event is breaking even if the namespace is untouched. *(Updated by
+  [ADR-0024](./0024-cloudevents-mandatory-envelope.md): consumers now
+  dispatch on the FULL CloudEvents `type` string, so the whole type —
+  namespace and entity included — is the binding contract.)*
 - **`LocationCode`'s segment structure.** The consumer derives a zone
   identity from the first three hyphen-separated segments when `zoneId` is
   absent, mirroring `LocationCode.ZoneID()`. Changing the code's shape
