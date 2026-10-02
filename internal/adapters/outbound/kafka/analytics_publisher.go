@@ -46,6 +46,7 @@ func NewAnalyticsPublisher(brokers []string, newId func() string) *AnalyticsPubl
 	return &AnalyticsPublisher{
 		Writer: &kafkago.Writer{
 			BatchTimeout:           syncWriterBatchTimeout,
+			RequiredAcks:           syncWriterRequiredAcks,
 			Addr:                   kafkago.TCP(brokers...),
 			Topic:                  AnalyticsTopic,
 			Balancer:               &kafkago.Hash{},

@@ -10,8 +10,8 @@ import (
 )
 
 // TestEverySyncWriterSetsBatchTimeout is a source-level fitness check: every
-// kafka-go Writer literal in this package must set BatchTimeout (see
-// syncWriterBatchTimeout). kafka-go's 1s default silently caps a
+// kafka-go Writer literal in this package must set BatchTimeout and
+// RequiredAcks (see syncWriterBatchTimeout / syncWriterRequiredAcks). kafka-go's 1s default silently caps a
 // synchronous, one-message-per-call writer -- the outbox relay -- at ~1
 // event/s, and nothing else in the test suite notices.
 func TestEverySyncWriterSetsBatchTimeout(t *testing.T) {
@@ -24,8 +24,10 @@ func TestEverySyncWriterSetsBatchTimeout(t *testing.T) {
 		}
 		for _, lit := range writerLiterals(f) {
 			found++
-			if !setsField(lit, "BatchTimeout") {
-				t.Errorf("%s: kafka Writer literal without BatchTimeout", fset.Position(lit.Pos()))
+			for _, field := range []string{"BatchTimeout", "RequiredAcks"} {
+				if !setsField(lit, field) {
+					t.Errorf("%s: kafka Writer literal without %s", fset.Position(lit.Pos()), field)
+				}
 			}
 		}
 	}
