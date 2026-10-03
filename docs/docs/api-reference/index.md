@@ -10,7 +10,7 @@ description: Every endpoint facility-layout exposes, generated from the real api
 `facility-layout` exposes one HTTP API, documented here. Its message-broker
 interface — the Published Language on the `warehouse.facility.events` Kafka
 topic — is specified in
-[`apis/asyncapi.yaml`](https://github.com/claudioed/facility-layout/blob/main/apis/asyncapi.yaml)
+[`apis/asyncapi.yaml`](https://github.com/IQVO/facility-layout/blob/main/apis/asyncapi.yaml)
 (AsyncAPI 2.6.0) and described on [Domain events](../ddd/domain-events.md);
 it has no generated page in this section.
 
@@ -28,7 +28,7 @@ it has no generated page in this section.
 
 The pages under **REST API (from `openapi.yaml`)** are generated at build
 time by `docusaurus-plugin-openapi-docs` directly from
-[`apis/openapi.yaml`](https://github.com/claudioed/facility-layout/blob/main/apis/openapi.yaml)
+[`apis/openapi.yaml`](https://github.com/IQVO/facility-layout/blob/main/apis/openapi.yaml)
 in this repository — the same ~2,600-line OpenAPI 3.0.3 document that is
 linted in CI:
 
@@ -95,3 +95,8 @@ Every one of the 31 operations the router mounts has a corresponding
 operation in `apis/openapi.yaml`. The per-route breakdown — including the two
 geometry operations whose specification path differs from the router's — is
 on the [Endpoint catalogue](./endpoints.md) page.
+
+The router actually mounts a 32nd route, `GET /readyz` (Kubernetes
+readiness probe, ADR-0020) — deliberately absent from `apis/openapi.yaml`
+and this count, since it is an orchestration concern, not part of the
+published API contract.

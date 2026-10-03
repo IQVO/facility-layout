@@ -61,10 +61,10 @@ fixed structure (use `GET /sites/{siteCode}/structures`).
 | `200` | Successful read, or a bulk-import report |
 | `201` | Resource created — always with `Location` |
 | `204` | Successful action with no body (decommission) |
-| `400` | Malformed input: bad JSON, a location code that is not seven `[A-Z0-9]` segments, a missing required identifier |
+| `400` | Malformed input: bad JSON, a location code that is not seven `[A-Z0-9]` segments, a missing required identifier, a resource-creation POST missing its required `Idempotency-Key` header |
 | `404` | The named site/zone/aisle/slot/type/rule does not exist |
 | `409` | State conflict: a code already taken, a parent that exists but is not Active, a slot already decommissioned |
-| `422` | Semantically invalid: non-positive capacity, unknown enum value, **PlacementRule violation** |
+| `422` | Semantically invalid: non-positive capacity, unknown enum value, **PlacementRule violation**, an `Idempotency-Key` reused with a different request body |
 
 The 409/422 split is the one worth internalising:
 
@@ -78,6 +78,25 @@ The 409/422 split is the one worth internalising:
 `POST /locations/import` answers **`200`**, not `201`: a bulk import is a
 partial-success report over many rows, not the creation of one addressable
 resource, so there is no single `Location` to hand back.
+
+## Idempotency-Key on resource-creation POSTs
+
+Every true resource-creation `POST` — `/sites`, `/sites/{siteCode}/zones`,
+`/sites/{siteCode}/structures`, `/zones/{zoneId}/aisles`,
+`/zones/{zoneId}/cross-aisles`, `/location-types`, `/placement-rules`,
+`/locations` — requires a caller-supplied `Idempotency-Key` header
+whenever the service is running with `DATABASE_URL` set (ADR-0019). The
+middleware is Postgres-backed: an in-memory/no-database run skips the
+check entirely. `POST /locations/import` (bulk, partial-success
+semantics) and `POST /locations/{locationCode}/decommission` (acts on an
+existing resource, not a creation) are deliberately excluded.
+
+| Outcome | Status |
+|---|---|
+| Header missing on a protected route | `400` (`idempotency-key-required`) |
+| Fresh key | the real response, cached verbatim |
+| Same key, byte-identical request | the original cached response, replayed, handler not re-run |
+| Same key, different request body | `422` (`idempotency-key-reused`) |
 
 ## RFC 7807 problem details
 
@@ -173,6 +192,8 @@ with `errors.Is`. The domain never knows an HTTP status code exists.
 | `empty-cross-aisle-to-aisle` | 400 | Cross-aisle requires a to-aisle code |
 | `empty-cross-aisle-bay` | 400 | Cross-aisle requires a bay |
 | `empty-import` | 400 | Facility layout import must contain at least one row |
+| `idempotency-key-required` | 400 | A resource-creation POST was missing its required `Idempotency-Key` header |
+| `idempotency-key-reused` | 422 | The same `Idempotency-Key` was reused with a different request body |
 | `internal-error` | 500 | An unexpected internal error occurred |
 
 All `type` values are prefixed with

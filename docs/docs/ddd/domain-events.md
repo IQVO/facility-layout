@@ -19,7 +19,7 @@ call, to the separate `warehouse.facility.analytics` topic that feeds the
 ([ADR 0010](../adr/0010-analytical-data-product.md)). The integration topic,
 its CloudEvents 1.0 envelope
 ([ADR 0024](../adr/0024-cloudevents-mandatory-envelope.md)) and all twelve messages are specified in
-[`apis/asyncapi.yaml`](https://github.com/claudioed/facility-layout/blob/main/apis/asyncapi.yaml)
+[`apis/asyncapi.yaml`](https://github.com/IQVO/facility-layout/blob/main/apis/asyncapi.yaml)
 (AsyncAPI 2.6.0).
 
 Without `EVENT_PUBLISHER=kafka`, events go to a Postgres `events` outbox table

@@ -32,7 +32,7 @@ API). It depends on no other service. Its downstream **Conformists** today:
 ## Documentation
 
 Full documentation is published at
-**<https://claudioed.github.io/facility-layout/>** — business context and
+**<https://iqvo.github.io/facility-layout/>** — business context and
 ubiquitous language, the DDD model (subdomain classification, aggregates,
 invariants, domain events), an interactive API reference generated from
 `apis/openapi.yaml`, the ecosystem context map, and the Architecture Decision
@@ -247,7 +247,11 @@ except that with `EVENT_PUBLISHER=kafka` it now fans events out to BOTH the
 integration topic and the analytics topic.
 
 ```sh
-docker compose up -d postgres kafka
+docker compose up -d postgres
+# Kafka itself is NOT in docker-compose.yml: the fleet runs one shared
+# broker (in-cluster Bitnami via warehouse-infra) with externalAccess
+# exposed on localhost:9092, which is why KAFKA_BROKERS defaults there.
+# Point at that broker, or your own, for a local run.
 
 # OLTP service, fanning out to both warehouse.facility.events and .analytics
 export DATABASE_URL="postgres://facility:***@localhost:5432/facility?sslmode=disable"
@@ -387,6 +391,22 @@ curl -s localhost:8080/healthz
 Errors use **RFC 7807** (`application/problem+json`) throughout, from day
 one. Every `201` carries a `Location` header that resolves.
 
+### Idempotency
+
+Every true resource-creation `POST` (`/sites`, `/sites/{siteCode}/zones`,
+`/sites/{siteCode}/structures`, `/zones/{zoneId}/aisles`,
+`/zones/{zoneId}/cross-aisles`, `/location-types`, `/placement-rules`,
+`/locations`) requires a caller-supplied `Idempotency-Key` header **when the
+service is running with `DATABASE_URL` set** (Postgres-backed
+`IdempotencyPool`; in-memory/no-database runs skip the check entirely). A
+retry with the same key and the same request body replays the original
+response verbatim instead of double-creating; the same key with a
+different body is rejected `422`. Missing the header on a protected route is
+`400`. `POST /locations/import` (bulk, partial-success) and
+`POST /locations/{locationCode}/decommission` (acts on an existing resource)
+are deliberately excluded. See
+[ADR-0019](docs/docs/adr/0019-idempotency-key-middleware.md).
+
 ### Structural (write side)
 
 | Method | Path | Purpose | Success |
@@ -434,6 +454,7 @@ points at something that actually has a representation — a `Location` with no
 | `GET` | `/zones/{zoneId}/travel-graph` | The zone's travel graph: aisle/bay waypoints and metre-weighted edges |
 | `GET` | `/distance?from=&to=` | Shortest travel distance between two slots in the same zone: `{metresM, estimated, route}` |
 | `GET` | `/healthz` | Liveness |
+| `GET` | `/readyz` | Readiness (flips not-ready at the start of graceful shutdown, ADR-0020) |
 
 `apis/openapi.yaml` declares the two geometry `PUT`s without the trailing
 `/geometry` segment; the router (above) is authoritative.
@@ -445,10 +466,10 @@ points at something that actually has a representation — a `Location` with no
 | `200` | Successful read, or a bulk-import report |
 | `201` | Resource created (always with `Location`) |
 | `204` | Successful action with no body (decommission) |
-| `400` | Malformed input: bad JSON, a location code that is not seven `[A-Z0-9]` segments, a missing required identifier |
+| `400` | Malformed input: bad JSON, a location code that is not seven `[A-Z0-9]` segments, a missing required identifier, a resource-creation POST missing its required `Idempotency-Key` header |
 | `404` | The named site/zone/aisle/slot/type/rule does not exist |
 | `409` | State conflict: a code already taken, a parent that exists but is not Active, a slot already decommissioned |
-| `422` | Semantically invalid: non-positive capacity, unknown enum value, **PlacementRule violation**, missing `dockFlow`/`activities` for a Dock/WorkCenter, no route between two locations |
+| `422` | Semantically invalid: non-positive capacity, unknown enum value, **PlacementRule violation**, missing `dockFlow`/`activities` for a Dock/WorkCenter, no route between two locations, an `Idempotency-Key` reused with a different request body |
 
 ---
 
@@ -859,13 +880,24 @@ gremlins unleash ./internal/domain
 govulncheck ./...
 ```
 
-CI (`.github/workflows/ci.yml`) runs `lint`, `test` (with the 90% coverage
-gate), `bdd`, `integration`, `mutation-fast` (the blocking mutation subset,
+CI (`.github/workflows/ci.yml`) runs `lint`, `complexity` (gocyclo/gocognit/
+cyclop/funlen/nestif gates), `test` (with the 90% coverage gate), `bdd`,
+`contract` (Schemathesis property-based tests over `apis/openapi.yaml`),
+`evals-tests` (the MCP eval suites as their own named, individually-gating
+check), `integration`, `mutation-fast` (the blocking mutation subset,
 thresholds from `.gremlins.yaml`), `vuln` (govulncheck), `api-lint`,
-`helm-lint` and `arch-test` on every push and PR; the exhaustive `mutation`
-job runs only on schedule/manual dispatch; and `docker-publish` pushes to
-GHCR on `main` once every other job is green. Dependency drift is
-watched by `.github/dependabot.yml` (gomod + github-actions, weekly).
+`docs-api-drift` (regenerates the REST reference from `apis/openapi.yaml`
+and fails if it differs from what's committed), `helm-lint`, `arch-test` and
+`web` (lint/typecheck/test/build of `web/` against `warehouse-ui-kit`) on
+every push and PR; `trivy-scan` builds the image and blocks on
+CRITICAL/HIGH CVEs with a fix, but only for a PR targeting `main`; the
+exhaustive `mutation` job and the advisory `drift` sensor (dead code,
+`go mod tidy -diff`, unused frontend exports, mutation-vs-coverage quality)
+run only on schedule/manual dispatch; `docker-publish` pushes to GHCR on
+`main` once every other job is green, and `release` then tags the next
+`vX.Y.Z` version and publishes the Helm chart alongside it. Dependency
+drift is watched by `.github/dependabot.yml` (gomod + github-actions,
+weekly).
 
 ## Helm chart
 

@@ -114,6 +114,12 @@ Language for cross-context placement validation (see [ADR
 are enforced. See [Bulk import](./bulk-import.md) for the import report
 shape.
 
+`POST /locations` — along with every other true resource-creation `POST`
+in this catalogue except `/locations/import` and the decommission action
+below — requires a caller-supplied `Idempotency-Key` header when the
+service runs with `DATABASE_URL` set (ADR-0019); see
+[Conventions](./conventions.md#idempotency-key-on-resource-creation-posts).
+
 ## Layout — "draw the warehouse"
 
 The readable, drawable projections. These are assembled across the aggregates
@@ -140,6 +146,7 @@ guesses when the two locations are in different zones.
 | Method | Path | Operation | Returns |
 |---|---|---|---|
 | `GET` | `/healthz` | [Liveness probe](./rest/get-healthz.api.mdx) | `200` |
+| `GET` | `/readyz` | Readiness probe (not in `apis/openapi.yaml` — see below) | `200`, `503` once draining |
 
 ## Coverage cross-check
 
@@ -148,6 +155,7 @@ routes:
 
 ```go
 r.Get("/healthz", s.handleHealthz)
+r.Get("/readyz", HandleReadyz(s.Readiness))
 
 r.Route("/sites", func(r chi.Router) {
     r.Post("/", s.handleRegisterSite)
@@ -218,4 +226,12 @@ and `PUT /locations/{locationCode}`, but the router mounts them with a
 trailing `/geometry` segment, as shown above and in the tables on this page.
 The router — and its handler tests — are authoritative; the generated
 reference pages for those two operations show the specification's path.
+:::
+
+:::info[A 32nd route with no OpenAPI operation]
+`GET /readyz` (the Kubernetes readiness probe, ADR-0020) is mounted by the
+router right next to `/healthz` but has no entry in `apis/openapi.yaml` and
+is not part of the counts above — it is an orchestration concern, not a
+published API operation, so it is intentionally outside the OpenAPI
+contract and the generated reference.
 :::
