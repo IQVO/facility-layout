@@ -67,7 +67,7 @@ For structure rather than a single slot:
 Consumers that need a local read model subscribe to this context's
 [domain events](../ddd/domain-events.md) on the `warehouse.facility.events`
 Kafka topic, specified in
-[`apis/asyncapi.yaml`](https://github.com/claudioed/facility-layout/blob/main/apis/asyncapi.yaml).
+[`apis/asyncapi.yaml`](https://github.com/IQVO/facility-layout/blob/main/apis/asyncapi.yaml).
 The service publishes there when it runs with `EVENT_PUBLISHER=kafka`. Each
 message is a CloudEvents 1.0 event in structured content mode
 ([ADR-0024](../adr/0024-cloudevents-mandatory-envelope.md)) — `specversion`,

@@ -11,7 +11,7 @@ Do not disclose suspected vulnerabilities, credentials, or proof-of-concept
 payloads in a public issue. Instead, open a private vulnerability report via
 GitHub's built-in disclosure workflow:
 
-https://github.com/claudioed/facility-layout/security/advisories/new
+https://github.com/IQVO/facility-layout/security/advisories/new
 
 Include a description of the impact, affected commit/version, reproducible
 steps, and any suggested mitigation.
