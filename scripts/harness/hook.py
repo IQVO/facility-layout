@@ -333,7 +333,7 @@ def cmd_stop(payload: dict) -> int:
         print("{}")  # Codex requires JSON on stdout when a Stop hook exits 0; Claude accepts it
         return 0  # never loop: the host re-fires Stop after we block once
     root = repo_root()
-    changed = [f for f in git_changed(root) if f.endswith((".go", ".ts", ".tsx", ".mod", ".sum"))]
+    changed = [f for f in git_changed(root) if f.endswith((".go", ".ts", ".tsx", ".mod", ".sum", ".tf", ".sh", ".py", ".yml", ".yaml"))]
     if not changed:
         print("{}")
         return 0  # read-only / docs-only turn
