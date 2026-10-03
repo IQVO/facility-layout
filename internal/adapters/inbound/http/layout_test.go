@@ -409,3 +409,18 @@ func testSVGRejectsUnknownFormat(t *testing.T) {
 	seedDrawableSite(t).do(http.MethodGet, "/sites/WH1/layout?format=AAA", nil).
 		assertProblem(t, http.StatusBadRequest, "invalid-layout-format")
 }
+
+// `?format=` (present but empty) is not in the published enum [json, svg]:
+// it must be rejected, not silently treated as the json default. Found by
+// the Schemathesis contract job ("API accepted schema-violating request").
+func TestLayout_EmptyFormatIsRejected(t *testing.T) {
+	seedDrawableSite(t).do(http.MethodGet, "/sites/WH1/layout?format=", nil).
+		assertProblem(t, http.StatusBadRequest, "invalid-layout-format")
+}
+
+// An absent format still defaults to json, and an explicit json is accepted.
+func TestLayout_AbsentOrJSONFormatIsAccepted(t *testing.T) {
+	ts := seedDrawableSite(t)
+	ts.do(http.MethodGet, "/sites/WH1/layout", nil).assertStatus(t, http.StatusOK)
+	ts.do(http.MethodGet, "/sites/WH1/layout?format=json", nil).assertStatus(t, http.StatusOK)
+}
