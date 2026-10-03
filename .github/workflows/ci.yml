@@ -38,11 +38,10 @@ jobs:
           args: --timeout=5m
 
   # Agent-guide sensor (harness-template v3): skills load, references resolve, context budget.
-  # ADVISORY (continue-on-error) until the guides are clean; then flip to blocking.
+  # BLOCKING: guides are clean (0 errors); keep them that way.
   guide-lint:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: python3 scripts/harness/guide_lint.py
