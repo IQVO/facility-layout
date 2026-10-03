@@ -105,6 +105,13 @@ Language.
   auth was added then fully reverted (commit `73d6068`, 2026-09-09) — there
   is currently NO auth layer on REST or MCP endpoints. Do not re-add
   `AUTH_MODE`/`API_READ_KEY`/etc. without re-reading ADR-0015 first.
+- **Idempotency (ADR-0019)**: every true resource-creation POST (eight of
+  them — sites, zones, fixed structures, aisles, cross-aisles, location
+  types, placement rules, location slots) requires a caller-supplied
+  `Idempotency-Key` header when `DATABASE_URL` is set, so a lost-response
+  retry replays the original outcome instead of double-creating. Bulk
+  import and decommission are deliberately excluded. In-memory/no-database
+  runs skip the check entirely (`IdempotencyPool` nil ⇒ no-op passthrough).
 
 ## Key Commands
 
@@ -184,9 +191,11 @@ summarizes.
 - **`domain-model.md`** — the location-code hierarchy (Site→Area→Zone→
   Aisle→Bay→Level→Position), full ubiquitous language glossary, every
   aggregate's invariants, the domain event list and CloudEvents naming
-  convention, and the 10 application-layer use cases.
+  convention, and the 13 core application-layer use cases (30 use-case
+  structs in total, once single-resource/list reads are counted).
 - **`rest-api-and-frontend.md`** — the complete REST endpoint table (write
-  side + "draw the warehouse" read side + the stretch-goal SVG endpoint),
-  CORS policy, and the `web/` facility-mfe module-federation contract.
+  side + "draw the warehouse" read side + the stretch-goal SVG endpoint +
+  `/readyz`), which routes require an `Idempotency-Key`, CORS policy, and
+  the `web/` facility-mfe module-federation contract.
 - **`testing-and-quality.md`** — Definition of Done, the local quality-gate
   command sequence and why it exists, and the full tech/standards list.

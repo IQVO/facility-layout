@@ -2,30 +2,44 @@
 
 ## REST API (inbound adapter) — this is the "draw the warehouse" capability
 
-Structural / write side (builds up the model):
+Structural / write side (builds up the model). Every route marked **(idem)**
+requires a caller-supplied `Idempotency-Key` header when `DATABASE_URL` is
+set (ADR-0019; skipped entirely in in-memory/no-database runs):
 
-- `POST   /sites`                                    -> RegisterSite
+- `POST   /sites`                                    -> RegisterSite (idem)
 - `GET    /sites`                                    -> list sites
 - `GET    /sites/{siteCode}`                          -> get one site
-- `POST   /sites/{siteCode}/zones`                    -> RegisterZone
+- `POST   /sites/{siteCode}/zones`                    -> RegisterZone (idem)
 - `GET    /sites/{siteCode}/zones`                    -> list a site's zones
-- `POST   /zones/{zoneId}/aisles`                     -> RegisterAisle
+- `POST   /sites/{siteCode}/structures`                -> RegisterFixedStructure (idem)
+- `GET    /sites/{siteCode}/structures`                -> list a site's fixed structures
+- `POST   /zones/{zoneId}/aisles`                     -> RegisterAisle (idem)
 - `GET    /zones/{zoneId}/aisles`                     -> list a zone's aisles
-- `POST   /location-types`                            -> RegisterLocationType
+- `GET    /zones/{zoneId}`                             -> get one zone
+- `GET    /zones/{zoneId}/aisles/{aisleCode}`          -> get one aisle
+- `PUT    /zones/{zoneId}/aisles/{aisleCode}/geometry` -> SetAisleGeometry (ADR-0017)
+- `POST   /zones/{zoneId}/cross-aisles`                -> RegisterCrossAisle (idem, ADR-0017)
+- `POST   /location-types`                            -> RegisterLocationType (idem)
 - `GET    /location-types`                            -> list location types
-- `POST   /placement-rules`                           -> DefinePlacementRule
+- `GET    /location-types/{name}`                      -> get one location type
+- `POST   /placement-rules`                           -> DefinePlacementRule (idem)
 - `GET    /placement-rules`                           -> list placement rules
-- `POST   /locations`                                 -> RegisterLocationSlot
+- `GET    /placement-rules/{ruleId}`                   -> get one placement rule
+- `POST   /locations`                                 -> RegisterLocationSlot (idem)
 - `GET    /locations/{locationCode}`                  -> get one slot
+- `PUT    /locations/{locationCode}/geometry`          -> SetLocationGeometry (ADR-0017)
 - `GET    /locations/{locationCode}/classification`   -> Zone Hazmat/TemperatureClass
   (denormalized read; Published Language for placement-rule consumers like
   `inventory-storage` — see ADR-0008)
 - `POST   /locations/{locationCode}/decommission`     -> DecommissionLocationSlot
+  (NOT idempotency-protected: acts on an existing resource, not a creation)
 - `POST   /locations/import`                          -> ImportFacilityLayout
-  (bulk; request body is a JSON array of rows, each row fully specifying a
-  site/area/zone/aisle/bay/level/position + locationType — the WHOLE point
-  of this endpoint is that a real warehouse's layout gets loaded here once,
-  reproducibly, not typed in by hand slot-by-slot)
+  (bulk; NOT idempotency-protected — partial-success semantics don't fit the
+  whole-request replay model, see ADR-0019; request body is a JSON array of
+  rows, each row fully specifying a site/area/zone/aisle/bay/level/position +
+  locationType — the WHOLE point of this endpoint is that a real warehouse's
+  layout gets loaded here once, reproducibly, not typed in by hand
+  slot-by-slot)
 
 Read / "draw" side (the deliverable this service exists for — REST APIs
 whose PURPOSE is to render the warehouse, not just CRUD):
@@ -49,7 +63,17 @@ whose PURPOSE is to render the warehouse, not just CRUD):
   `Content-Type: image/svg+xml`). Keep it a thin adapter-only concern
   (render function in the HTTP layer only) — do NOT let SVG rendering leak
   into domain or application layers.
-- `GET  /healthz`
+- `GET  /sites/{siteCode}/locations?role=`
+  A site's slots filtered to one `LocationRole` (ADR-0016), e.g. every
+  `Dock` door.
+- `GET  /zones/{zoneId}/travel-graph` / `GET /distance?from=&to=`
+  The zone's travel graph (aisle/bay waypoints, metre-weighted edges) and
+  the shortest same-zone distance between two slots (ADR-0017). `/distance`
+  reports map topology only — never travel time or congestion.
+- `GET  /healthz` — liveness
+- `GET  /readyz` — readiness; flipped not-ready as the first step of
+  graceful shutdown (ADR-0020), not in `apis/openapi.yaml` (orchestration
+  concern, not a published API operation)
 
 ## CORS
 

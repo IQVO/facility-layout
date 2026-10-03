@@ -1,7 +1,7 @@
 # facility-layout documentation site
 
 The documentation site for the **Facility Layout** bounded context, published
-to <https://claudioed.github.io/facility-layout/>.
+to <https://iqvo.github.io/facility-layout/>.
 
 ## Local development
 
