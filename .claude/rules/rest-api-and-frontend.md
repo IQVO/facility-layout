@@ -1,3 +1,11 @@
+---
+paths:
+  - "internal/adapters/inbound/http/**"
+  - "apis/openapi*.yaml"
+  - "apis/openapi/**"
+  - "web/**"
+---
+
 # REST API and frontend contract
 
 ## REST API (inbound adapter) — this is the "draw the warehouse" capability

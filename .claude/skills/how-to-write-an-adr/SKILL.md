@@ -1,3 +1,8 @@
+---
+name: how-to-write-an-adr
+description: Write an Architecture Decision Record in this repo's numbering and format, including companion ADRs for cross-repo changes. Use when a design decision should be recorded or a change contradicts an existing ADR.
+---
+
 # How to write an ADR
 
 Use when a change is architecturally significant — a new bounded-context

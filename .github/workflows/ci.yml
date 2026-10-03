@@ -37,6 +37,18 @@ jobs:
           version: v2.13.1
           args: --timeout=5m
 
+  # Agent-guide sensor (harness-template v3): skills load, references resolve, context budget.
+  # ADVISORY (continue-on-error) until the guides are clean; then flip to blocking.
+  guide-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - run: python3 scripts/harness/guide_lint.py
+      - run: python3 scripts/harness/test_hook.py
+
+
   # Complexity gate as its own named check: cyclomatic (gocyclo, cyclop),
   # cognitive (gocognit), nesting (nestif) and function size (funlen).
   # Thresholds live in .golangci.yml; --enable-only runs just these five
@@ -243,6 +255,9 @@ jobs:
 
   mutation:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     timeout-minutes: 90
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     steps:
@@ -254,12 +269,25 @@ jobs:
         run: go install github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0
       - name: Mutation testing (domain layer)
         run: gremlins unleash ./internal/domain --workers 1 --timeout-coefficient 30
+      - name: Open or refresh the harness:red issue on a scheduled failure
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/harness/red_issue.py mutation "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+      - name: Close the harness:red issue when the scheduled run recovers
+        if: success() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/harness/red_issue.py mutation --close
 
   # ============================================================
   # CLASSIFICATION: CONTINUOUS DRIFT (advisory, weekly — never blocks a PR)
   # ============================================================
   drift:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     timeout-minutes: 30
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     steps:
@@ -292,6 +320,16 @@ jobs:
           gremlins unleash ./internal/domain --workers 1 --timeout-coefficient 30 > /tmp/gremlins.log 2>&1 || true
           echo "### coverage-quality" >> "$GITHUB_STEP_SUMMARY"
           python3 scripts/coverage-quality.py /tmp/cov.out /tmp/gremlins.log | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Open or refresh the harness:red issue on a scheduled failure
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/harness/red_issue.py drift "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+      - name: Close the harness:red issue when the scheduled run recovers
+        if: success() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/harness/red_issue.py drift --close
 
   # ============================================================
   # CLASSIFICATION: LINTERS & STATIC ANALYSIS (API contracts)

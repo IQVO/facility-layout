@@ -1,3 +1,14 @@
+---
+paths:
+  - ".github/**"
+  - "Makefile"
+  - ".gremlins.yaml"
+  - ".golangci.yml"
+  - "lefthook.yml"
+  - "**/*_test.go"
+  - "features/**"
+---
+
 # Testing discipline, Definition of Done, tech standards
 
 ## Tech & standards (IDENTICAL stack and quality bar to the other fleet services)
