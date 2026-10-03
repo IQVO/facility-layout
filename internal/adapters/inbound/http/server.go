@@ -596,8 +596,16 @@ func (s *Server) handleImportFacilityLayout(w http.ResponseWriter, r *http.Reque
 // --------------------------------------------- "draw the warehouse" reads --
 
 func (s *Server) handleGetSiteLayout(w http.ResponseWriter, r *http.Request) {
-	format := r.URL.Query().Get("format")
-	if format != "" && format != "json" && format != "svg" {
+	// An ABSENT `format` defaults to json; a PRESENT one must be one of the
+	// enum values. `?format=` (present but empty) is not in the published
+	// enum [json, svg] and is rejected -- the Schemathesis contract job
+	// found it answered 200.
+	format := "json"
+	vals, present := r.URL.Query()["format"]
+	if present {
+		format = vals[0]
+	}
+	if format != "json" && format != "svg" {
 		writeProblem(w, http.StatusBadRequest, problemInfo{"invalid-layout-format", "Layout format must be json or svg"}, "layout format must be \"json\" or \"svg\", got "+strconv.Quote(format), r.URL.Path)
 		return
 	}
