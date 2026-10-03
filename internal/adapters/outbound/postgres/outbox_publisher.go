@@ -29,9 +29,10 @@ type OutboxPublisher struct {
 
 // NewOutboxPublisher constructs an OutboxPublisher over pool that fans
 // each event through every encoder given, in order. newId mints the
-// envelope event_id shared by a given event's row across every encoder
-// invocation, so a redelivery carries the same id on every topic it was
-// enqueued for. Passing no encoders defaults to the integration publisher
+// CloudEvents `id` (ADR-0024) ONCE per domain event; it is shared by that
+// event's row across every encoder invocation and persisted inside the
+// row's pre-encoded value, so a relay redelivery carries the same id on
+// every topic it was enqueued for. Passing no encoders defaults to the integration publisher
 // alone.
 func NewOutboxPublisher(pool *pgxpool.Pool, newId func() string, encoders ...outboundkafka.Encoder) *OutboxPublisher {
 	return &OutboxPublisher{pool: pool, newId: newId, encoders: encoders}

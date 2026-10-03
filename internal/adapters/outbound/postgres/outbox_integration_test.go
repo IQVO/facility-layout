@@ -14,6 +14,7 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
+	"github.com/claudioed/facility-layout/internal/adapters/kafka/cloudevents"
 	outboundkafka "github.com/claudioed/facility-layout/internal/adapters/outbound/kafka"
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/postgres"
 	"github.com/claudioed/facility-layout/internal/application/usecases"
@@ -112,6 +113,34 @@ func TestOutbox_RegisterSite_CommitsAggregateAndEventTogether(t *testing.T) {
 	found, err := postgres.NewSiteRepo(pool).FindByCode(ctx, "WH1")
 	if err != nil || found == nil {
 		t.Fatalf("expected WH1 persisted, got %v err=%v", found, err)
+	}
+
+	// Both rows carry a CloudEvents 1.0 value with the SAME id (minted once
+	// per domain event) and the stream-specific dataschema (ADR-0024).
+	rows, err := pool.Query(ctx, `SELECT topic, value FROM outbox_events ORDER BY id`)
+	if err != nil {
+		t.Fatalf("query outbox: %v", err)
+	}
+	defer rows.Close()
+	schemas := map[string]string{}
+	for rows.Next() {
+		var topic string
+		var value []byte
+		if err := rows.Scan(&topic, &value); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		evt, err := cloudevents.Decode(value)
+		if err != nil {
+			t.Fatalf("outbox row on %s is not a CloudEvent: %v", topic, err)
+		}
+		if evt.ID() != "evt-fixed" || evt.Subject() != "WH1" || evt.Type() != "com.warehouse.wms.facility-layout.site.SiteRegistered" {
+			t.Errorf("row on %s: id=%q subject=%q type=%q", topic, evt.ID(), evt.Subject(), evt.Type())
+		}
+		schemas[topic] = evt.DataSchema()
+	}
+	if schemas["warehouse.facility.events"] != "urn:warehouse:facility-layout:events:SiteRegistered:v1" ||
+		schemas["warehouse.facility.analytics"] != "urn:warehouse:facility-layout:analytics:SiteRegistered:v1" {
+		t.Errorf("dataschemas = %v", schemas)
 	}
 }
 

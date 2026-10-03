@@ -1,6 +1,7 @@
 package kafka_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,7 +15,7 @@ import (
 )
 
 // fakeWriter captures the messages handed to WriteMessages so a test can
-// assert on the published envelope without a live broker.
+// assert on the published CloudEvent without a live broker.
 type fakeWriter struct {
 	msgs []kafkago.Message
 	err  error
@@ -46,137 +47,210 @@ func mustCapacity(t *testing.T, w, v float64) shared.Capacity {
 	return c
 }
 
-// integrationEventCase is one row of the integration-publisher table: a
-// domain event plus the envelope shape it must be published under.
-type integrationEventCase struct {
-	name      string
-	event     shared.DomainEvent
-	wantType  string
-	wantKey   string
-	wantField string // a json field expected in data
-	wantValue any
+func mustPoint(t *testing.T, x, y, z float64) shared.Point3D {
+	t.Helper()
+	p, err := shared.NewPoint3D(x, y, z)
+	if err != nil {
+		t.Fatalf("NewPoint3D: %v", err)
+	}
+	return p
 }
 
-func TestPublisher_PublishesEachEventType(t *testing.T) {
+func mustDims(t *testing.T, w, d, h float64) shared.Dimensions {
+	t.Helper()
+	dm, err := shared.NewDimensions(w, d, h)
+	if err != nil {
+		t.Fatalf("NewDimensions: %v", err)
+	}
+	return dm
+}
+
+const (
+	goldenID   = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
+	goldenTime = "2026-02-03T04:05:06Z"
+	ctHeader   = "application/cloudevents+json; charset=UTF-8"
+)
+
+// goldenCase is one published event type: the domain event, its exact
+// CloudEvents `type`, subject, Kafka key, and the exact `data` JSON.
+type goldenCase struct {
+	name    string
+	event   shared.DomainEvent
+	ceType  string
+	subject string
+	key     string
+	data    string
+}
+
+func goldenCases(t *testing.T) []goldenCase {
+	t.Helper()
 	at := time.Date(2026, 2, 3, 4, 5, 6, 0, time.UTC)
 	code := mustLocationCode(t)
-
-	tests := []integrationEventCase{
-		{
-			name:      "SiteRegistered",
-			event:     shared.NewSiteRegistered(at, "WH1", "Main"),
-			wantType:  "com.warehouse.wms.facility-layout.site.SiteRegistered",
-			wantKey:   "WH1",
-			wantField: "siteCode",
-			wantValue: "WH1",
-		},
-		{
-			name:      "ZoneRegistered",
-			event:     shared.NewZoneRegistered(at, "z-1", "WH1", "STOR", "AMB", shared.Ambient, false),
-			wantType:  "com.warehouse.wms.facility-layout.zone.ZoneRegistered",
-			wantKey:   "z-1",
-			wantField: "zoneId",
-			wantValue: "z-1",
-		},
-		{
-			name:      "AisleRegistered",
-			event:     shared.NewAisleRegistered(at, "a-1", "z-1", "A07", 7, shared.TwoWay),
-			wantType:  "com.warehouse.wms.facility-layout.aisle.AisleRegistered",
-			wantKey:   "a-1",
-			wantField: "aisleId",
-			wantValue: "a-1",
-		},
-		{
-			name:      "LocationTypeRegistered",
-			event:     shared.NewLocationTypeRegistered(at, "PalletRack", "Storage", mustCapacity(t, 1000, 2)),
-			wantType:  "com.warehouse.wms.facility-layout.locationtype.LocationTypeRegistered",
-			wantKey:   "PalletRack",
-			wantField: "locationType",
-			wantValue: "PalletRack",
-		},
-		{
-			name:      "PlacementRuleDefined",
-			event:     shared.NewPlacementRuleDefined(at, "r-1", "PalletRack", "ALLOW", "zone.hazmat==true"),
-			wantType:  "com.warehouse.wms.facility-layout.placementrule.PlacementRuleDefined",
-			wantKey:   "r-1",
-			wantField: "ruleId",
-			wantValue: "r-1",
-		},
-		{
-			name:      "LocationSlotRegistered",
-			event:     shared.NewLocationSlotRegistered(at, code, "PalletRack", "Storage", "", nil, mustCapacity(t, 500, 1)),
-			wantType:  "com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered",
-			wantKey:   code.String(),
-			wantField: "locationCode",
-			wantValue: code.String(),
-		},
-		{
-			name:      "LocationSlotDecommissioned",
-			event:     shared.NewLocationSlotDecommissioned(at, code),
-			wantType:  "com.warehouse.wms.facility-layout.locationslot.LocationSlotDecommissioned",
-			wantKey:   code.String(),
-			wantField: "locationCode",
-			wantValue: code.String(),
-		},
-		{
-			name:      "FacilityLayoutImported",
-			event:     shared.NewFacilityLayoutImported(at, 10, 9, 1),
-			wantType:  "com.warehouse.wms.facility-layout.locationslot.FacilityLayoutImported",
-			wantKey:   "com.warehouse.wms.facility-layout.locationslot.FacilityLayoutImported",
-			wantField: "slotsImported",
-			wantValue: float64(9),
-		},
+	seq := 4
+	segment, err := shared.NewSegment(mustPoint(t, 0, 0, 0), mustPoint(t, 0, 10, 0))
+	if err != nil {
+		t.Fatalf("NewSegment: %v", err)
 	}
+	rect, err := shared.NewRect(mustPoint(t, 1, 2, 0), mustDims(t, 3, 4, 5))
+	if err != nil {
+		t.Fatalf("NewRect: %v", err)
+	}
+	const p = "com.warehouse.wms.facility-layout."
+	base := func(entity, name string) string {
+		return `"eventName":"` + name + `","eventType":"` + p + entity + "." + name + `","occurredAt":"` + goldenTime + `"`
+	}
+	return []goldenCase{
+		{"SiteRegistered", shared.NewSiteRegistered(at, "WH1", "Main"),
+			p + "site.SiteRegistered", "WH1", "WH1",
+			`{` + base("site", "SiteRegistered") + `,"siteCode":"WH1","siteName":"Main"}`},
+		{"ZoneRegistered", shared.NewZoneRegistered(at, "WH1-STOR-AMB", "WH1", "STOR", "AMB", shared.Ambient, false),
+			p + "zone.ZoneRegistered", "WH1-STOR-AMB", "WH1-STOR-AMB",
+			`{` + base("zone", "ZoneRegistered") + `,"zoneId":"WH1-STOR-AMB","siteCode":"WH1","areaCode":"STOR","zoneCode":"AMB","temperatureClass":"Ambient","hazmat":false}`},
+		{"AisleRegistered", shared.NewAisleRegistered(at, "WH1-STOR-AMB-A07", "WH1-STOR-AMB", "A07", 7, shared.TwoWay),
+			p + "aisle.AisleRegistered", "WH1-STOR-AMB-A07", "WH1-STOR-AMB-A07",
+			`{` + base("aisle", "AisleRegistered") + `,"aisleId":"WH1-STOR-AMB-A07","zoneId":"WH1-STOR-AMB","aisleCode":"A07","sequenceHint":7,"direction":"TwoWay"}`},
+		{"LocationTypeRegistered", shared.NewLocationTypeRegistered(at, "PalletRack", "Storage", mustCapacity(t, 1000, 2)),
+			p + "locationtype.LocationTypeRegistered", "PalletRack", "PalletRack",
+			`{` + base("locationtype", "LocationTypeRegistered") + `,"locationType":"PalletRack","role":"Storage","maxWeightKg":1000,"maxVolumeM3":2}`},
+		{"PlacementRuleDefined", shared.NewPlacementRuleDefined(at, "r-1", "PalletRack", "ALLOW", "zone.hazmat==true"),
+			p + "placementrule.PlacementRuleDefined", "r-1", "r-1",
+			`{` + base("placementrule", "PlacementRuleDefined") + `,"ruleId":"r-1","locationType":"PalletRack","effect":"ALLOW","predicate":"zone.hazmat==true"}`},
+		{"LocationSlotRegistered", shared.NewLocationSlotRegistered(at, code, "PalletRack", "Storage", "", nil, mustCapacity(t, 500, 1)),
+			p + "locationslot.LocationSlotRegistered", code.String(), code.String(),
+			`{` + base("locationslot", "LocationSlotRegistered") + `,"locationCode":"WH1-STOR-AMB-A07-03-02-B","aisleId":"WH1-STOR-AMB-A07","zoneId":"WH1-STOR-AMB","locationType":"PalletRack","role":"Storage","maxWeightKg":500,"maxVolumeM3":1}`},
+		{"LocationSlotDecommissioned", shared.NewLocationSlotDecommissioned(at, code),
+			p + "locationslot.LocationSlotDecommissioned", code.String(), code.String(),
+			`{` + base("locationslot", "LocationSlotDecommissioned") + `,"locationCode":"WH1-STOR-AMB-A07-03-02-B"}`},
+		{"FacilityLayoutImported", shared.NewFacilityLayoutImported(at, 10, 9, 1),
+			p + "locationslot.FacilityLayoutImported", outboundkafka.ImportSubject, p + "locationslot.FacilityLayoutImported",
+			`{` + base("locationslot", "FacilityLayoutImported") + `,"rowsSubmitted":10,"slotsImported":9,"rowsRejected":1}`},
+		{"LocationGeometryUpdated", shared.NewLocationGeometryUpdated(at, code, mustPoint(t, 1, 2, 3), mustDims(t, 1.2, 1, 1.5), &seq),
+			p + "locationslot.LocationGeometryUpdated", code.String(), p + "locationslot.LocationGeometryUpdated",
+			`{` + base("locationslot", "LocationGeometryUpdated") + `,"locationCode":"WH1-STOR-AMB-A07-03-02-B","xM":1,"yM":2,"zM":3,"widthM":1.2,"depthM":1,"heightM":1.5,"pickSequence":4}`},
+		{"AisleGeometryUpdated", shared.NewAisleGeometryUpdated(at, "WH1-STOR-AMB-A07", segment),
+			p + "aisle.AisleGeometryUpdated", "WH1-STOR-AMB-A07", p + "aisle.AisleGeometryUpdated",
+			`{` + base("aisle", "AisleGeometryUpdated") + `,"aisleId":"WH1-STOR-AMB-A07","startXM":0,"startYM":0,"startZM":0,"endXM":0,"endYM":10,"endZM":0,"lengthM":10}`},
+		{"FixedStructureRegistered", shared.NewFixedStructureRegistered(at, "s-1", "WH1", "Column", rect, "C1"),
+			p + "structure.FixedStructureRegistered", "s-1", p + "structure.FixedStructureRegistered",
+			`{` + base("structure", "FixedStructureRegistered") + `,"structureId":"s-1","siteCode":"WH1","kind":"Column","xM":1,"yM":2,"zM":0,"widthM":3,"depthM":4,"heightM":5,"label":"C1"}`},
+		{"CrossAisleRegistered", shared.NewCrossAisleRegistered(at, "WH1-STOR-AMB", "A07", "A08", "03"),
+			p + "crossaisle.CrossAisleRegistered", "WH1-STOR-AMB/A07-A08@03", p + "crossaisle.CrossAisleRegistered",
+			`{` + base("crossaisle", "CrossAisleRegistered") + `,"zoneId":"WH1-STOR-AMB","fromAisle":"A07","toAisle":"A08","atBay":"03"}`},
+	}
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assertIntegrationEventPublished(t, tt, at)
+// goldenEvent renders the exact structured-mode CloudEvent expected on the
+// wire for one case and stream.
+func goldenEvent(tc goldenCase, stream string) string {
+	return `{"specversion":"1.0","id":"` + goldenID + `","source":"/warehouse/facility-layout","type":"` + tc.ceType +
+		`","subject":"` + tc.subject + `","time":"` + goldenTime + `","datacontenttype":"application/json","dataschema":"urn:warehouse:facility-layout:` +
+		stream + `:` + tc.name + `:v1","data":` + tc.data + `}`
+}
+
+// compact canonicalises JSON so key order/whitespace never matter but every
+// attribute and value does.
+func compact(t *testing.T, raw []byte) string {
+	t.Helper()
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		t.Fatalf("invalid JSON %s: %v", raw, err)
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("re-marshal: %v", err)
+	}
+	return string(b)
+}
+
+func assertGolden(t *testing.T, msg kafkago.Message, tc goldenCase, stream string) {
+	t.Helper()
+	if string(msg.Key) != tc.key {
+		t.Errorf("key = %q, want %q", msg.Key, tc.key)
+	}
+	if got, want := compact(t, msg.Value), compact(t, []byte(goldenEvent(tc, stream))); got != want {
+		t.Errorf("CloudEvent mismatch\n got: %s\nwant: %s", got, want)
+	}
+	var ct []byte
+	for _, h := range msg.Headers {
+		if h.Key == "content-type" {
+			ct = h.Value
+		}
+	}
+	if !bytes.Equal(ct, []byte(ctHeader)) {
+		t.Errorf("content-type header = %q, want %q", ct, ctHeader)
+	}
+}
+
+// TestPublisher_GoldenCloudEventPerType asserts the exact CloudEvent (every
+// attribute, the type string, the data payload) and the content-type header
+// for every event type on the integration topic.
+func TestPublisher_GoldenCloudEventPerType(t *testing.T) {
+	for _, tc := range goldenCases(t) {
+		t.Run(tc.name, func(t *testing.T) {
+			w := &fakeWriter{}
+			p := outboundkafka.NewPublisher(nil, func() string { return goldenID })
+			p.Writer = w
+			if err := p.Publish(context.Background(), tc.event); err != nil {
+				t.Fatalf("Publish: %v", err)
+			}
+			if len(w.msgs) != 1 {
+				t.Fatalf("expected 1 message, got %d", len(w.msgs))
+			}
+			assertGolden(t, w.msgs[0], tc, "events")
 		})
 	}
 }
 
-// assertIntegrationEventPublished publishes one table row's event through a
-// fresh Publisher and checks the resulting Envelope v1 wire shape.
-func assertIntegrationEventPublished(t *testing.T, tt integrationEventCase, at time.Time) {
-	t.Helper()
-	w := &fakeWriter{}
-	p := outboundkafka.NewPublisher(nil, func() string { return "evt-fixed" })
-	p.Writer = w
+// TestPublisher_CrossServiceContractTypes pins the exact strings
+// inventory-storage dispatches on.
+func TestPublisher_CrossServiceContractTypes(t *testing.T) {
+	want := map[string]string{
+		"LocationSlotRegistered":     "com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered",
+		"LocationSlotDecommissioned": "com.warehouse.wms.facility-layout.locationslot.LocationSlotDecommissioned",
+		"ZoneRegistered":             "com.warehouse.wms.facility-layout.zone.ZoneRegistered",
+	}
+	seen := 0
+	for _, tc := range goldenCases(t) {
+		w, ok := want[tc.name]
+		if !ok {
+			continue
+		}
+		seen++
+		enc, err := (&outboundkafka.Publisher{}).Encode(context.Background(), tc.event, goldenID)
+		if err != nil {
+			t.Fatalf("Encode: %v", err)
+		}
+		var ev struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(enc.Value, &ev); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if ev.Type != w {
+			t.Errorf("%s type = %q, want %q", tc.name, ev.Type, w)
+		}
+	}
+	if seen != len(want) {
+		t.Fatalf("checked %d contract types, want %d", seen, len(want))
+	}
+}
 
-	if err := p.Publish(context.Background(), tt.event); err != nil {
-		t.Fatalf("Publish: %v", err)
+// TestPublisher_EncodeUsesCallerID proves the outbox path's id is the one
+// carried on the wire (minted once, stable across redelivery).
+func TestPublisher_EncodeUsesCallerID(t *testing.T) {
+	p := outboundkafka.NewPublisher(nil, func() string { return "must-not-be-used" })
+	enc, err := p.Encode(context.Background(), shared.NewSiteRegistered(time.Now(), "WH1", "Main"), "outbox-id")
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
 	}
-	if len(w.msgs) != 1 {
-		t.Fatalf("expected 1 message, got %d", len(w.msgs))
+	var ev struct {
+		ID string `json:"id"`
 	}
-	msg := w.msgs[0]
-	if string(msg.Key) != tt.wantKey {
-		t.Errorf("key = %q, want %q", string(msg.Key), tt.wantKey)
+	if err := json.Unmarshal(enc.Value, &ev); err != nil {
+		t.Fatalf("unmarshal: %v", err)
 	}
-
-	var env outboundkafka.Envelope
-	if err := json.Unmarshal(msg.Value, &env); err != nil {
-		t.Fatalf("unmarshal envelope: %v", err)
-	}
-	if env.EventType != tt.wantType {
-		t.Errorf("event_type = %q, want %q", env.EventType, tt.wantType)
-	}
-	if env.EventId != "evt-fixed" {
-		t.Errorf("event_id = %q, want evt-fixed", env.EventId)
-	}
-	if env.Source != "facility-layout" {
-		t.Errorf("source = %q, want facility-layout", env.Source)
-	}
-	if !env.OccurredAt.Equal(at) {
-		t.Errorf("occurred_at = %v, want %v", env.OccurredAt, at)
-	}
-
-	var data map[string]any
-	if err := json.Unmarshal(env.Data, &data); err != nil {
-		t.Fatalf("unmarshal data: %v", err)
-	}
-	if got := data[tt.wantField]; got != tt.wantValue {
-		t.Errorf("data[%q] = %v (%T), want %v (%T)", tt.wantField, got, got, tt.wantValue, tt.wantValue)
+	if ev.ID != "outbox-id" || enc.Topic != outboundkafka.Topic {
+		t.Errorf("id = %q topic = %q", ev.ID, enc.Topic)
 	}
 }
 
@@ -188,5 +262,20 @@ func TestPublisher_PropagatesWriteError(t *testing.T) {
 	err := p.Publish(context.Background(), shared.NewSiteRegistered(time.Now(), "WH1", "Main"))
 	if !errors.Is(err, boom) {
 		t.Fatalf("err = %v, want wrapped broker down", err)
+	}
+}
+
+func TestRelaySink_SendsWithTopicAndContentTypeHeader(t *testing.T) {
+	w := &fakeWriter{}
+	s := &outboundkafka.RelaySink{Writer: w}
+	enc := outboundkafka.Encoded{Topic: outboundkafka.AnalyticsTopic, EventType: "x", Key: []byte("k"), Value: []byte(`{}`)}
+	if err := s.Send(context.Background(), enc); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if len(w.msgs) != 1 || w.msgs[0].Topic != outboundkafka.AnalyticsTopic {
+		t.Fatalf("unexpected messages: %+v", w.msgs)
+	}
+	if len(w.msgs[0].Headers) != 1 || string(w.msgs[0].Headers[0].Value) != ctHeader {
+		t.Errorf("headers = %+v", w.msgs[0].Headers)
 	}
 }

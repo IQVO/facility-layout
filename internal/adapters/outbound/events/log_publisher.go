@@ -1,9 +1,8 @@
-// Package events provides outbound EventPublisher implementations. The
-// interface is intentionally the shape a Kafka producer would satisfy
-// (Publish(ctx, event) error), so a broker-backed publisher can be dropped
-// in later without touching the application layer — this service's domain
-// events are its Published Language, and every event already carries its
-// CloudEvents `type`.
+// Package events provides non-broker outbound EventPublisher implementations
+// (log, in-memory buffer). The Kafka publishers live in outbound/kafka and
+// emit every event as a CloudEvents 1.0 event (ADR-0024); nothing here writes
+// to Kafka or builds an envelope. Every domain event carries its CloudEvents
+// `type` (EventType), which these adapters only log/record.
 package events
 
 import (
@@ -25,7 +24,9 @@ func NewLogPublisher(logger *slog.Logger) *LogPublisher {
 	return &LogPublisher{logger: logger}
 }
 
-// Publish logs the event as JSON, tagged with its CloudEvents type. It
+// Publish logs the event as JSON, tagged with its CloudEvents type. The
+// "event_type" key is a log attribute name (see LOGGING.md), not a Kafka
+// envelope field. It
 // logs with ctx so the line is correlated with the span the use case that
 // raised the event is running in.
 func (p *LogPublisher) Publish(ctx context.Context, event shared.DomainEvent) error {

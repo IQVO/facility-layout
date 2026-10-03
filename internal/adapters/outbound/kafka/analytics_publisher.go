@@ -2,12 +2,11 @@ package kafka
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"time"
 
 	kafkago "github.com/segmentio/kafka-go"
 
+	"github.com/claudioed/facility-layout/internal/adapters/kafka/cloudevents"
 	"github.com/claudioed/facility-layout/internal/application/ports"
 	"github.com/claudioed/facility-layout/internal/domain/shared"
 )
@@ -17,27 +16,12 @@ import (
 // contract and the analytical read-model stream evolve independently (ADR-0010).
 const AnalyticsTopic = "warehouse.facility.analytics"
 
-// analyticsSchemaVersion is the schema version stamped onto every analytics
-// envelope this publisher emits.
-const analyticsSchemaVersion = 1
-
-// AnalyticsEnvelope is the Envelope v1 wrapper for the analytics stream. Like
-// the integration Envelope it carries the domain event's own JSON as its data
-// field: facility-layout's events already serialize themselves to their wire
-// shape, so no per-event marshalling switch is needed. The only additions over
-// the integration Envelope are the CloudEvents-style schema_version and the
-// snake_case field naming the estate's analytics contract fixes.
-type AnalyticsEnvelope struct {
-	EventId       string          `json:"event_id"`
-	EventType     string          `json:"event_type"`
-	OccurredAt    time.Time       `json:"occurred_at"`
-	Source        string          `json:"source"`
-	SchemaVersion int             `json:"schema_version"`
-	Data          json.RawMessage `json:"data"`
-}
-
 // AnalyticsPublisher publishes facility-layout domain events onto
-// AnalyticsTopic as an AnalyticsEnvelope. It satisfies ports.EventPublisher and
+// AnalyticsTopic as CloudEvents 1.0 (ADR-0024). The `type` is the same as on
+// the integration topic (it names the occurrence); `dataschema`
+// urn:warehouse:facility-layout:analytics:<EventName>:v1 names the analytics
+// stream's shape (it replaces the retired schema_version field). `data` is
+// the domain event's own JSON. It satisfies ports.EventPublisher and
 // is a SEPARATE adapter from Publisher: the integration publisher (publisher.go,
 // ADR-0009) publishes the same events to warehouse.facility.events and is left
 // untouched. The composition root fans out to BOTH so the integration and
@@ -53,7 +37,7 @@ type AnalyticsPublisher struct {
 }
 
 // NewAnalyticsPublisher constructs an AnalyticsPublisher writing to
-// AnalyticsTopic on brokers. newId mints the envelope event_id (e.g. a UUID).
+// AnalyticsTopic on brokers. newId mints the CloudEvents `id` (a UUID).
 //
 // Balancer is kafkago.Hash, not LeastBytes -- see Publisher.NewPublisher's
 // doc comment (publisher.go) for why LeastBytes silently ignores Key for
@@ -61,6 +45,8 @@ type AnalyticsPublisher struct {
 func NewAnalyticsPublisher(brokers []string, newId func() string) *AnalyticsPublisher {
 	return &AnalyticsPublisher{
 		Writer: &kafkago.Writer{
+			BatchTimeout:           syncWriterBatchTimeout,
+			RequiredAcks:           syncWriterRequiredAcks,
 			Addr:                   kafkago.TCP(brokers...),
 			Topic:                  AnalyticsTopic,
 			Balancer:               &kafkago.Hash{},
@@ -74,26 +60,10 @@ func NewAnalyticsPublisher(brokers []string, newId func() string) *AnalyticsPubl
 // without sending it. eventId is supplied by the caller so the outbox can
 // persist the same id it will later publish under.
 func (p *AnalyticsPublisher) Encode(_ context.Context, event shared.DomainEvent, eventId string) (Encoded, error) {
-	data, err := json.Marshal(event)
-	if err != nil {
-		return Encoded{}, fmt.Errorf("kafka: marshal analytics event data: %w", err)
-	}
-	env := AnalyticsEnvelope{
-		EventId:       eventId,
-		EventType:     event.EventType(),
-		OccurredAt:    event.OccurredAt(),
-		Source:        "facility-layout",
-		SchemaVersion: analyticsSchemaVersion,
-		Data:          data,
-	}
-	payload, err := json.Marshal(env)
-	if err != nil {
-		return Encoded{}, fmt.Errorf("kafka: marshal analytics envelope: %w", err)
-	}
-	return Encoded{Topic: AnalyticsTopic, EventType: event.EventType(), Key: []byte(aggregateKey(event)), Value: payload}, nil
+	return encodeCloudEvent(AnalyticsTopic, cloudevents.StreamAnalytics, event, eventId)
 }
 
-// Publish emits event onto AnalyticsTopic wrapped in an AnalyticsEnvelope. The
+// Publish emits event onto AnalyticsTopic as a CloudEvent. The
 // message key is the event's aggregate identity (so all events for one
 // aggregate land on the same partition, preserving per-aggregate order).
 func (p *AnalyticsPublisher) Publish(ctx context.Context, event shared.DomainEvent) error {
@@ -101,17 +71,17 @@ func (p *AnalyticsPublisher) Publish(ctx context.Context, event shared.DomainEve
 	if err != nil {
 		return err
 	}
-	if err := p.send(ctx, enc); err != nil {
+	if err := p.Send(ctx, enc); err != nil {
 		return fmt.Errorf("kafka: publish %s analytics event: %w", event.EventName(), err)
 	}
 	return nil
 }
 
-// send writes one already-encoded message to AnalyticsTopic (the Writer's
+// Send writes one already-encoded message to AnalyticsTopic (the Writer's
 // fixed topic; see Publisher.send's doc comment for why enc.Topic is not
 // applied here).
-func (p *AnalyticsPublisher) send(ctx context.Context, enc Encoded) error {
-	msg := kafkago.Message{Key: enc.Key, Value: enc.Value}
+func (p *AnalyticsPublisher) Send(ctx context.Context, enc Encoded) error {
+	msg := kafkago.Message{Key: enc.Key, Value: enc.Value, Headers: []kafkago.Header{cloudevents.ContentTypeHeader()}}
 	return p.Writer.WriteMessages(ctx, msg)
 }
 

@@ -140,6 +140,11 @@ com.warehouse.wms.facility-layout.zone.ZoneRegistered
 com.warehouse.wms.facility-layout.placementrule.PlacementRuleDefined
 ```
 
+On the wire this `type` is the `type` attribute of a mandatory CloudEvents
+1.0 event (structured mode, `source=/warehouse/facility-layout`,
+`subject`=aggregate id, `dataschema=urn:warehouse:facility-layout:<events|analytics>:<EventName>:v1`,
+`data`=the event's own JSON) — ADR-0024. No flat envelope ever.
+
 ## Use cases (application layer)
 
 1. RegisterSite(siteCode, name) -> Site

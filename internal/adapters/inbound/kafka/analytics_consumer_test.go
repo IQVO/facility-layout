@@ -2,12 +2,14 @@ package kafka_test
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
 	inboundkafka "github.com/claudioed/facility-layout/internal/adapters/inbound/kafka"
+	"github.com/claudioed/facility-layout/internal/adapters/kafka/cloudevents"
 )
 
 // call captures one projection-store method invocation.
@@ -22,7 +24,7 @@ type call struct {
 }
 
 // fakeProjection records the calls the consumer makes so a test can assert the
-// envelope was routed to the right method with the right scope.
+// CloudEvent was routed to the right method with the right scope.
 type fakeProjection struct {
 	calls []call
 }
@@ -79,30 +81,29 @@ func (p *fakeProcessed) MarkProcessed(_ context.Context, eventId string) (bool, 
 	return true, nil
 }
 
-func envelope(t *testing.T, eventId, eventType string, at time.Time, data map[string]any) []byte {
+// cloudEvent builds a structured-mode CloudEvents 1.0 message value the way
+// facility-layout's analytics publisher does (via the shared helper).
+func cloudEvent(t *testing.T, eventId, eventType string, at time.Time, data map[string]any) []byte {
 	t.Helper()
-	raw, err := json.Marshal(data)
+	i := strings.LastIndex(eventType, ".")
+	b, err := cloudevents.New(cloudevents.Spec{
+		ID:        eventId,
+		Entity:    eventType[len(prefix):i],
+		EventName: eventType[i+1:],
+		Subject:   "subj-" + eventId,
+		Time:      at,
+		Stream:    cloudevents.StreamAnalytics,
+		Data:      data,
+	})
 	if err != nil {
-		t.Fatalf("marshal data: %v", err)
-	}
-	env := map[string]any{
-		"event_id":       eventId,
-		"event_type":     eventType,
-		"occurred_at":    at.Format(time.RFC3339Nano),
-		"source":         "facility-layout",
-		"schema_version": 1,
-		"data":           json.RawMessage(raw),
-	}
-	b, err := json.Marshal(env)
-	if err != nil {
-		t.Fatalf("marshal envelope: %v", err)
+		t.Fatalf("build CloudEvent: %v", err)
 	}
 	return b
 }
 
 const prefix = "com.warehouse.wms.facility-layout."
 
-// routedEventCase is one row of the routing table: an inbound event_type and
+// routedEventCase is one row of the routing table: an inbound CloudEvents type and
 // the projection method + scope it must be routed to.
 type routedEventCase struct {
 	name       string
@@ -133,14 +134,14 @@ func TestAnalyticsConsumer_RoutesEachEventTypeWithScope(t *testing.T) {
 	}
 }
 
-// assertRoutedEvent feeds one table row's envelope through HandleMessage and
+// assertRoutedEvent feeds one table row's CloudEvent through HandleMessage and
 // checks the single projection call it produced.
 func assertRoutedEvent(t *testing.T, tt routedEventCase, at time.Time) {
 	t.Helper()
 	proj := &fakeProjection{}
 	c := &inboundkafka.AnalyticsConsumer{Projection: proj, Processed: newFakeProcessed(), Logger: slog.Default()}
 
-	raw := envelope(t, "e-"+tt.name, tt.eventType, at, tt.data)
+	raw := cloudEvent(t, "e-"+tt.name, tt.eventType, at, tt.data)
 	if err := c.HandleMessage(context.Background(), raw); err != nil {
 		t.Fatalf("HandleMessage: %v", err)
 	}
@@ -173,7 +174,7 @@ func TestAnalyticsConsumer_Idempotent(t *testing.T) {
 	proj := &fakeProjection{}
 	c := &inboundkafka.AnalyticsConsumer{Projection: proj, Processed: newFakeProcessed(), Logger: slog.Default()}
 
-	raw := envelope(t, "dup", prefix+"locationslot.LocationSlotRegistered", at, map[string]any{"locationCode": "WH1-STOR-AMB-A07-03-02-B"})
+	raw := cloudEvent(t, "dup", prefix+"locationslot.LocationSlotRegistered", at, map[string]any{"locationCode": "WH1-STOR-AMB-A07-03-02-B"})
 	for range 2 {
 		if err := c.HandleMessage(context.Background(), raw); err != nil {
 			t.Fatalf("HandleMessage: %v", err)
@@ -189,7 +190,7 @@ func TestAnalyticsConsumer_IgnoresUnknownEventType(t *testing.T) {
 	processed := newFakeProcessed()
 	c := &inboundkafka.AnalyticsConsumer{Projection: proj, Processed: processed, Logger: slog.Default()}
 
-	raw := envelope(t, "e1", prefix+"slot.SomethingElseHappened", time.Now(), map[string]any{"foo": "bar"})
+	raw := cloudEvent(t, "e1", prefix+"slot.SomethingElseHappened", time.Now(), map[string]any{"foo": "bar"})
 	if err := c.HandleMessage(context.Background(), raw); err != nil {
 		t.Fatalf("HandleMessage: %v", err)
 	}
@@ -200,5 +201,38 @@ func TestAnalyticsConsumer_IgnoresUnknownEventType(t *testing.T) {
 	// later contract change could reprocess it.
 	if processed.seen["e1"] {
 		t.Error("non-projecting event should not be marked processed")
+	}
+}
+
+// TestAnalyticsConsumer_RejectsLegacyFlatEnvelope proves a retired
+// flat-envelope message is rejected as not-a-CloudEvent (so Run
+// dead-letters it without retrying) and is never parsed or applied.
+func TestAnalyticsConsumer_RejectsLegacyFlatEnvelope(t *testing.T) {
+	proj := &fakeProjection{}
+	processed := newFakeProcessed()
+	c := &inboundkafka.AnalyticsConsumer{Projection: proj, Processed: processed, Logger: slog.Default()}
+
+	legacy := []byte(`{"event_id":"legacy-1","event_type":"com.warehouse.wms.facility-layout.site.SiteRegistered","occurred_at":"2026-05-01T08:00:00Z","source":"facility-layout","schema_version":1,"data":{"siteCode":"WH1"}}`)
+	err := c.HandleMessage(context.Background(), legacy)
+	if !errors.Is(err, cloudevents.ErrNotCloudEvent) {
+		t.Fatalf("err = %v, want ErrNotCloudEvent", err)
+	}
+	if len(proj.calls) != 0 || processed.seen["legacy-1"] {
+		t.Fatalf("legacy message must not be applied or marked processed: calls=%d", len(proj.calls))
+	}
+}
+
+// TestAnalyticsConsumer_DispatchesOnFullTypeOnly proves a type that merely
+// ends in a known event name (another context, or a short name) is ignored.
+func TestAnalyticsConsumer_DispatchesOnFullTypeOnly(t *testing.T) {
+	proj := &fakeProjection{}
+	c := &inboundkafka.AnalyticsConsumer{Projection: proj, Processed: newFakeProcessed(), Logger: slog.Default()}
+
+	raw := cloudEvent(t, "e-foreign", prefix+"slot.SiteRegistered", time.Now(), map[string]any{"siteCode": "WH1"})
+	if err := c.HandleMessage(context.Background(), raw); err != nil {
+		t.Fatalf("HandleMessage: %v", err)
+	}
+	if len(proj.calls) != 0 {
+		t.Fatalf("suffix-matching type must be ignored, got %d calls", len(proj.calls))
 	}
 }

@@ -113,7 +113,8 @@ autoscaling:
   # per-instance uniqueness -- the fleet's correctly-scalable pattern (N
   # replicas share partitions via normal Kafka group rebalancing), verified
   # from the actual consumer code before enabling this. Every projection
-  # write is idempotent on event_id via ConsumedEventsRepo.MarkProcessed
+  # write is idempotent on the CloudEvents id (stored in the event_id
+  # column) via ConsumedEventsRepo.MarkProcessed
   # (ON CONFLICT DO NOTHING), so correctness does not regress at N>1.
   # Capped at 2, not left at api's 4, mirroring order-management's
   # reasoning: this is a lightweight idempotent-upsert workload where a

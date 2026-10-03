@@ -10,7 +10,11 @@ description: "facility-layout publishes its full Published Language (every domai
 
 ## Status
 
-**Accepted.**
+**Accepted; envelope format superseded by [ADR-0024](./0024-cloudevents-mandatory-envelope.md).**
+The topic, the "publish the whole Published Language" decision and the
+aggregate-id key still stand. The flat `Envelope` described below
+(`event_id`/`event_type`/`occurred_at`/`source`/`data`) was removed:
+every message is now a CloudEvents 1.0 event (Superseded by ADR-0024).
 
 ## Context
 
@@ -57,7 +61,8 @@ Add a new outbound adapter `internal/adapters/outbound/kafka` with a
 `Publisher` that satisfies `ports.EventPublisher` and publishes **every** domain
 event to the topic **`warehouse.facility.events`**, each wrapped in the shared
 CloudEvents-like `Envelope` (`event_id`, `event_type`, `occurred_at`, `source`,
-`data`). The message key is the raising aggregate's identity (site code, zone
+`data`) — *superseded by [ADR-0024](./0024-cloudevents-mandatory-envelope.md):
+now a CloudEvents 1.0 event in structured mode*. The message key is the raising aggregate's identity (site code, zone
 id, aisle id, location code, …) so per-aggregate order is preserved on a
 partition.
 

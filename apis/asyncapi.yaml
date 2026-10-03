@@ -15,31 +15,42 @@ info:
     event to the integration topic — the whole Published Language.
 
 
-    **Envelope.** Every message on this channel is wrapped in the
-    warehouse-systems flat integration envelope: `event_id` (publisher-minted
-    UUID), `event_type` (the reverse-DNS type below), `occurred_at`
-    (RFC 3339), `source` (always the literal string `facility-layout`), and
-    `data` carrying the domain event's own JSON verbatim. Note the `data`
-    payload itself also carries `eventName`, `eventType` and `occurredAt`
-    fields — the domain event's struct tags are the wire shape, so the type
-    information appears at both levels.
+    **Envelope: CloudEvents 1.0 (mandatory, ADR-0024).** Every message on
+    this channel is a CloudEvents 1.0 event in **structured content mode**
+    (CloudEvents Kafka protocol binding): the Kafka message value is the
+    JSON event format and every message carries the Kafka header
+    `content-type: application/cloudevents+json; charset=UTF-8`. All of
+    `specversion` (`1.0`), `id` (UUID, minted once per domain event and
+    stable across outbox redelivery), `source` (`/warehouse/facility-layout`),
+    `type`, `subject` (the aggregate instance id), `time` (the domain
+    occurred-at, UTC), `datacontenttype` (`application/json`) and
+    `dataschema` (`urn:warehouse:facility-layout:events:<EventName>:v1`) are
+    required. `data` carries the domain event's own JSON verbatim — note it
+    also carries `eventName`, `eventType` and `occurredAt` fields, because
+    the domain event's struct tags are the wire shape. There is no other
+    envelope: consumers must reject (DLQ/skip) anything that fails
+    CloudEvents validation.
 
 
-    **The `event_type` attribute** follows the platform-wide reverse-DNS
+    **The `type` attribute** follows the platform-wide reverse-DNS
     convention `com.warehouse.<subdomain>.<bounded-context>.<entity>.<EventName>`
     — all lowercase except the final PascalCase event name, and the entity
     segment carries no hyphen even for multi-word aggregate names. This
     service's subdomain segment is `wms`: bin-accurate location is WMS-tier
-    in the domain reference. Example:
-    `com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered`.
+    in the domain reference. Consumers dispatch on the FULL `type` string.
+    Example: `com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered`.
+    A breaking payload change is published as a new `.v2` type with a `:v2`
+    dataschema, never by mutating an existing one.
 
 
     **Partitioning and ordering.** The Kafka message key is the identity of
     the aggregate that raised the event (site code, zone id, aisle id,
     location code, rule id, location type name), so all events for one
     aggregate land on the same partition and per-aggregate order is
-    preserved. `FacilityLayoutImported` has no single aggregate identity and
-    keys on its event type.
+    preserved. `FacilityLayoutImported` and the four ADR-0017 geometry /
+    travel-graph events key on their event type (the publisher's
+    `aggregateKey` fallback, unchanged by ADR-0024); their CloudEvents
+    `subject` still names the aggregate instance.
 
 
     **Live consumer.** `inventory-storage` maintains a local read model of
@@ -116,7 +127,7 @@ servers:
       with `EVENT_PUBLISHER=kafka`; the default (unset) keeps the Postgres
       outbox / log publisher, so tests and local runs never need a broker.
 
-defaultContentType: application/json
+defaultContentType: application/cloudevents+json
 
 channels:
   warehouse.facility.events:
@@ -134,13 +145,16 @@ channels:
       own analytical read model (the Layout Catalog Growth & Change report);
       it has exactly one consumer — this service's own
       `cmd/facility-projector` — and is not part of the cross-context
-      integration contract described here.
+      integration contract described here. It carries the same CloudEvents
+      (same `type` and `id` per occurrence) with
+      `dataschema=urn:warehouse:facility-layout:analytics:<EventName>:v1`.
     subscribe:
       operationId: onFacilityEvent
       summary: Consume facility-layout's Published Language.
       description: >
         Subscribe to every structural fact about the warehouse map. At-least-
-        once delivery is the consumer's problem: deduplicate on `event_id`,
+        once delivery is the consumer's problem: deduplicate on the
+        CloudEvents `id`,
         and expect to see the full history on a from-first-offset replay.
         A consumer building a local read model should follow the
         inventory-storage precedent: per-process-unique consumer group,
@@ -163,29 +177,51 @@ channels:
 
 components:
   schemas:
-    envelopeBase:
+    cloudEvent:
       type: object
       description: >
-        The warehouse-systems flat integration envelope. `data` carries the
-        domain event's own JSON verbatim.
-      required: [event_id, event_type, occurred_at, source, data]
+        CloudEvents 1.0 structured-mode envelope (ADR-0024). Every attribute
+        below is REQUIRED in this fleet. `data` carries the domain event's
+        own JSON verbatim.
+      required: [specversion, id, source, type, subject, time, datacontenttype, dataschema, data]
+      additionalProperties: false
       properties:
-        event_id:
+        specversion:
+          type: string
+          const: "1.0"
+        id:
           type: string
           format: uuid
-          description: Publisher-minted unique id. Consumers deduplicate on it.
-        event_type:
-          type: string
           description: >
-            Reverse-DNS Published Language type,
-            `com.warehouse.wms.facility-layout.<entity>.<EventName>`.
-        occurred_at:
-          type: string
-          format: date-time
-          description: When the domain fact occurred (not when it was published).
+            Minted once per domain event and persisted with the outbox row,
+            so a redelivery carries the same id. `(source, id)` is the
+            consumer idempotency key.
         source:
           type: string
-          const: facility-layout
+          format: uri-reference
+          const: /warehouse/facility-layout
+        type:
+          type: string
+          description: >
+            `com.warehouse.wms.facility-layout.<entity>.<EventName>`.
+            Consumers dispatch on the full string.
+        subject:
+          type: string
+          minLength: 1
+          description: Id of the aggregate instance the event is about.
+        time:
+          type: string
+          format: date-time
+          description: When the domain fact occurred (not when it was published), UTC.
+        datacontenttype:
+          type: string
+          const: application/json
+        dataschema:
+          type: string
+          format: uri
+          description: >
+            `urn:warehouse:facility-layout:events:<EventName>:v<N>` on this
+            channel (`...:analytics:...` on warehouse.facility.analytics).
         data:
           type: object
           description: The domain event's own JSON payload.
@@ -202,7 +238,7 @@ components:
           description: The bare PascalCase event name.
         eventType:
           type: string
-          description: Same reverse-DNS type as the envelope's `event_type`.
+          description: Same reverse-DNS type as the CloudEvents `type` attribute.
         occurredAt:
           type: string
           format: date-time
@@ -220,6 +256,7 @@ components:
   messages:
     siteRegistered:
       name: SiteRegistered
+      contentType: application/cloudevents+json
       title: Site registered
       tags: [{ name: site }]
       summary: A physical facility/building was added to the warehouse map.
@@ -228,11 +265,13 @@ components:
         today.
       payload:
         allOf:
-          - $ref: '#/components/schemas/envelopeBase'
+          - $ref: '#/components/schemas/cloudEvent'
           - type: object
             properties:
-              event_type:
+              type:
                 const: com.warehouse.wms.facility-layout.site.SiteRegistered
+              dataschema:
+                const: urn:warehouse:facility-layout:events:SiteRegistered:v1
               data:
                 allOf:
                   - $ref: '#/components/schemas/eventDataBase'
@@ -247,6 +286,7 @@ components:
 
     zoneRegistered:
       name: ZoneRegistered
+      contentType: application/cloudevents+json
       title: Zone registered
       tags: [{ name: zone }]
       summary: A behavioral zone was added inside a Site's area.
@@ -257,11 +297,13 @@ components:
         StowStock placement check reads.
       payload:
         allOf:
-          - $ref: '#/components/schemas/envelopeBase'
+          - $ref: '#/components/schemas/cloudEvent'
           - type: object
             properties:
-              event_type:
+              type:
                 const: com.warehouse.wms.facility-layout.zone.ZoneRegistered
+              dataschema:
+                const: urn:warehouse:facility-layout:events:ZoneRegistered:v1
               data:
                 allOf:
                   - $ref: '#/components/schemas/eventDataBase'
@@ -283,6 +325,7 @@ components:
 
     aisleRegistered:
       name: AisleRegistered
+      contentType: application/cloudevents+json
       title: Aisle registered
       tags: [{ name: aisle }]
       summary: A physical corridor was added inside a Zone.
@@ -291,11 +334,13 @@ components:
         today.
       payload:
         allOf:
-          - $ref: '#/components/schemas/envelopeBase'
+          - $ref: '#/components/schemas/cloudEvent'
           - type: object
             properties:
-              event_type:
+              type:
                 const: com.warehouse.wms.facility-layout.aisle.AisleRegistered
+              dataschema:
+                const: urn:warehouse:facility-layout:events:AisleRegistered:v1
               data:
                 allOf:
                   - $ref: '#/components/schemas/eventDataBase'
@@ -316,6 +361,7 @@ components:
 
     locationTypeRegistered:
       name: LocationTypeRegistered
+      contentType: application/cloudevents+json
       title: Location type registered
       tags: [{ name: locationtype }]
       summary: A reusable slot shape/kind was defined.
@@ -324,11 +370,13 @@ components:
         consumer wired today.
       payload:
         allOf:
-          - $ref: '#/components/schemas/envelopeBase'
+          - $ref: '#/components/schemas/cloudEvent'
           - type: object
             properties:
-              event_type:
+              type:
                 const: com.warehouse.wms.facility-layout.locationtype.LocationTypeRegistered
+              dataschema:
+                const: urn:warehouse:facility-layout:events:LocationTypeRegistered:v1
               data:
                 allOf:
                   - $ref: '#/components/schemas/eventDataBase'
@@ -356,6 +404,7 @@ components:
 
     placementRuleDefined:
       name: PlacementRuleDefined
+      contentType: application/cloudevents+json
       title: Placement rule defined
       tags: [{ name: placementrule }]
       summary: >
@@ -366,11 +415,13 @@ components:
         wired today.
       payload:
         allOf:
-          - $ref: '#/components/schemas/envelopeBase'
+          - $ref: '#/components/schemas/cloudEvent'
           - type: object
             properties:
-              event_type:
+              type:
                 const: com.warehouse.wms.facility-layout.placementrule.PlacementRuleDefined
+              dataschema:
+                const: urn:warehouse:facility-layout:events:PlacementRuleDefined:v1
               data:
                 allOf:
                   - $ref: '#/components/schemas/eventDataBase'
@@ -390,6 +441,7 @@ components:
 
     locationSlotRegistered:
       name: LocationSlotRegistered
+      contentType: application/cloudevents+json
       title: Location slot registered
       tags: [{ name: locationslot }]
       summary: A coded leaf slot now exists on the warehouse map.
@@ -400,11 +452,13 @@ components:
         the slot to its parent zone's attributes via `zoneId`.
       payload:
         allOf:
-          - $ref: '#/components/schemas/envelopeBase'
+          - $ref: '#/components/schemas/cloudEvent'
           - type: object
             properties:
-              event_type:
+              type:
                 const: com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered
+              dataschema:
+                const: urn:warehouse:facility-layout:events:LocationSlotRegistered:v1
               data:
                 allOf:
                   - $ref: '#/components/schemas/eventDataBase'
@@ -452,6 +506,7 @@ components:
 
     locationSlotDecommissioned:
       name: LocationSlotDecommissioned
+      contentType: application/cloudevents+json
       title: Location slot decommissioned
       tags: [{ name: locationslot }]
       summary: A coded slot was permanently retired.
@@ -463,11 +518,13 @@ components:
         irreversible — there is no compensating event.
       payload:
         allOf:
-          - $ref: '#/components/schemas/envelopeBase'
+          - $ref: '#/components/schemas/cloudEvent'
           - type: object
             properties:
-              event_type:
+              type:
                 const: com.warehouse.wms.facility-layout.locationslot.LocationSlotDecommissioned
+              dataschema:
+                const: urn:warehouse:facility-layout:events:LocationSlotDecommissioned:v1
               data:
                 allOf:
                   - $ref: '#/components/schemas/eventDataBase'
@@ -479,6 +536,7 @@ components:
 
     facilityLayoutImported:
       name: FacilityLayoutImported
+      contentType: application/cloudevents+json
       title: Facility layout imported
       tags: [{ name: locationslot }]
       summary: A bulk layout import completed.
@@ -486,15 +544,18 @@ components:
         Raised once per `ImportFacilityLayout` call, summarising rows
         submitted/imported/rejected — in addition to, not instead of, the
         per-slot `LocationSlotRegistered` events for each successful row.
-        Kafka key: the event type (no single aggregate identity). No
+        Kafka key: the event type (no single aggregate identity);
+        CloudEvents `subject`: the fixed batch identity `layout-import`. No
         consumer wired today.
       payload:
         allOf:
-          - $ref: '#/components/schemas/envelopeBase'
+          - $ref: '#/components/schemas/cloudEvent'
           - type: object
             properties:
-              event_type:
+              type:
                 const: com.warehouse.wms.facility-layout.locationslot.FacilityLayoutImported
+              dataschema:
+                const: urn:warehouse:facility-layout:events:FacilityLayoutImported:v1
               data:
                 allOf:
                   - $ref: '#/components/schemas/eventDataBase'
@@ -510,19 +571,23 @@ components:
 
     locationGeometryUpdated:
       name: LocationGeometryUpdated
+      contentType: application/cloudevents+json
       title: Location geometry updated
       tags: [{ name: locationslot }]
       summary: A coded slot's physical position/footprint was set or changed.
       description: >
-        Raised by `SetLocationGeometry` (ADR-0017). Kafka key:
-        `locationCode`. No consumer wired today.
+        Raised by `SetLocationGeometry` (ADR-0017). CloudEvents `subject`:
+        `locationCode`. Kafka key: the event type (`aggregateKey` fallback).
+        No consumer wired today.
       payload:
         allOf:
-          - $ref: '#/components/schemas/envelopeBase'
+          - $ref: '#/components/schemas/cloudEvent'
           - type: object
             properties:
-              event_type:
+              type:
                 const: com.warehouse.wms.facility-layout.locationslot.LocationGeometryUpdated
+              dataschema:
+                const: urn:warehouse:facility-layout:events:LocationGeometryUpdated:v1
               data:
                 allOf:
                   - $ref: '#/components/schemas/eventDataBase'
@@ -557,20 +622,24 @@ components:
 
     aisleGeometryUpdated:
       name: AisleGeometryUpdated
+      contentType: application/cloudevents+json
       title: Aisle geometry updated
       tags: [{ name: aisle }]
       summary: An aisle's travel centreline was set or changed.
       description: >
         Raised by `SetAisleGeometry` (ADR-0017): the straight-line path the
-        travel graph uses as this aisle's walkable route. Kafka key:
-        `aisleId`. No consumer wired today.
+        travel graph uses as this aisle's walkable route. CloudEvents
+        `subject`: `aisleId`. Kafka key: the event type (`aggregateKey`
+        fallback). No consumer wired today.
       payload:
         allOf:
-          - $ref: '#/components/schemas/envelopeBase'
+          - $ref: '#/components/schemas/cloudEvent'
           - type: object
             properties:
-              event_type:
+              type:
                 const: com.warehouse.wms.facility-layout.aisle.AisleGeometryUpdated
+              dataschema:
+                const: urn:warehouse:facility-layout:events:AisleGeometryUpdated:v1
               data:
                 allOf:
                   - $ref: '#/components/schemas/eventDataBase'
@@ -598,21 +667,25 @@ components:
 
     fixedStructureRegistered:
       name: FixedStructureRegistered
+      contentType: application/cloudevents+json
       title: Fixed structure registered
       tags: [{ name: structure }]
       summary: A site-scoped physical obstacle was added to the warehouse map.
       description: >
         Raised by `RegisterFixedStructure` (ADR-0017): a wall, column,
         office, conveyor, or other fixed object. Not a location — nothing
-        can be stowed at it. Kafka key: `structureId`. No consumer wired
+        can be stowed at it. CloudEvents `subject`: `structureId`. Kafka
+        key: the event type (`aggregateKey` fallback). No consumer wired
         today.
       payload:
         allOf:
-          - $ref: '#/components/schemas/envelopeBase'
+          - $ref: '#/components/schemas/cloudEvent'
           - type: object
             properties:
-              event_type:
+              type:
                 const: com.warehouse.wms.facility-layout.structure.FixedStructureRegistered
+              dataschema:
+                const: urn:warehouse:facility-layout:events:FixedStructureRegistered:v1
               data:
                 allOf:
                   - $ref: '#/components/schemas/eventDataBase'
@@ -647,21 +720,26 @@ components:
 
     crossAisleRegistered:
       name: CrossAisleRegistered
+      contentType: application/cloudevents+json
       title: Cross-aisle registered
       tags: [{ name: crossaisle }]
       summary: A connection between two aisles was added to the travel graph.
       description: >
         Raised by `RegisterCrossAisle` (ADR-0017): a zone-scoped connection
         between two of its aisles at a bay ordinal, letting the travel
-        graph route between aisles without walking to either end. Kafka
-        key: `zoneId`. No consumer wired today.
+        graph route between aisles without walking to either end.
+        CloudEvents `subject`: `<zoneId>/<fromAisle>-<toAisle>@<atBay>` (the
+        cross-aisle's composite identity). Kafka key: the event type
+        (`aggregateKey` fallback). No consumer wired today.
       payload:
         allOf:
-          - $ref: '#/components/schemas/envelopeBase'
+          - $ref: '#/components/schemas/cloudEvent'
           - type: object
             properties:
-              event_type:
+              type:
                 const: com.warehouse.wms.facility-layout.crossaisle.CrossAisleRegistered
+              dataschema:
+                const: urn:warehouse:facility-layout:events:CrossAisleRegistered:v1
               data:
                 allOf:
                   - $ref: '#/components/schemas/eventDataBase'

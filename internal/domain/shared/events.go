@@ -3,6 +3,8 @@ package shared
 import "time"
 
 // eventTypePrefix is this bounded context's CloudEvents `type` namespace.
+// The Kafka adapters put EventType() verbatim into the CloudEvents 1.0
+// `type` attribute (ADR-0024), so these strings are the wire contract.
 // The convention is identical to the other four warehouse-systems services:
 //
 //	com.warehouse.<subdomain>.<bounded-context>.<entity>.<EventName>
@@ -15,7 +17,8 @@ import "time"
 const eventTypePrefix = "com.warehouse.wms.facility-layout."
 
 // DomainEvent is a past-tense fact published by an aggregate. Adapters
-// (outbound/events) serialize and publish these; the domain never depends
+// (outbound/kafka as CloudEvents 1.0, outbound/events for log/test)
+// serialize and publish these; the domain never depends
 // on the publishing mechanism. EventType is this context's Published
 // Language: downstream Conformists key off it.
 type DomainEvent interface {
