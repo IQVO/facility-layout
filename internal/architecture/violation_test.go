@@ -39,7 +39,7 @@ func failing(details any) any {
 	for i := 0; i < rv.Len(); i++ {
 		e := rv.Index(i)
 		f := e
-		for f.Kind() == reflect.Ptr || f.Kind() == reflect.Interface {
+		for f.Kind() == reflect.Pointer || f.Kind() == reflect.Interface {
 			f = f.Elem()
 		}
 		if f.Kind() == reflect.Struct {
