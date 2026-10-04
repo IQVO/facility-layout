@@ -1,3 +1,8 @@
+---
+name: how-to-test
+description: Write or review tests and diagnose a failing coverage, mutation, bdd or integration CI job: the four test layers, the 90% gate, gremlins threshold semantics, the testcontainers rule. Use when adding tests, killing a surviving mutant, or fixing a red check.
+---
+
 # How to test
 
 Use when writing or reviewing tests in this repo, or diagnosing a failing

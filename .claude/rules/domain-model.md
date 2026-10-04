@@ -1,3 +1,11 @@
+---
+paths:
+  - "internal/domain/**"
+  - "internal/application/**"
+  - "internal/adapters/inbound/mcp/**"
+  - "migrations/*.sql"
+---
+
 # Domain model — location-code hierarchy, ubiquitous language, invariants, events, use cases
 
 ## The location-code hierarchy (INDUSTRY STANDARD — use this exact shape)

@@ -225,7 +225,7 @@ func assertPass(t *testing.T, result *archgo.Result) {
 	if result.DependenciesRuleResult != nil {
 		for _, r := range result.DependenciesRuleResult.Results {
 			if !r.Passes {
-				t.Errorf("dependency rule %q failed: %+v", r.Description, r.Verifications)
+				t.Errorf("%s", archViolation("dependency", r.Description, r.Verifications))
 			}
 		}
 	}
@@ -233,7 +233,7 @@ func assertPass(t *testing.T, result *archgo.Result) {
 	if result.ContentsRuleResult != nil {
 		for _, r := range result.ContentsRuleResult.Results {
 			if !r.Passes {
-				t.Errorf("contents rule %q failed: %+v", r.Description, r.Verifications)
+				t.Errorf("%s", archViolation("contents", r.Description, r.Verifications))
 			}
 		}
 	}

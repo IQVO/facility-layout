@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^(Bash|apply_patch|Edit|Write)$",
+        "hooks": [
+          { "type": "command", "command": "python3 \"$(git rev-parse --show-toplevel)/scripts/harness/hook.py\" pre", "timeout": 10 }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^(apply_patch|Edit|Write)$",
+        "hooks": [
+          { "type": "command", "command": "python3 \"$(git rev-parse --show-toplevel)/scripts/harness/hook.py\" post", "timeout": 90 }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python3 \"$(git rev-parse --show-toplevel)/scripts/harness/hook.py\" stop", "timeout": 600 }
+        ]
+      }
+    ]
+  }
+}

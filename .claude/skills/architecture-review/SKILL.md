@@ -1,3 +1,10 @@
+---
+name: architecture-review
+description: Bounded-context boundary and ADR-compliance review of a change (expensive, post-integration): hexagonal direction, cross-context coupling, contradicted ADRs. Invoke explicitly: /architecture-review [range].
+disable-model-invocation: true
+argument-hint: "[git range]"
+---
+
 Perform a bounded-context boundary and ADR-compliance review of the
 current changes (or `$ARGUMENTS` if given, e.g. a branch/PR diff range).
 
@@ -15,7 +22,7 @@ check a design decision against this fleet's standing architecture.
    `go test ./internal/architecture/... -v` first — if it's already red,
    report that and stop; don't hand-review what a fitness test already
    caught.
-2. **Customer/Supplier direction, per `.claude/rules/bounded-context-boundary.md`
+2. **Customer/Supplier direction, per `.claude/rules/domain-model.md`
    (or this repo's equivalent doc).** A new outbound call to a sibling
    context must go the direction ADRs already established — check
    `docs/docs/adr/` for the relevant context-mapping ADR before assuming
@@ -44,7 +51,7 @@ check a design decision against this fleet's standing architecture.
    id for an event-sourced local-cache consumer that replays full
    history on every start. Flag any new consumer whose pattern doesn't
    match its actual replay behavior — this is a correctness bug, not a
-   style issue (see this repo's `.claude/skills/how-to-add-an-integration-event.md`
+   style issue (see this repo's `.claude/skills/how-to-add-an-integration-event/SKILL.md`
    for the two patterns and the incident that taught this fleet the
    difference).
 6. **A new bounded-context integration with no companion documentation.**
@@ -52,7 +59,7 @@ check a design decision against this fleet's standing architecture.
    REST call, a new Kafka topic subscription, a new MCP tool consumed by
    a sibling), check whether an ADR documents the decision — and whether
    a companion ADR should exist in the OTHER repo too, per this fleet's
-   companion-ADR convention (see `.claude/skills/how-to-write-an-adr.md`).
+   companion-ADR convention (see `.claude/skills/how-to-write-an-adr/SKILL.md`).
 7. **Auth-reintroduction and sibling-call bans**, same as `/code-review`
    items 6-8, but reasoned about more thoroughly here — check not just
    "is there a Bearer literal" but "does this change's INTENT require

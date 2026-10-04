@@ -1,3 +1,8 @@
+---
+name: how-to-add-a-rest-endpoint
+description: Add or change a REST endpoint in this service in the fleet's hexagonal order (domain invariant, use case, port, HTTP adapter, apis/openapi.yaml, generated docs, godog scenario). Use when touching internal/adapters/inbound/http, apis/openapi.yaml, or exposing a use case over HTTP.
+---
+
 # How to add a REST endpoint
 
 Use when asked to add a new REST use case/endpoint to this service. Follow

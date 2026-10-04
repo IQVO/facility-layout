@@ -3,7 +3,7 @@
 replicaCount: 1
 
 image:
-  repository: claudioed/facility-layout
+  repository: iqvo/facility-layout
   pullPolicy: IfNotPresent
   tag: ""
 

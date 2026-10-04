@@ -1,0 +1,61 @@
+name: AI Review (advisory)
+
+# Inferential sensor (harness-template v3). ADVISORY: not a required check, never blocks a merge.
+# It runs the repo's `architecture-review` skill on PRs into develop that touch domain, application,
+# API contracts or charts, and posts ONE summary comment. Promotion to blocking requires >=80%
+# precision over 3 weeks (see the harness plan, Phase 5).
+#
+# Needs the repository secret ANTHROPIC_API_KEY. Without it the job succeeds and does nothing, so
+# a repo can carry this file before the key is configured:
+#   gh secret set ANTHROPIC_API_KEY -R IQVO/<repo>
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+    branches: [develop]
+    paths:
+      - "internal/domain/**"
+      - "internal/application/**"
+      - "apis/**"
+      - "charts/**"
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: github.event.pull_request.draft == false && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Is the API key configured?
+        id: key
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: echo "present=$([ -n "$ANTHROPIC_API_KEY" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Architecture review
+        if: steps.key.outputs.present == 'true'
+        uses: anthropics/claude-code-action@cb4c30246791ba0e8cdd653a00e7bcab3b47dd3c # v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            REPO: ${{ github.repository }}  PR: ${{ github.event.pull_request.number }}
+            Run the `architecture-review` skill (.claude/skills/architecture-review/SKILL.md) against
+            origin/${{ github.base_ref }}...HEAD. Then post ONE top-level PR comment with `gh pr comment`:
+            a short verdict, then at most 5 findings ordered by severity, each with file:line, the rule or
+            ADR it breaks, and the concrete fix. If you find nothing real, say "No findings" and stop.
+            Do not restate what linters already catch. Do not edit files.
+          claude_args: |
+            --max-turns 20
+            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(gh pr comment:*),Bash(gh pr view:*)"
