@@ -99,6 +99,9 @@ Claude Code loads each rule below automatically when you touch the matching path
 
 | When touching | Read |
 |---|---|
+| `cmd/**`, `internal/**`, `migrations/**` | `.claude/rules/architecture.md` |
+| `internal/domain/**`, `internal/application/**`, `internal/adapters/inbound/mcp/**` ... | `.claude/rules/domain-model.md` |
+| `internal/adapters/kafka/**`, `internal/adapters/outbound/kafka/**`, `internal/adapters/outbound/events/**` ... | `.claude/rules/events-and-analytics.md` |
 | `internal/adapters/inbound/http/**`, `apis/openapi*.yaml`, `apis/openapi/**` ... | `.claude/rules/rest-api-and-frontend.md` |
 | `.github/**`, `Makefile`, `.gremlins.yaml` ... | `.claude/rules/testing-and-quality.md` |
 
