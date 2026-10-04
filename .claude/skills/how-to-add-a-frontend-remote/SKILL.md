@@ -1,3 +1,8 @@
+---
+name: how-to-add-a-frontend-remote
+description: Add or change a micro-frontend remote under web/ (vite federation config in object form, /mfes/<context>/ base, remoteEntry, Docker/nginx packaging, console integration). Use when touching web/.
+---
+
 # How to add a frontend remote
 
 Use when adding a new screen/feature to `web/` (the `facility-mfe` Module

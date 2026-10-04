@@ -16,3 +16,4 @@ bin/
 # Local tool-run artifacts (Schemathesis contract runs, Spectral installs)
 .schemathesis/
 .github/tooling/spectral/node_modules/
+.claude/settings.local.json
