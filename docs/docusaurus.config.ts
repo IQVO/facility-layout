@@ -13,10 +13,10 @@ const config: Config = {
     v4: true,
   },
 
-  url: 'https://claudioed.github.io',
+  url: 'https://iqvo.github.io',
   baseUrl: '/facility-layout/',
 
-  organizationName: 'claudioed',
+  organizationName: 'IQVO',
   projectName: 'facility-layout',
   deploymentBranch: 'gh-pages',
   trailingSlash: false,
@@ -44,7 +44,7 @@ const config: Config = {
         docs: {
           sidebarPath: './sidebars.ts',
           editUrl:
-            'https://github.com/claudioed/facility-layout/tree/main/docs/',
+            'https://github.com/IQVO/facility-layout/tree/main/docs/',
           docItemComponent: '@theme/ApiItem',
         },
         blog: false,
@@ -67,7 +67,7 @@ const config: Config = {
             specPath: '../apis/openapi.yaml',
             outputDir: 'docs/api-reference/rest',
             downloadUrl:
-              'https://raw.githubusercontent.com/claudioed/facility-layout/main/apis/openapi.yaml',
+              'https://raw.githubusercontent.com/IQVO/facility-layout/main/apis/openapi.yaml',
             sidebarOptions: {
               groupPathsBy: 'tag',
               categoryLinkSource: 'tag',
@@ -109,7 +109,7 @@ const config: Config = {
           position: 'left',
         },
         {
-          href: 'https://github.com/claudioed/facility-layout',
+          href: 'https://github.com/IQVO/facility-layout',
           label: 'GitHub',
           position: 'right',
         },
@@ -133,19 +133,19 @@ const config: Config = {
             {label: 'Context map', to: '/docs/ecosystem/context-map'},
             {
               label: 'inventory-storage',
-              href: 'https://github.com/claudioed/inventory-storage',
+              href: 'https://github.com/IQVO/inventory-storage',
             },
             {
               label: 'wes-work-planning',
-              href: 'https://github.com/claudioed/wes-work-planning',
+              href: 'https://github.com/IQVO/wes-work-planning',
             },
             {
               label: 'fulfillment-execution',
-              href: 'https://github.com/claudioed/fulfillment-execution',
+              href: 'https://github.com/IQVO/fulfillment-execution',
             },
             {
               label: 'workforce-management',
-              href: 'https://github.com/claudioed/workforce-management',
+              href: 'https://github.com/IQVO/workforce-management',
             },
           ],
         },
@@ -154,11 +154,11 @@ const config: Config = {
           items: [
             {
               label: 'facility-layout on GitHub',
-              href: 'https://github.com/claudioed/facility-layout',
+              href: 'https://github.com/IQVO/facility-layout',
             },
             {
               label: 'OpenAPI specification',
-              href: 'https://github.com/claudioed/facility-layout/blob/main/apis/openapi.yaml',
+              href: 'https://github.com/IQVO/facility-layout/blob/main/apis/openapi.yaml',
             },
           ],
         },
