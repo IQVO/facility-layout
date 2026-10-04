@@ -63,6 +63,7 @@
     "webpack-dev-server": "^5.2.6",
     "sockjs": "^0.3.24",
     "qs": "^6.16.0",
-    "lodash-es": "^4.18.0"
+    "lodash-es": "^4.18.0",
+    "http-cache-semantics": "^4.3.0"
   }
 }
