@@ -291,6 +291,95 @@ class RepoLint(unittest.TestCase):
     def test_r6_not_required_without_go_or_workflows(self):
         self.assertEqual(lint(make({"README.md": "x\n"}))[0], 0)
 
+    # ---- R7: scripts invoked from workflow steps ------------------------------------------------------
+    E2E_WF = """
+        name: E2E
+        on: schedule
+        jobs:
+          scenario:
+            runs-on: ubuntu-latest
+            steps:
+              - uses: actions/checkout@v7
+                with:
+                  path: e2e-tests
+              - uses: actions/checkout@v7
+                with:
+                  repository: IQVO/facility-layout
+                  path: facility-layout
+              - name: Close the harness:red issue
+                if: success()
+                run: python3 scripts/harness/red_issue.py bootstrap-scenario --close
+    """
+
+    def test_r7_incident_multi_repo_job_runs_repo_script_from_workspace_root(self):
+        # e2e-tests: the scenario passed, the job still went red, because the step ran where the script is not
+        root = make({".github/workflows/e2e.yml": self.E2E_WF, "scripts/harness/red_issue.py": "print(1)\n"})
+        code, out = lint(root)
+        self.assertEqual(code, 1, out)
+        self.assertIn("[R7]", out)
+        self.assertIn("e2e-tests/", out)
+        self.assertIn("working-directory: e2e-tests", out)
+
+    def test_r7_working_directory_on_the_step_fixes_it(self):
+        wf = self.E2E_WF.replace("                run: python3", "                working-directory: e2e-tests\n                run: python3")
+        root = make({".github/workflows/e2e.yml": wf, "scripts/harness/red_issue.py": "print(1)\n"})
+        code, out = lint(root)
+        self.assertEqual(code, 0, out)
+
+    def test_r7_job_level_default_working_directory_counts(self):
+        wf = """
+        name: E2E
+        on: schedule
+        jobs:
+          scenario:
+            runs-on: ubuntu-latest
+            defaults:
+              run:
+                working-directory: e2e-tests
+            steps:
+              - uses: actions/checkout@v7
+                with:
+                  path: e2e-tests
+              - run: python3 scripts/harness/red_issue.py x --close
+        """
+        root = make({".github/workflows/e2e.yml": wf, "scripts/harness/red_issue.py": "print(1)\n"})
+        code, out = lint(root)
+        self.assertEqual(code, 0, out)
+
+    def test_r7_missing_script_in_a_single_checkout_job(self):
+        wf = """
+        name: CI
+        on: push
+        jobs:
+          t:
+            runs-on: ubuntu-latest
+            steps:
+              - uses: actions/checkout@v7
+              - run: bash scripts/does-not-exist.sh
+        """
+        root = make({".github/workflows/ci.yml": wf})
+        code, out = lint(root)
+        self.assertEqual(code, 1, out)
+        self.assertIn("[R7]", out)
+        self.assertIn("scripts/does-not-exist.sh", out)
+
+    def test_r7_existing_script_expressions_and_ignore_marker_are_fine(self):
+        wf = """
+        name: CI
+        on: push
+        jobs:
+          t:
+            runs-on: ubuntu-latest
+            steps:
+              - uses: actions/checkout@v7
+              - run: python3 scripts/ok.py
+              - run: bash scripts/${{ matrix.x }}.sh
+              - run: bash scripts/gone.sh # repo-lint: ignore generated at runtime
+        """
+        root = make({".github/workflows/ci.yml": wf, "scripts/ok.py": "print(1)\n"})
+        code, out = lint(root)
+        self.assertEqual(code, 0, out)
+
     def test_empty_repo_is_clean(self):
         self.assertEqual(lint(make({"README.md": "x\n"}))[0], 0)
 
