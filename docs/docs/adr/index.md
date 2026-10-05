@@ -56,14 +56,14 @@ updated. The history of what was believed and when is the point.
 | [0004](./0004-rfc-7807-from-day-one.md) | RFC 7807 problem details from the first commit | Accepted |
 | [0005](./0005-one-way-decommission.md) | One-way decommission, no reactivation in v1 | Accepted |
 | [0006](./0006-partial-success-bulk-import.md) | Bulk import reports partial success per row | Accepted |
-| [0007](./0007-mcp-inbound-adapter.md) | Model Context Protocol as an inbound adapter, not a new service | Accepted |
+| [0007](./0007-mcp-inbound-adapter.md) | Model Context Protocol as an inbound adapter, not a new service | Accepted (auth section superseded by ADR-0015) |
 | [0008](./0008-location-classification-read-endpoint.md) | Location classification read endpoint | Accepted |
 | [0009](./0009-kafka-integration-publisher.md) | Kafka integration publisher for the Published Language | Accepted (envelope superseded by ADR-0024) |
 | [0010](./0010-analytical-data-product.md) | Per-service analytical data product (report) via a separate analytics topic | Accepted (envelope superseded by ADR-0024) |
 | [0011](./0011-micro-frontend-console-adoption.md) | Adoption of the fleet-wide micro-frontend console architecture (warehouse-ops-agent ADR-0002) | Accepted |
 | [0012](./0012-standard-metrics-convention.md) | Standard metrics convention across the fleet | Accepted |
 | [0013](./0013-first-published-language-consumer.md) | inventory-storage is the first real consumer of the Published Language | Accepted |
-| [0014](./0014-rest-identity-adoption.md) | Adopt the fleet REST identity standard (static bearer keys, read/read-write scopes; warehouse-ops-agent ADR 0005) | Accepted |
+| [0014](./0014-rest-identity-adoption.md) | Adopt the fleet REST identity standard (static bearer keys, read/read-write scopes; warehouse-ops-agent ADR 0005) | Superseded by ADR-0015 |
 | [0015](./0015-remove-rest-mcp-auth.md) | Remove the static-bearer REST/MCP auth layer (reverts 0014 and the auth portion of 0007) | Accepted |
 | [0016](./0016-functional-location-roles.md) | Functional location roles beyond storage (Dock, Yard, WorkCenter, Drop, QC, Consolidation, Shipping) | Accepted |
 | [0017](./0017-geometry-and-travel-graph.md) | Physical geometry and a travel-distance read model | Accepted |
@@ -74,6 +74,13 @@ updated. The history of what was believed and when is the point.
 | [0022](./0022-horizontal-autoscaling-and-pgxpool-tuning.md) | Per-workload HorizontalPodAutoscaler and pgxpool MaxConns/statement_timeout tuning | Accepted |
 | [0023](./0023-migrations-direct-postgres-connection.md) | Run golang-migrate against a direct Postgres connection, not PgBouncer | Accepted |
 | [0024](./0024-cloudevents-mandatory-envelope.md) | CloudEvents 1.0 as the mandatory event envelope | Accepted |
+| [0025](./0025-optimistic-concurrency-version-column.md) | Optimistic concurrency: version column on location_slots | Accepted |
+| [0026](./0026-housekeeping-sweeper.md) | Housekeeping sweeper for idempotency_keys and published outbox rows | Accepted |
+| [0027](./0027-console-write-screens.md) | Write-capable console screens (extends ADR-0011's read-only adoption) | Accepted |
+| [0028](./0028-boot-retry-and-startup-probe.md) | Boot retry for Istio sidecar resets and a matching startupProbe | Accepted |
+| [0029](./0029-gateway-api-httproute.md) | Gateway API HTTPRoute exposure template | Accepted |
+| [0030](./0030-dlq-bounded-retry-and-slog-otel-bridge.md) | DLQ topic-not-ready bounded retry and the slog-to-OTel bridge | Accepted |
+| [0031](./0031-kafka-writer-durability.md) | Kafka writer durability: RequireAll acks with a 10ms batch timeout | Accepted |
 
 ## The Kafka record that was deferred until the adapter existed
 

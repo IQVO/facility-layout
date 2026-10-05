@@ -10,9 +10,14 @@ description: "facility-layout adopts warehouse-ops-agent ADR 0005: every REST ro
 
 ## Status
 
-**Accepted.** 2026-09-07. Adoption record; the decision itself is
+**Superseded by ADR-0015** (2026-09-11: the fleet-wide static-bearer auth
+layer this ADR adopted was reverted; REST and MCP are unauthenticated
+pending a fresh auth-model decision — see
+[ADR-0015](0015-remove-rest-mcp-auth.md)). Originally accepted 2026-09-07;
+the decision itself was
 [warehouse-ops-agent ADR 0005 — Fleet REST identity: static bearer keys
-with read/read-write scopes, no IdP](https://github.com/claudioed/warehouse-ops-agent/blob/develop/docs/docs/adr/0005-rest-identity-static-bearer-scopes.md).
+with read/read-write scopes, no IdP](https://github.com/claudioed/warehouse-ops-agent/blob/develop/docs/docs/adr/0005-rest-identity-static-bearer-scopes.md),
+which is likewise superseded.
 
 ## Decision
 

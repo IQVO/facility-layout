@@ -1,0 +1,12 @@
+-- Optimistic concurrency (ADR-0025): a version column on location_slots,
+-- the one aggregate in this context with a genuine cross-operation
+-- read-modify-write race — SetLocationGeometry and DecommissionLocationSlot
+-- both load the same row, mutate it in memory, and Save it back, so two
+-- concurrent calls could silently clobber each other (worst case: a geometry
+-- write resurrecting status=Active over a decommission).
+--
+-- Sites, zones and aisles are deliberately NOT versioned: no two use cases
+-- in this context read-modify-write the same site/aisle row (aisle geometry
+-- is the aisle's only mutator), and the zone pitch update (ADR-0017) is a
+-- targeted two-column UPDATE with no stale-field hazard. See ADR-0025.
+ALTER TABLE location_slots ADD COLUMN version INTEGER NOT NULL DEFAULT 1;

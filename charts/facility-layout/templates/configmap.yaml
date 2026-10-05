@@ -8,6 +8,10 @@ data:
   HTTP_ADDR: {{ .Values.config.httpAddr | quote }}
   MIGRATIONS_PATH: {{ .Values.config.migrationsPath | quote }}
   EVENT_PUBLISHER: {{ .Values.config.eventPublisher | quote }}
+  OUTBOX_RELAY_INTERVAL: {{ .Values.config.outboxRelayInterval | quote }}
+  HOUSEKEEPING_INTERVAL: {{ .Values.config.housekeepingInterval | quote }}
+  IDEMPOTENCY_KEY_TTL: {{ .Values.config.idempotencyKeyTTL | quote }}
+  OUTBOX_RETENTION: {{ .Values.config.outboxRetention | quote }}
   {{- if .Values.kafka.enabled }}
   KAFKA_BROKERS: {{ .Values.kafka.brokers | quote }}
   {{- end }}

@@ -73,6 +73,7 @@ type Server struct {
 	RegisterFixedStructure    *usecases.RegisterFixedStructure
 	ListFixedStructures       *usecases.ListFixedStructures
 	RegisterCrossAisle        *usecases.RegisterCrossAisle
+	ListCrossAisles           *usecases.ListCrossAisles
 	GetZoneTravelGraph        *usecases.GetZoneTravelGraph
 	EstimateTravelDistance    *usecases.EstimateTravelDistance
 
@@ -182,6 +183,7 @@ func NewRouter(s *Server, logger *slog.Logger, opts ...RouterOption) http.Handle
 		r.Get("/{zoneId}/aisles/{aisleCode}", s.handleGetAisle)
 		r.Put("/{zoneId}/aisles/{aisleCode}/geometry", s.handleSetAisleGeometry)
 		idempotent(r).Post("/{zoneId}/cross-aisles", s.handleRegisterCrossAisle)
+		r.Get("/{zoneId}/cross-aisles", s.handleListCrossAisles)
 		r.Get("/{zoneId}/travel-graph", s.handleGetZoneTravelGraph)
 	})
 
@@ -295,7 +297,7 @@ func (s *Server) handleRegisterZone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	registered, err := s.RegisterZone.Execute(r.Context(), chi.URLParam(r, "siteCode"), req.AreaCode, req.ZoneCode, temperatureClass, req.Hazmat)
+	registered, err := s.RegisterZone.Execute(r.Context(), chi.URLParam(r, "siteCode"), req.AreaCode, req.ZoneCode, temperatureClass, req.Hazmat, req.BayPitchM, req.LevelPitchM)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -749,6 +751,22 @@ func (s *Server) handleRegisterCrossAisle(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusCreated, toCrossAisleResponse(registered))
 }
 
+// handleListCrossAisles answers GET /zones/{zoneId}/cross-aisles
+// (ADR-0017): every declared connection in the zone, ordered from-aisle,
+// to-aisle, bay — the read half the POST already deserved.
+func (s *Server) handleListCrossAisles(w http.ResponseWriter, r *http.Request) {
+	connections, err := s.ListCrossAisles.Execute(r.Context(), chi.URLParam(r, "zoneId"))
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	out := make([]crossAisleResponse, 0, len(connections))
+	for _, c := range connections {
+		out = append(out, toCrossAisleResponse(c))
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 // handleGetZoneTravelGraph returns one zone's travel graph as nodes +
 // edges, built fresh from its aisles, slots, and cross-aisles.
 func (s *Server) handleGetZoneTravelGraph(w http.ResponseWriter, r *http.Request) {
@@ -829,9 +847,17 @@ func corsMiddleware() func(http.Handler) http.Handler {
 		origins = strings.Split(v, ",")
 	}
 	return cors.Handler(cors.Options{
-		AllowedOrigins:   origins,
-		AllowedMethods:   []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete},
-		AllowedHeaders:   []string{"Content-Type", "Authorization"},
+		AllowedOrigins: origins,
+		AllowedMethods: []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete},
+		// Idempotency-Key MUST be allowed: every resource-creation POST is
+		// wrapped by RequireIdempotencyKey (ADR-0019), and a preflight that
+		// omits the header from Access-Control-Allow-Headers makes the
+		// browser drop it — the console's create forms then answer 400
+		// idempotency-key-required against a Postgres-backed API. Authorization
+		// stays listed even though REST auth was removed (ADR-0015): the
+		// header is harmless to allow and keeps the middleware stable if a
+		// gateway in front ever re-introduces it.
+		AllowedHeaders:   []string{"Content-Type", "Authorization", IdempotencyKeyHeader},
 		AllowCredentials: false,
 		MaxAge:           300,
 	})

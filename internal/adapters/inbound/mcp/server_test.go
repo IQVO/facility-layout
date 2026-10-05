@@ -63,7 +63,7 @@ func newServer(t *testing.T) string {
 	if _, err := registerType.Execute(ctx, placement.PalletRack, placement.Storage, mustCapacity(1200, 2.4)); err != nil {
 		t.Fatalf("seed type: %v", err)
 	}
-	if _, err := registerZone.Execute(ctx, "WH1", "STOR", "AMB", shared.Ambient, false); err != nil {
+	if _, err := registerZone.Execute(ctx, "WH1", "STOR", "AMB", shared.Ambient, false, nil, nil); err != nil {
 		t.Fatalf("seed zone: %v", err)
 	}
 	if _, err := registerAisle.Execute(ctx, "WH1-STOR-AMB", "A07", 7, shared.TwoWay); err != nil {

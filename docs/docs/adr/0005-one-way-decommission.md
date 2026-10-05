@@ -7,7 +7,9 @@ description: Retiring a structure is terminal; re-registering a retired code is 
 
 # 0005 — One-way decommission, no reactivation in v1
 
-**Status:** Accepted
+**Status:** Accepted — concurrency guarantee (a decommission can no longer
+be silently overwritten by a concurrent write; see the version guard on
+`SlotRepo.Save`) added by [ADR-0025](./0025-optimistic-concurrency-version-column.md).
 
 ## Context
 

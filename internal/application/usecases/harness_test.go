@@ -142,7 +142,7 @@ func (h *harness) mustRegisterSite(code, name string) {
 
 func (h *harness) mustRegisterZone(siteCode, areaCode, zoneCode string, tc shared.TemperatureClass, hazmat bool) {
 	h.t.Helper()
-	if _, err := h.registerZone.Execute(h.ctx(), siteCode, areaCode, zoneCode, tc, hazmat); err != nil {
+	if _, err := h.registerZone.Execute(h.ctx(), siteCode, areaCode, zoneCode, tc, hazmat, nil, nil); err != nil {
 		h.t.Fatalf("seeding zone %s-%s-%s: %v", siteCode, areaCode, zoneCode, err)
 	}
 }

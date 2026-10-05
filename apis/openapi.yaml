@@ -117,6 +117,44 @@ paths:
               example:
                 status: ok
 
+  /readyz:
+    get:
+      operationId: getReadyz
+      summary: Readiness probe
+      description: >-
+        Returns 200 while the process is accepting traffic, 503 once
+        graceful shutdown (ADR-0020) has begun: readiness is flipped to
+        not-ready as the FIRST step of the shutdown sequence, before the
+        listener closes, so a Kubernetes readinessProbe gets a window to
+        stop routing new requests during the drain. Like /healthz it does
+        not check downstream dependencies.
+      tags: [Health]
+      responses:
+        "200":
+          description: Service is ready to accept traffic.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+              example:
+                status: ready
+        "503":
+          description: Service is draining (shutdown in progress).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: draining
+              example:
+                status: draining
+
   /sites:
     post:
       operationId: registerSite
@@ -129,6 +167,8 @@ paths:
         the aggregate: a single aggregate cannot see its siblings. A newly
         registered Site is Active, and publishes SiteRegistered.
       tags: [Sites]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -156,9 +196,34 @@ paths:
                 name: Fulfilment Centre One
                 status: Active
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: >
+            Malformed input, or the Idempotency-Key header is absent or
+            empty (ADR 0019).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                malformed:
+                  summary: Malformed input
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/malformed-request-body
+                    title: The request body is not valid JSON
+                    status: 400
+                    detail: invalid character 'x' looking for beginning of value
+                    instance: /sites
+                idempotencyKeyRequired:
+                  summary: Idempotency-Key header absent or empty
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-required
+                    title: Idempotency-Key header is required
+                    status: 400
+                    detail: This endpoint creates a new resource on every call and requires a caller-supplied Idempotency-Key header so a retried request is never applied twice.
+                    instance: /sites
         "409":
           $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/IdempotencyKeyReused"
         "500":
           $ref: "#/components/responses/InternalError"
     get:
@@ -229,6 +294,7 @@ paths:
       tags: [Zones]
       parameters:
         - $ref: "#/components/parameters/SiteCode"
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -261,14 +327,58 @@ paths:
                 temperatureClass: Frozen
                 hazmat: false
                 status: Active
+                bayPitchM: 1.2
+                levelPitchM: 1.5
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: >
+            Malformed input, or the Idempotency-Key header is absent or
+            empty (ADR 0019).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                malformed:
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/malformed-location-code
+                    title: Malformed location code
+                    status: 400
+                    detail: "location code must have exactly 7 hyphen-joined segments (site-area-zone-aisle-bay-level-position): got 4 segments in \"WH1-STOR-AMB-A07\""
+                    instance: /locations
+                idempotencyKeyRequired:
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-required
+                    title: Idempotency-Key header is required
+                    status: 400
+                    detail: This endpoint creates a new resource on every call and requires a caller-supplied Idempotency-Key header so a retried request is never applied twice.
+                    instance: /sites
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
-          $ref: "#/components/responses/UnprocessableEntity"
+          description: >
+            Semantically invalid, or the Idempotency-Key was already used
+            with a different request body (ADR 0019).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                semantic:
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/placement-rule-violated
+                    title: Location type is not legal in this zone
+                    status: 422
+                    detail: "location type violates a placement rule for this zone: Shelf is denied in zone WH1-STOR-FRZ by rule [RULE-FRZ-NO-SHELF: Deny Shelf where temperatureClass=Frozen]"
+                    instance: /locations
+                idempotencyKeyReused:
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-reused
+                    title: Idempotency-Key was already used with a different request
+                    status: 422
+                    detail: The Idempotency-Key header on this request was already used with a request that had a different body. Use a new Idempotency-Key for a genuinely different request.
+                    instance: /sites
         "500":
           $ref: "#/components/responses/InternalError"
     get:
@@ -298,6 +408,8 @@ paths:
                   temperatureClass: Ambient
                   hazmat: false
                   status: Active
+                  bayPitchM: 1.2
+                  levelPitchM: 1.5
                 - zoneId: WH1-STOR-AMB
                   siteCode: WH1
                   areaCode: STOR
@@ -305,6 +417,8 @@ paths:
                   temperatureClass: Ambient
                   hazmat: false
                   status: Active
+                  bayPitchM: 1.2
+                  levelPitchM: 1.5
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -462,6 +576,7 @@ paths:
       tags: [Layout]
       parameters:
         - $ref: "#/components/parameters/SiteCode"
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -481,13 +596,55 @@ paths:
               schema:
                 $ref: "#/components/schemas/FixedStructure"
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: >
+            Malformed input, or the Idempotency-Key header is absent or
+            empty (ADR 0019).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                malformed:
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/malformed-location-code
+                    title: Malformed location code
+                    status: 400
+                    detail: "location code must have exactly 7 hyphen-joined segments (site-area-zone-aisle-bay-level-position): got 4 segments in \"WH1-STOR-AMB-A07\""
+                    instance: /locations
+                idempotencyKeyRequired:
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-required
+                    title: Idempotency-Key header is required
+                    status: 400
+                    detail: This endpoint creates a new resource on every call and requires a caller-supplied Idempotency-Key header so a retried request is never applied twice.
+                    instance: /sites
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
-          $ref: "#/components/responses/UnprocessableEntity"
+          description: >
+            Semantically invalid, or the Idempotency-Key was already used
+            with a different request body (ADR 0019).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                semantic:
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/placement-rule-violated
+                    title: Location type is not legal in this zone
+                    status: 422
+                    detail: "location type violates a placement rule for this zone: Shelf is denied in zone WH1-STOR-FRZ by rule [RULE-FRZ-NO-SHELF: Deny Shelf where temperatureClass=Frozen]"
+                    instance: /locations
+                idempotencyKeyReused:
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-reused
+                    title: Idempotency-Key was already used with a different request
+                    status: 422
+                    detail: The Idempotency-Key header on this request was already used with a request that had a different body. Use a new Idempotency-Key for a genuinely different request.
+                    instance: /sites
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -537,6 +694,8 @@ paths:
                 temperatureClass: Ambient
                 hazmat: false
                 status: Active
+                bayPitchM: 1.2
+                levelPitchM: 1.5
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -576,6 +735,8 @@ paths:
                   temperatureClass: Ambient
                   hazmat: false
                   status: Active
+                  bayPitchM: 1.2
+                  levelPitchM: 1.5
                 columns:
                   - aisleId: WH1-STOR-AMB-A07
                     aisleCode: A07
@@ -593,11 +754,13 @@ paths:
                           - locationCode: WH1-STOR-AMB-A07-03-01-A
                             position: A
                             locationType: PalletRack
+                            role: Storage
                             status: Active
                       - positions:
                           - locationCode: WH1-STOR-AMB-A09-01-01-A
                             position: A
                             locationType: Shelf
+                            role: Storage
                             status: Active
                   - level: "02"
                     cells:
@@ -605,10 +768,12 @@ paths:
                           - locationCode: WH1-STOR-AMB-A07-03-02-A
                             position: A
                             locationType: PalletRack
+                            role: Storage
                             status: Active
                           - locationCode: WH1-STOR-AMB-A07-03-02-B
                             position: B
                             locationType: PalletRack
+                            role: Storage
                             status: Active
                       - null
         "404":
@@ -631,6 +796,7 @@ paths:
       tags: [Aisles]
       parameters:
         - $ref: "#/components/parameters/ZoneId"
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -662,13 +828,55 @@ paths:
                 direction: TwoWay
                 status: Active
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: >
+            Malformed input, or the Idempotency-Key header is absent or
+            empty (ADR 0019).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                malformed:
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/malformed-location-code
+                    title: Malformed location code
+                    status: 400
+                    detail: "location code must have exactly 7 hyphen-joined segments (site-area-zone-aisle-bay-level-position): got 4 segments in \"WH1-STOR-AMB-A07\""
+                    instance: /locations
+                idempotencyKeyRequired:
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-required
+                    title: Idempotency-Key header is required
+                    status: 400
+                    detail: This endpoint creates a new resource on every call and requires a caller-supplied Idempotency-Key header so a retried request is never applied twice.
+                    instance: /sites
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
-          $ref: "#/components/responses/UnprocessableEntity"
+          description: >
+            Semantically invalid, or the Idempotency-Key was already used
+            with a different request body (ADR 0019).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                semantic:
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/placement-rule-violated
+                    title: Location type is not legal in this zone
+                    status: 422
+                    detail: "location type violates a placement rule for this zone: Shelf is denied in zone WH1-STOR-FRZ by rule [RULE-FRZ-NO-SHELF: Deny Shelf where temperatureClass=Frozen]"
+                    instance: /locations
+                idempotencyKeyReused:
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-reused
+                    title: Idempotency-Key was already used with a different request
+                    status: 422
+                    detail: The Idempotency-Key header on this request was already used with a request that had a different body. Use a new Idempotency-Key for a genuinely different request.
+                    instance: /sites
         "500":
           $ref: "#/components/responses/InternalError"
     get:
@@ -804,6 +1012,7 @@ paths:
       tags: [Aisles]
       parameters:
         - $ref: "#/components/parameters/ZoneId"
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -828,13 +1037,87 @@ paths:
                 atBay: "02"
                 active: true
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: >
+            Malformed input, or the Idempotency-Key header is absent or
+            empty (ADR 0019).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                malformed:
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/malformed-location-code
+                    title: Malformed location code
+                    status: 400
+                    detail: "location code must have exactly 7 hyphen-joined segments (site-area-zone-aisle-bay-level-position): got 4 segments in \"WH1-STOR-AMB-A07\""
+                    instance: /locations
+                idempotencyKeyRequired:
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-required
+                    title: Idempotency-Key header is required
+                    status: 400
+                    detail: This endpoint creates a new resource on every call and requires a caller-supplied Idempotency-Key header so a retried request is never applied twice.
+                    instance: /sites
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
-          $ref: "#/components/responses/UnprocessableEntity"
+          description: >
+            Semantically invalid, or the Idempotency-Key was already used
+            with a different request body (ADR 0019).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                semantic:
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/placement-rule-violated
+                    title: Location type is not legal in this zone
+                    status: 422
+                    detail: "location type violates a placement rule for this zone: Shelf is denied in zone WH1-STOR-FRZ by rule [RULE-FRZ-NO-SHELF: Deny Shelf where temperatureClass=Frozen]"
+                    instance: /locations
+                idempotencyKeyReused:
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-reused
+                    title: Idempotency-Key was already used with a different request
+                    status: 422
+                    detail: The Idempotency-Key header on this request was already used with a request that had a different body. Use a new Idempotency-Key for a genuinely different request.
+                    instance: /sites
+        "500":
+          $ref: "#/components/responses/InternalError"
+    get:
+      operationId: listCrossAisles
+      summary: List a zone's cross-aisles
+      description: >
+        Returns every declared CrossAisle (ADR-0017) in the zone — its
+        zone-scoped connections between two of its aisles at a bay ordinal —
+        ordered by from-aisle, to-aisle, bay. A read model: it reflects what
+        was registered, including inactive (decommissioned) connections, so
+        a consumer can discover the declared connections without deriving
+        them from the travel graph's edges.
+      tags: [Aisles]
+      parameters:
+        - $ref: "#/components/parameters/ZoneId"
+      responses:
+        "200":
+          description: The zone's cross-aisles (an empty array when none).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CrossAisle"
+              example:
+                - zoneId: WH1-STOR-AMB
+                  fromAisle: A07
+                  toAisle: A08
+                  atBay: "02"
+                  active: true
+        "404":
+          $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -877,6 +1160,8 @@ paths:
         capacity dimensions must be strictly positive: a slot that can hold
         nothing is not a slot. Publishes LocationTypeRegistered.
       tags: [Location Types]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -908,11 +1193,53 @@ paths:
                   maxWeightKg: 1200
                   maxVolumeM3: 2.4
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: >
+            Malformed input, or the Idempotency-Key header is absent or
+            empty (ADR 0019).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                malformed:
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/malformed-location-code
+                    title: Malformed location code
+                    status: 400
+                    detail: "location code must have exactly 7 hyphen-joined segments (site-area-zone-aisle-bay-level-position): got 4 segments in \"WH1-STOR-AMB-A07\""
+                    instance: /locations
+                idempotencyKeyRequired:
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-required
+                    title: Idempotency-Key header is required
+                    status: 400
+                    detail: This endpoint creates a new resource on every call and requires a caller-supplied Idempotency-Key header so a retried request is never applied twice.
+                    instance: /sites
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
-          $ref: "#/components/responses/UnprocessableEntity"
+          description: >
+            Semantically invalid, or the Idempotency-Key was already used
+            with a different request body (ADR 0019).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                semantic:
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/placement-rule-violated
+                    title: Location type is not legal in this zone
+                    status: 422
+                    detail: "location type violates a placement rule for this zone: Shelf is denied in zone WH1-STOR-FRZ by rule [RULE-FRZ-NO-SHELF: Deny Shelf where temperatureClass=Frozen]"
+                    instance: /locations
+                idempotencyKeyReused:
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-reused
+                    title: Idempotency-Key was already used with a different request
+                    status: 422
+                    detail: The Idempotency-Key header on this request was already used with a request that had a different body. Use a new Idempotency-Key for a genuinely different request.
+                    instance: /sites
         "500":
           $ref: "#/components/responses/InternalError"
     get:
@@ -1002,6 +1329,8 @@ paths:
         The referenced LocationType must already exist. Publishes
         PlacementRuleDefined.
       tags: [Placement Rules]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -1035,13 +1364,55 @@ paths:
                   temperatureClass: Frozen
                 description: "RULE-FRZ-NO-SHELF: Deny Shelf where temperatureClass=Frozen"
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: >
+            Malformed input, or the Idempotency-Key header is absent or
+            empty (ADR 0019).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                malformed:
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/malformed-location-code
+                    title: Malformed location code
+                    status: 400
+                    detail: "location code must have exactly 7 hyphen-joined segments (site-area-zone-aisle-bay-level-position): got 4 segments in \"WH1-STOR-AMB-A07\""
+                    instance: /locations
+                idempotencyKeyRequired:
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-required
+                    title: Idempotency-Key header is required
+                    status: 400
+                    detail: This endpoint creates a new resource on every call and requires a caller-supplied Idempotency-Key header so a retried request is never applied twice.
+                    instance: /sites
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
-          $ref: "#/components/responses/UnprocessableEntity"
+          description: >
+            Semantically invalid, or the Idempotency-Key was already used
+            with a different request body (ADR 0019).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                semantic:
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/placement-rule-violated
+                    title: Location type is not legal in this zone
+                    status: 422
+                    detail: "location type violates a placement rule for this zone: Shelf is denied in zone WH1-STOR-FRZ by rule [RULE-FRZ-NO-SHELF: Deny Shelf where temperatureClass=Frozen]"
+                    instance: /locations
+                idempotencyKeyReused:
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-reused
+                    title: Idempotency-Key was already used with a different request
+                    status: 422
+                    detail: The Idempotency-Key header on this request was already used with a request that had a different body. Use a new Idempotency-Key for a genuinely different request.
+                    instance: /sites
         "500":
           $ref: "#/components/responses/InternalError"
     get:
@@ -1133,6 +1504,8 @@ paths:
         retired code is never resurrected by re-registration. Publishes
         LocationSlotRegistered.
       tags: [Locations]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -1174,13 +1547,56 @@ paths:
                   maxVolumeM3: 2.4
                 status: Active
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: >
+            Malformed input, or the Idempotency-Key header is absent or
+            empty (ADR 0019).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                malformed:
+                  summary: Malformed location code
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/malformed-location-code
+                    title: Malformed location code
+                    status: 400
+                    detail: "location code must have exactly 7 hyphen-joined segments (site-area-zone-aisle-bay-level-position): got 4 segments in \"WH1-STOR-AMB-A07\""
+                    instance: /locations
+                idempotencyKeyRequired:
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-required
+                    title: Idempotency-Key header is required
+                    status: 400
+                    detail: This endpoint creates a new resource on every call and requires a caller-supplied Idempotency-Key header so a retried request is never applied twice.
+                    instance: /sites
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
-          $ref: "#/components/responses/UnprocessableEntity"
+          description: >
+            Semantically invalid, or the Idempotency-Key was already used
+            with a different request body (ADR 0019).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                semantic:
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/placement-rule-violated
+                    title: Location type is not legal in this zone
+                    status: 422
+                    detail: "location type violates a placement rule for this zone: Shelf is denied in zone WH1-STOR-FRZ by rule [RULE-FRZ-NO-SHELF: Deny Shelf where temperatureClass=Frozen]"
+                    instance: /locations
+                idempotencyKeyReused:
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-reused
+                    title: Idempotency-Key was already used with a different request
+                    status: 422
+                    detail: The Idempotency-Key header on this request was already used with a request that had a different body. Use a new Idempotency-Key for a genuinely different request.
+                    instance: /sites
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -1437,11 +1853,18 @@ paths:
         result is flagged `estimated` when any leg of the route used a
         zone's bay-pitch fallback instead of real aisle centreline geometry.
 
+        Same-zone requests route over the zone's travel graph. Cross-zone
+        requests are honoured only when BOTH locations carry recorded
+        position geometry: the answer is the straight-line (beeline)
+        distance between the two positions, always flagged `estimated`
+        because it is a lower bound, not a routed path. When either
+        endpoint lacks geometry the request is refused (422, does not
+        guess) — the travel graph is per-zone, so no honest routed
+        cross-zone path exists yet.
 
-        Refuses (422, does not guess) when `from` and `to` are in different
-        zones — this phase's graph does not yet connect zones. This context
-        reports map TOPOLOGY only: travel TIME, congestion, and route choice
-        under load remain wes-work-planning's concern, never this one's.
+        This context reports map TOPOLOGY only: travel TIME, congestion,
+        and route choice under load remain wes-work-planning's concern,
+        never this one's.
       tags: [Layout]
       parameters:
         - name: from
@@ -1487,6 +1910,25 @@ components:
         type: string
         pattern: "^[A-Z0-9]+$"
       example: WH1
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: >-
+        Caller-generated unique key (a UUID per logical submit) that makes a
+        retried request safe (ADR 0019). Clients MUST always send a
+        non-empty, unique-per-submit key: the header is required whenever
+        the service runs with Postgres — i.e. in every deployment — and an
+        absent or empty key is answered 400 `idempotency-key-required`. A
+        replay with the same key and the same body returns the original
+        response verbatim; the same key with a different body is 422
+        `idempotency-key-reused`. It is declared `required: false` here only
+        because the in-memory development mode (no DATABASE_URL) does not
+        enforce the middleware and the Schemathesis contract run boots that
+        mode.
+      schema:
+        type: string
+        example: 5b0f6a0e-6a41-4c63-9f33-0c8f5c1d2a77
     ZoneId:
       name: zoneId
       in: path
@@ -1511,6 +1953,21 @@ components:
       example: WH1-STOR-AMB-A07-03-02-B
 
   responses:
+    IdempotencyKeyReused:
+      description: >-
+        The Idempotency-Key was already used with a request that had a
+        different body (ADR 0019). Use a new key for a genuinely different
+        request.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-reused
+            title: Idempotency-Key was already used with a different request
+            status: 422
+            detail: The Idempotency-Key header on this request was already used with a request that had a different body. Use a new Idempotency-Key for a genuinely different request.
+            instance: /sites
     BadRequest:
       description: >
         Malformed input: a body that is not valid JSON, a location code that
@@ -1748,7 +2205,7 @@ components:
       description: >
         A behavioral classification scoped to a Site, bundling the Area and
         Zone code segments into one aggregate.
-      required: [zoneId, siteCode, areaCode, zoneCode, temperatureClass, hazmat, status]
+      required: [zoneId, siteCode, areaCode, zoneCode, temperatureClass, hazmat, status, bayPitchM, levelPitchM]
       properties:
         zoneId:
           type: string
@@ -1774,6 +2231,24 @@ components:
           example: false
         status:
           $ref: "#/components/schemas/Status"
+        bayPitchM:
+          type: number
+          format: double
+          description: >
+            The zone's effective bay pitch (ADR-0017): the explicit override
+            when one was set at registration, else the service default
+            (1.2 m). Used only by the travel graph's estimated-distance
+            fallback when aisle centreline geometry is missing.
+          example: 1.2
+        levelPitchM:
+          type: number
+          format: double
+          description: >
+            The zone's effective level pitch (ADR-0017): the explicit
+            override when one was set at registration, else the service
+            default (1.5 m). Used only by the travel graph's estimated
+            vertical spacing between adjacent levels.
+          example: 1.5
 
     RegisterZoneRequest:
       type: object
@@ -1799,6 +2274,30 @@ components:
             Whether this zone is rated for hazardous materials. JSON null is
             accepted and means the same as false (the default).
           example: false
+        bayPitchM:
+          type: number
+          format: double
+          nullable: true
+          exclusiveMinimum: true
+          minimum: 0
+          description: >
+            Optional bay-pitch override for the travel graph's
+            estimated-distance fallback (ADR-0017). Omitted (or null) keeps
+            the service default (1.2 m). Must be sent together with
+            `levelPitchM`: a one-sided pitch is rejected 422 `invalid-pitch`.
+          example: 1.5
+        levelPitchM:
+          type: number
+          format: double
+          nullable: true
+          exclusiveMinimum: true
+          minimum: 0
+          description: >
+            Optional level-pitch override for the travel graph's estimated
+            vertical spacing (ADR-0017). Omitted (or null) keeps the service
+            default (1.5 m). Must be sent together with `bayPitchM`: a
+            one-sided pitch is rejected 422 `invalid-pitch`.
+          example: 2.0
 
     Point3D:
       type: object
@@ -2559,7 +3058,7 @@ components:
     GridPosition:
       type: object
       description: One slot inside a grid cell.
-      required: [locationCode, position, locationType, status]
+      required: [locationCode, position, locationType, role, status]
       properties:
         locationCode:
           type: string
@@ -2571,6 +3070,8 @@ components:
         locationType:
           type: string
           example: PalletRack
+        role:
+          $ref: "#/components/schemas/LocationRole"
         status:
           $ref: "#/components/schemas/Status"
 

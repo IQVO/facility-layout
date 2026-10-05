@@ -160,9 +160,10 @@ func (p *Publisher) Publish(ctx context.Context, event shared.DomainEvent) error
 // Send writes one already-encoded message to Topic (the Writer's fixed
 // topic — kafka-go rejects a message with Topic set when the Writer also
 // has one, so enc.Topic is not applied here; RelaySink is the adapter
-// that applies it per-message for a topic-less writer).
+// that applies it per-message for a topic-less writer). The W3C trace
+// context of ctx is injected into the message headers (ADR-0009).
 func (p *Publisher) Send(ctx context.Context, enc Encoded) error {
-	msg := kafkago.Message{Key: enc.Key, Value: enc.Value, Headers: []kafkago.Header{cloudevents.ContentTypeHeader()}}
+	msg := kafkago.Message{Key: enc.Key, Value: enc.Value, Headers: injectTraceContext(ctx, []kafkago.Header{cloudevents.ContentTypeHeader()})}
 	return p.Writer.WriteMessages(ctx, msg)
 }
 

@@ -24,9 +24,8 @@ CREATE TABLE idempotency_keys (
 );
 
 -- No query in this service filters/orders by created_at today; the index
--- exists solely so a future cleanup/TTL job (explicitly deferred — see
--- the ADR's "Known follow-up" section) can scan old rows without a full
--- table scan, mirroring outbox_events' own unpublished-rows index in
--- spirit (an index anticipated by a known, named follow-up, not spec
--- work happening now).
+-- exists solely so the housekeeping sweeper (ADR-0026) can scan old rows
+-- without a full table scan, mirroring outbox_events' own
+-- unpublished-rows index in spirit (an index anticipated by a known,
+-- named follow-up, not spec work happening now).
 CREATE INDEX idx_idempotency_keys_created_at ON idempotency_keys (created_at);

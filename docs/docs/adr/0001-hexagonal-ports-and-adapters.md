@@ -52,12 +52,19 @@ Concretely:
 - `internal/domain/**` imports only the standard library and itself. No
   framework type, no SQL type, no `net/http` type.
 - `internal/application/ports` contains **only** driven (outbound)
-  interfaces — the six repositories, `EventPublisher` and `Clock` — and they
+  interfaces — the repositories, `EventPublisher` and `Clock` — and they
   traffic in domain types, not primitives.
 - `internal/application/usecases` holds one struct per use case.
-- `internal/adapters/{inbound/http, outbound/postgres, outbound/memory,
-  outbound/events}` implement the ports.
-- `cmd/facility/main.go` is the only file that knows about every layer.
+- `internal/adapters/{inbound/http, inbound/kafka, inbound/mcp,
+  outbound/postgres, outbound/memory, outbound/events, outbound/kafka,
+  outbound/analyticsstore, outbound/telemetry,
+  outbound/bootretry}` implement the ports.
+- `cmd/facility/main.go` is the composition root of the API deployable;
+  `cmd/mcp`, `cmd/facility-projector` and `cmd/facility-reports` are
+  composition roots of the three later deployables (MCP inbound adapter
+  ADR-0007; analytics writer/reader ADR-0010). *(Originally this ADR
+  described a single `cmd/facility`; the port count and adapter list
+  above reflect the current tree rather than the 2026-08 shape.)*
 
 Aggregates do not reach outside themselves. Where a domain rule needs data an
 aggregate cannot own — most visibly `slot.NewLocationSlot`, which must

@@ -104,10 +104,13 @@ language is available whether or not today's single consumer uses it.
   or re-imported after enabling the publisher. A partial cache is not a
   hard failure but a **fail-open** one (unknown locations classify as
   `Known=false`), which is quiet, so it must be watched for.
-- The no-outbox `Save`-then-`Publish` shape applies here too: a publish
+- ~~The no-outbox `Save`-then-`Publish` shape applies here too: a publish
   that fails after the repository commit leaves this service correct and
   the topic permanently missing that event. Fleet-wide gap, tracked
-  separately, deliberately not patched here.
+  separately, deliberately not patched here.~~ *(Closed by
+  [ADR-0018](./0018-transactional-outbox.md): publishing now goes through
+  the Postgres transactional outbox, so the store and the topic can no
+  longer diverge.)*
 
 ## Related
 

@@ -4,24 +4,39 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	kafkago "github.com/segmentio/kafka-go"
 )
 
-// TestNewDLQWriter_AutoCreatesTopic pins the dead-letter writer config: a
-// missing "<topic>.dlq" must be auto-created on first publish (fleet
-// convention), not fail and stop the projector.
-func TestNewDLQWriter_AutoCreatesTopic(t *testing.T) {
+// TestNewDLQWriter_MatchesFleetSyncWriterConfig pins the dead-letter
+// writer's full durability config (ADR-0020), mirroring the fleet's
+// fulfillment-execution TestNewDeadLetterWriter_MatchesSyncWriterConfig:
+// RequireAll (the kafka-go default RequireNone lets WriteMessages return
+// nil before the broker stores the message — and Run commits the source
+// offset right after a "successful" DLQ publish, so the poison message is
+// silently LOST), the Hash balancer (the original message key still decides
+// the .dlq partition, preserving per-key order), a prompt 10ms flush
+// (kafka-go's 1s default caps dead-lettering at ~1 msg/s), and
+// auto-creation of the rarely-existing "<topic>.dlq" topic.
+func TestNewDLQWriter_MatchesFleetSyncWriterConfig(t *testing.T) {
 	w := newDLQWriter([]string{"localhost:9092"}, "warehouse.x.analytics.dlq")
 	t.Cleanup(func() { _ = w.Close() })
+
 	if w.Topic != "warehouse.x.analytics.dlq" {
 		t.Fatalf("DLQ topic = %q", w.Topic)
 	}
 	if !w.AllowAutoTopicCreation {
 		t.Fatal("DLQ writer must set AllowAutoTopicCreation")
 	}
-	if w.BatchTimeout != dlqBatchTimeout {
-		t.Fatalf("DLQ BatchTimeout = %v, want %v (kafka-go's 1s default caps dead-lettering at ~1 msg/s)", w.BatchTimeout, dlqBatchTimeout)
+	if w.BatchTimeout != 10*time.Millisecond {
+		t.Fatalf("DLQ BatchTimeout = %v, want 10ms (kafka-go's 1s default caps dead-lettering at ~1 msg/s)", w.BatchTimeout)
+	}
+	if w.RequiredAcks != kafkago.RequireAll {
+		t.Fatalf("DLQ RequiredAcks = %v, want RequireAll (the default RequireNone silently loses messages the broker never stored)", w.RequiredAcks)
+	}
+	if _, ok := w.Balancer.(*kafkago.Hash); !ok {
+		t.Fatalf("DLQ Balancer = %T, want *kafkago.Hash so the original message key decides the partition", w.Balancer)
 	}
 }
 

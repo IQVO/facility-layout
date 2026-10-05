@@ -101,11 +101,11 @@ func seedEvalLayout(t *testing.T) inboundmcp.Deps {
 	_, err = registerType.Execute(ctx, "DockDoor", placement.Dock, shared.Capacity{})
 	must(err)
 
-	_, err = registerZone.Execute(ctx, "WH1", "STOR", "AMB", shared.Ambient, false)
+	_, err = registerZone.Execute(ctx, "WH1", "STOR", "AMB", shared.Ambient, false, nil, nil)
 	must(err)
-	_, err = registerZone.Execute(ctx, "WH1", "RCV", "AMB", shared.Ambient, false)
+	_, err = registerZone.Execute(ctx, "WH1", "RCV", "AMB", shared.Ambient, false, nil, nil)
 	must(err)
-	_, err = registerZone.Execute(ctx, "WH1", "DOCK", "OB", shared.Ambient, false)
+	_, err = registerZone.Execute(ctx, "WH1", "DOCK", "OB", shared.Ambient, false, nil, nil)
 	must(err)
 
 	_, err = registerAisle.Execute(ctx, "WH1-STOR-AMB", "A09", 9, shared.OneWay)

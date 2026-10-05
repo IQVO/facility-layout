@@ -1,0 +1,70 @@
+---
+id: list-cross-aisles
+title: "List a zone's cross-aisles"
+description: "Returns every declared CrossAisle (ADR-0017) in the zone — its zone-scoped connections between two of its aisles at a bay ordinal — ordered by from-aisle, to-aisle, bay. A read model: it reflects what was registered, including inactive (decommissioned) connections, so a consumer can discover the declared connections without deriving them from the travel graph's edges."
+sidebar_label: "List a zone's cross-aisles"
+hide_title: true
+hide_table_of_contents: true
+api: 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
+sidebar_class_name: "get api-method"
+info_path: docs/api-reference/rest/facility-layout-api
+custom_edit_url: null
+---
+
+import MethodEndpoint from "@theme/ApiExplorer/MethodEndpoint";
+import ParamsDetails from "@theme/ParamsDetails";
+import RequestSchema from "@theme/RequestSchema";
+import StatusCodes from "@theme/StatusCodes";
+import OperationTabs from "@theme/OperationTabs";
+import TabItem from "@theme/TabItem";
+import Heading from "@theme/Heading";
+import Translate from "@docusaurus/Translate";
+
+<Heading
+  as={"h1"}
+  className={"openapi__heading"}
+  children={"List a zone's cross-aisles"}
+>
+</Heading>
+
+<MethodEndpoint
+  method={"get"}
+  path={"/zones/{zoneId}/cross-aisles"}
+  context={"endpoint"}
+>
+  
+</MethodEndpoint>
+
+
+
+Returns every declared CrossAisle (ADR-0017) in the zone — its zone-scoped connections between two of its aisles at a bay ordinal — ordered by from-aisle, to-aisle, bay. A read model: it reflects what was registered, including inactive (decommissioned) connections, so a consumer can discover the declared connections without deriving them from the travel graph's edges.
+
+
+<Heading
+  id={"request"}
+  as={"h2"}
+  className={"openapi-tabs__heading"}
+>
+  <Translate id="theme.openapi.request.title">Request</Translate>
+</Heading>
+
+<ParamsDetails
+  {...require("./list-cross-aisles.ParamsDetails.json")}
+>
+  
+</ParamsDetails>
+
+<RequestSchema
+  {...require("./list-cross-aisles.RequestSchema.json")}
+>
+  
+</RequestSchema>
+
+<StatusCodes
+  {...require("./list-cross-aisles.StatusCodes.json")}
+>
+  
+</StatusCodes>
+
+
+      

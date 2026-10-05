@@ -1,10 +1,12 @@
 // Package ports declares the outbound interfaces the application layer
 // depends on. Adapters implement these; the application never imports an
-// adapter package. This package contains interfaces only.
+// adapter package. This package contains interfaces plus the shared
+// repository error sentinels the use cases surface to callers.
 package ports
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/claudioed/facility-layout/internal/domain/aisle"
@@ -15,6 +17,14 @@ import (
 	"github.com/claudioed/facility-layout/internal/domain/structure"
 	"github.com/claudioed/facility-layout/internal/domain/zone"
 )
+
+// ErrConcurrentModification is returned by a versioned repository's Save
+// when the row was modified by another writer between this caller's load
+// and its Save (ADR-0025, optimistic concurrency): the aggregate's loaded
+// version no longer matches the row's current version. The caller must
+// re-fetch and re-apply its change; it is never safe to retry the same
+// in-memory aggregate blindly.
+var ErrConcurrentModification = errors.New("aggregate was concurrently modified; reload and retry")
 
 // SiteRepo persists and retrieves Site aggregates. FindByCode returns
 // (nil, nil) when the site does not exist — "not found" is an application

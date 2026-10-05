@@ -30,3 +30,24 @@ const syncWriterBatchTimeout = 10 * time.Millisecond
 // the durable choice; on the single-broker kind cluster it equals the
 // leader's ack.
 const syncWriterRequiredAcks = kafkago.RequireAll
+
+// NewDeadLetterWriter builds a dead-letter writer with the same durability
+// settings as every other synchronous writer in this package (the fleet
+// pattern; see fulfillment-execution's identically-named helper): RequireAll
+// — a DLQ publish that reports success before the broker stores the message,
+// after which the consumer commits the source offset, is a silently LOST
+// poison message, exactly what the DLQ exists to prevent — a 10ms
+// BatchTimeout (kafka-go's 1s default caps dead-lettering at ~1 msg/s), and
+// the Hash balancer so the original message key still decides the partition
+// (per-key order on the .dlq topic, ADR-0021). dlqTopic is the full topic
+// name ("<source>.dlq").
+func NewDeadLetterWriter(brokers []string, dlqTopic string) *kafkago.Writer {
+	return &kafkago.Writer{
+		Addr:                   kafkago.TCP(brokers...),
+		Topic:                  dlqTopic,
+		Balancer:               &kafkago.Hash{},
+		RequiredAcks:           syncWriterRequiredAcks,
+		BatchTimeout:           syncWriterBatchTimeout,
+		AllowAutoTopicCreation: true,
+	}
+}

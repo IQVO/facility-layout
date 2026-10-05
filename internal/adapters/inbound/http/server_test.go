@@ -81,6 +81,9 @@ func newTestUseCases() *inboundhttp.Server {
 		RegisterCrossAisle: &usecases.RegisterCrossAisle{
 			Zones: zones, Aisles: aisles, CrossAisles: crossAisles, Events: publisher, Clock: clock,
 		},
+		ListCrossAisles: &usecases.ListCrossAisles{
+			Zones: zones, CrossAisles: crossAisles,
+		},
 		GetZoneTravelGraph: &usecases.GetZoneTravelGraph{
 			Zones: zones, Aisles: aisles, Slots: slots, CrossAisles: crossAisles,
 		},

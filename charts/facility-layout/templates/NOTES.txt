@@ -16,7 +16,7 @@ To reach it locally:
 {{- end }}
 
 {{- if .Values.mcp.enabled }}
-MCP:       {{ include "facility-layout.mcpFullname" . }} ({{ .Values.mcp.service.type }}, port {{ .Values.mcp.service.port }}, Streamable HTTP at /mcp, bearer key required)
+MCP:       {{ include "facility-layout.mcpFullname" . }} ({{ .Values.mcp.service.type }}, port {{ .Values.mcp.service.port }}, Streamable HTTP at /mcp, unauthenticated per ADR-0015)
 {{- end }}
 
 {{- if not (or .Values.database.url .Values.database.existingSecret) }}

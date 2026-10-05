@@ -1,0 +1,1 @@
+{"parameters":[{"name":"zoneId","in":"path","required":true,"description":"The zone's id, `SITE-AREA-ZONE` — exactly the first three segments of every LocationCode inside it.\n","schema":{"type":"string","pattern":"^[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+$"},"example":"WH1-STOR-AMB"}]}

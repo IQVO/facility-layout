@@ -195,7 +195,7 @@ func TestOutboxRelay_PublishesInOrderAndMarksRows(t *testing.T) {
 	if _, err := registerSite.Execute(ctx, "WH3", "Third"); err != nil {
 		t.Fatalf("register site: %v", err)
 	}
-	if _, err := registerZone.Execute(ctx, "WH3", "STOR", "AMB", shared.Ambient, false); err != nil {
+	if _, err := registerZone.Execute(ctx, "WH3", "STOR", "AMB", shared.Ambient, false, nil, nil); err != nil {
 		t.Fatalf("register zone: %v", err)
 	}
 

@@ -7,6 +7,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/riandyrn/otelchi"
+	otelchimetric "github.com/riandyrn/otelchi/metric"
 
 	"github.com/claudioed/facility-layout/internal/analytics/report"
 )
@@ -154,9 +156,11 @@ func writeReportInternal(w http.ResponseWriter, r *http.Request, err error) {
 }
 
 // NewReportsRouter builds the chi router for the facility-reports reader
-// service. A nil logger falls back to slog.Default(). The router is trace-free,
-// consistent with the rest of the analytics pipeline (facility-layout has no
-// OTel package for the analytics processes).
+// service. A nil logger falls back to slog.Default(). The router carries
+// the same otelchi tracing and otelchimetric HTTP metrics as the main
+// router (ADR-0012, in the same middleware order server.go uses), under
+// its own service name — the chart already injects OTEL_* env into the
+// reports pod, so these spans/metrics are actually collected.
 func NewReportsRouter(h *ReportsHandlers, logger *slog.Logger, opts ...RouterOption) *chi.Mux {
 	if logger == nil {
 		logger = slog.Default()
@@ -169,6 +173,12 @@ func NewReportsRouter(h *ReportsHandlers, logger *slog.Logger, opts ...RouterOpt
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
+	// Same middleware order as the main router (server.go): tracing before
+	// request logging so the logged line sits inside the request span.
+	r.Use(otelchi.Middleware(cfg.serviceName, otelchi.WithChiRoutes(r)))
+	metricCfg := otelchimetric.NewBaseConfig(cfg.serviceName)
+	r.Use(otelchimetric.NewServerRequestDuration(metricCfg))
+	r.Use(otelchimetric.NewServerActiveRequests(metricCfg))
 	r.Use(RequestLogger(logger))
 	r.Use(middleware.Recoverer)
 
