@@ -45,8 +45,9 @@ Two endpoints are deliberately excluded, matching the rollout's stated
   exists to solve (ADR-0005 already makes decommission one-way and
   idempotent-by-repeated-effect in the domain sense — the design goal
   for a *different* set of concerns, addressed instead by optimistic
-  concurrency, see `references/optimistic-concurrency-rollout.md` in
-  the fleet skill).
+  concurrency; see [ADR-0025](./0025-optimistic-concurrency-version-column.md),
+  which added the version guard this rationale had been pointing at
+  before it existed).
 
 Every one of the eight protected use cases (`RegisterSite`,
 `RegisterZone`, `RegisterFixedStructure`, `RegisterAisle`,

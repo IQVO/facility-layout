@@ -252,10 +252,13 @@ func TestLocationSlotDecommissionIsOneWay(t *testing.T) {
 
 func TestRehydrateLocationSlot(t *testing.T) {
 	code := mustCode(t, "WH1-RCV-AMB-D01-01-01-A")
-	s := slot.RehydrateLocationSlot(code, placement.Staging, placement.Storage, slot.FunctionalAttributes{}, mustCapacity(t, 900, 3), shared.UnderMaintenance, shared.Point3D{}, shared.Dimensions{}, nil)
+	s := slot.RehydrateLocationSlot(code, placement.Staging, placement.Storage, slot.FunctionalAttributes{}, mustCapacity(t, 900, 3), shared.UnderMaintenance, shared.Point3D{}, shared.Dimensions{}, nil, 4)
 
 	if s.Code() != code || s.LocationType() != placement.Staging {
 		t.Fatalf("unexpected rehydrated slot %q/%q", s.Code(), s.LocationType())
+	}
+	if s.Version() != 4 {
+		t.Fatalf("RehydrateLocationSlot must preserve the loaded version (ADR-0025), got %d", s.Version())
 	}
 	if s.IsActive() {
 		t.Fatal("an UnderMaintenance slot must not report as Active")
