@@ -129,6 +129,8 @@ paths:
         the aggregate: a single aggregate cannot see its siblings. A newly
         registered Site is Active, and publishes SiteRegistered.
       tags: [Sites]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -156,9 +158,28 @@ paths:
                 name: Fulfilment Centre One
                 status: Active
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: >
+            Malformed input, or the Idempotency-Key header is absent or
+            empty (ADR 0019).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                malformed:
+                  summary: Malformed input
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/malformed-request-body
+                    title: The request body is not valid JSON
+                    status: 400
+                    detail: invalid character 'x' looking for beginning of value
+                    instance: /sites
+                idempotencyKeyRequired:
+                  $ref: "#/components/responses/IdempotencyKeyRequired/content/application~1problem+json"
         "409":
           $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/IdempotencyKeyReused"
         "500":
           $ref: "#/components/responses/InternalError"
     get:
@@ -229,6 +250,7 @@ paths:
       tags: [Zones]
       parameters:
         - $ref: "#/components/parameters/SiteCode"
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -262,13 +284,35 @@ paths:
                 hazmat: false
                 status: Active
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: >
+            Malformed input, or the Idempotency-Key header is absent or
+            empty (ADR 0019).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                malformed:
+                  $ref: "#/components/responses/BadRequest/content/application~1problem+json/example"
+                idempotencyKeyRequired:
+                  $ref: "#/components/responses/IdempotencyKeyRequired/content/application~1problem+json/example"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
-          $ref: "#/components/responses/UnprocessableEntity"
+          description: >
+            Semantically invalid, or the Idempotency-Key was already used
+            with a different request body (ADR 0019).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                semantic:
+                  $ref: "#/components/responses/UnprocessableEntity/content/application~1problem+json/example"
+                idempotencyKeyReused:
+                  $ref: "#/components/responses/IdempotencyKeyReused/content/application~1problem+json/example"
         "500":
           $ref: "#/components/responses/InternalError"
     get:
@@ -462,6 +506,7 @@ paths:
       tags: [Layout]
       parameters:
         - $ref: "#/components/parameters/SiteCode"
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -481,13 +526,35 @@ paths:
               schema:
                 $ref: "#/components/schemas/FixedStructure"
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: >
+            Malformed input, or the Idempotency-Key header is absent or
+            empty (ADR 0019).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                malformed:
+                  $ref: "#/components/responses/BadRequest/content/application~1problem+json/example"
+                idempotencyKeyRequired:
+                  $ref: "#/components/responses/IdempotencyKeyRequired/content/application~1problem+json/example"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
-          $ref: "#/components/responses/UnprocessableEntity"
+          description: >
+            Semantically invalid, or the Idempotency-Key was already used
+            with a different request body (ADR 0019).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                semantic:
+                  $ref: "#/components/responses/UnprocessableEntity/content/application~1problem+json/example"
+                idempotencyKeyReused:
+                  $ref: "#/components/responses/IdempotencyKeyReused/content/application~1problem+json/example"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -631,6 +698,7 @@ paths:
       tags: [Aisles]
       parameters:
         - $ref: "#/components/parameters/ZoneId"
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -662,13 +730,35 @@ paths:
                 direction: TwoWay
                 status: Active
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: >
+            Malformed input, or the Idempotency-Key header is absent or
+            empty (ADR 0019).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                malformed:
+                  $ref: "#/components/responses/BadRequest/content/application~1problem+json/example"
+                idempotencyKeyRequired:
+                  $ref: "#/components/responses/IdempotencyKeyRequired/content/application~1problem+json/example"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
-          $ref: "#/components/responses/UnprocessableEntity"
+          description: >
+            Semantically invalid, or the Idempotency-Key was already used
+            with a different request body (ADR 0019).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                semantic:
+                  $ref: "#/components/responses/UnprocessableEntity/content/application~1problem+json/example"
+                idempotencyKeyReused:
+                  $ref: "#/components/responses/IdempotencyKeyReused/content/application~1problem+json/example"
         "500":
           $ref: "#/components/responses/InternalError"
     get:
@@ -804,6 +894,7 @@ paths:
       tags: [Aisles]
       parameters:
         - $ref: "#/components/parameters/ZoneId"
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -828,13 +919,35 @@ paths:
                 atBay: "02"
                 active: true
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: >
+            Malformed input, or the Idempotency-Key header is absent or
+            empty (ADR 0019).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                malformed:
+                  $ref: "#/components/responses/BadRequest/content/application~1problem+json/example"
+                idempotencyKeyRequired:
+                  $ref: "#/components/responses/IdempotencyKeyRequired/content/application~1problem+json/example"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
-          $ref: "#/components/responses/UnprocessableEntity"
+          description: >
+            Semantically invalid, or the Idempotency-Key was already used
+            with a different request body (ADR 0019).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                semantic:
+                  $ref: "#/components/responses/UnprocessableEntity/content/application~1problem+json/example"
+                idempotencyKeyReused:
+                  $ref: "#/components/responses/IdempotencyKeyReused/content/application~1problem+json/example"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -877,6 +990,8 @@ paths:
         capacity dimensions must be strictly positive: a slot that can hold
         nothing is not a slot. Publishes LocationTypeRegistered.
       tags: [Location Types]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -908,11 +1023,33 @@ paths:
                   maxWeightKg: 1200
                   maxVolumeM3: 2.4
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: >
+            Malformed input, or the Idempotency-Key header is absent or
+            empty (ADR 0019).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                malformed:
+                  $ref: "#/components/responses/BadRequest/content/application~1problem+json/example"
+                idempotencyKeyRequired:
+                  $ref: "#/components/responses/IdempotencyKeyRequired/content/application~1problem+json/example"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
-          $ref: "#/components/responses/UnprocessableEntity"
+          description: >
+            Semantically invalid, or the Idempotency-Key was already used
+            with a different request body (ADR 0019).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                semantic:
+                  $ref: "#/components/responses/UnprocessableEntity/content/application~1problem+json/example"
+                idempotencyKeyReused:
+                  $ref: "#/components/responses/IdempotencyKeyReused/content/application~1problem+json/example"
         "500":
           $ref: "#/components/responses/InternalError"
     get:
@@ -1002,6 +1139,8 @@ paths:
         The referenced LocationType must already exist. Publishes
         PlacementRuleDefined.
       tags: [Placement Rules]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -1035,13 +1174,35 @@ paths:
                   temperatureClass: Frozen
                 description: "RULE-FRZ-NO-SHELF: Deny Shelf where temperatureClass=Frozen"
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: >
+            Malformed input, or the Idempotency-Key header is absent or
+            empty (ADR 0019).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                malformed:
+                  $ref: "#/components/responses/BadRequest/content/application~1problem+json/example"
+                idempotencyKeyRequired:
+                  $ref: "#/components/responses/IdempotencyKeyRequired/content/application~1problem+json/example"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
-          $ref: "#/components/responses/UnprocessableEntity"
+          description: >
+            Semantically invalid, or the Idempotency-Key was already used
+            with a different request body (ADR 0019).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                semantic:
+                  $ref: "#/components/responses/UnprocessableEntity/content/application~1problem+json/example"
+                idempotencyKeyReused:
+                  $ref: "#/components/responses/IdempotencyKeyReused/content/application~1problem+json/example"
         "500":
           $ref: "#/components/responses/InternalError"
     get:
@@ -1133,6 +1294,8 @@ paths:
         retired code is never resurrected by re-registration. Publishes
         LocationSlotRegistered.
       tags: [Locations]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -1174,13 +1337,41 @@ paths:
                   maxVolumeM3: 2.4
                 status: Active
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: >
+            Malformed input, or the Idempotency-Key header is absent or
+            empty (ADR 0019).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                malformed:
+                  summary: Malformed location code
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/malformed-location-code
+                    title: Malformed location code
+                    status: 400
+                    detail: "location code must have exactly 7 hyphen-joined segments (site-area-zone-aisle-bay-level-position): got 4 segments in \"WH1-STOR-AMB-A07\""
+                    instance: /locations
+                idempotencyKeyRequired:
+                  $ref: "#/components/responses/IdempotencyKeyRequired/content/application~1problem+json/example"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
-          $ref: "#/components/responses/UnprocessableEntity"
+          description: >
+            Semantically invalid, or the Idempotency-Key was already used
+            with a different request body (ADR 0019).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                semantic:
+                  $ref: "#/components/responses/UnprocessableEntity/content/application~1problem+json/example"
+                idempotencyKeyReused:
+                  $ref: "#/components/responses/IdempotencyKeyReused/content/application~1problem+json/example"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -1487,6 +1678,25 @@ components:
         type: string
         pattern: "^[A-Z0-9]+$"
       example: WH1
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: >-
+        Caller-generated unique key (a UUID per logical submit) that makes a
+        retried request safe (ADR 0019). Clients MUST always send a
+        non-empty, unique-per-submit key: the header is required whenever
+        the service runs with Postgres — i.e. in every deployment — and an
+        absent or empty key is answered 400 `idempotency-key-required`. A
+        replay with the same key and the same body returns the original
+        response verbatim; the same key with a different body is 422
+        `idempotency-key-reused`. It is declared `required: false` here only
+        because the in-memory development mode (no DATABASE_URL) does not
+        enforce the middleware and the Schemathesis contract run boots that
+        mode.
+      schema:
+        type: string
+        example: 5b0f6a0e-6a41-4c63-9f33-0c8f5c1d2a77
     ZoneId:
       name: zoneId
       in: path
@@ -1511,6 +1721,37 @@ components:
       example: WH1-STOR-AMB-A07-03-02-B
 
   responses:
+    IdempotencyKeyRequired:
+      description: >-
+        The Idempotency-Key header was absent or empty on a protected
+        resource-creation POST (ADR 0019). Enforced whenever the service
+        runs with Postgres; the in-memory development mode does not enforce
+        it.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-required
+            title: Idempotency-Key header is required
+            status: 400
+            detail: This endpoint creates a new resource on every call and requires a caller-supplied Idempotency-Key header so a retried request is never applied twice.
+            instance: /sites
+    IdempotencyKeyReused:
+      description: >-
+        The Idempotency-Key was already used with a request that had a
+        different body (ADR 0019). Use a new key for a genuinely different
+        request.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-reused
+            title: Idempotency-Key was already used with a different request
+            status: 422
+            detail: The Idempotency-Key header on this request was already used with a request that had a different body. Use a new Idempotency-Key for a genuinely different request.
+            instance: /sites
     BadRequest:
       description: >
         Malformed input: a body that is not valid JSON, a location code that

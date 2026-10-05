@@ -829,9 +829,17 @@ func corsMiddleware() func(http.Handler) http.Handler {
 		origins = strings.Split(v, ",")
 	}
 	return cors.Handler(cors.Options{
-		AllowedOrigins:   origins,
-		AllowedMethods:   []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete},
-		AllowedHeaders:   []string{"Content-Type", "Authorization"},
+		AllowedOrigins: origins,
+		AllowedMethods: []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete},
+		// Idempotency-Key MUST be allowed: every resource-creation POST is
+		// wrapped by RequireIdempotencyKey (ADR-0019), and a preflight that
+		// omits the header from Access-Control-Allow-Headers makes the
+		// browser drop it — the console's create forms then answer 400
+		// idempotency-key-required against a Postgres-backed API. Authorization
+		// stays listed even though REST auth was removed (ADR-0015): the
+		// header is harmless to allow and keeps the middleware stable if a
+		// gateway in front ever re-introduces it.
+		AllowedHeaders:   []string{"Content-Type", "Authorization", IdempotencyKeyHeader},
 		AllowCredentials: false,
 		MaxAge:           300,
 	})

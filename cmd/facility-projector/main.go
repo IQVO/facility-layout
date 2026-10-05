@@ -68,7 +68,15 @@ func run() error {
 
 	projection := analyticsstore.NewPostgresProjection(pool)
 	consumed := analyticsstore.NewConsumedEventsRepo(pool)
-	consumer := inboundkafka.NewAnalyticsConsumer(kafkaBrokers, outboundkafka.AnalyticsTopic, projection, consumed, logger)
+	// The DLQ writer is the fleet-shared durable one (outbound/kafka's
+	// NewDeadLetterWriter: RequireAll + Hash + 10ms), injected through
+	// WithDLQWriter because the inbound consumer package cannot import an
+	// outbound one (arch fitness rule). ADR-0020: a DLQ publish must not
+	// report success before the broker stores the message — the source
+	// offset is committed right after, so RequireNone (kafka-go's default)
+	// would silently lose the poison message.
+	consumer := inboundkafka.NewAnalyticsConsumer(kafkaBrokers, outboundkafka.AnalyticsTopic, projection, consumed, logger,
+		inboundkafka.WithDLQWriter(outboundkafka.NewDeadLetterWriter(kafkaBrokers, outboundkafka.AnalyticsTopic+".dlq")))
 	defer func() {
 		if err := consumer.Close(); err != nil {
 			logger.Error("error closing analytics consumer", "error", err)

@@ -100,10 +100,25 @@ type AnalyticsConsumer struct {
 	dlqWriter *kafkago.Writer
 }
 
+// ConsumerOption customises an AnalyticsConsumer beyond its required
+// dependencies.
+type ConsumerOption func(*AnalyticsConsumer)
+
+// WithDLQWriter overrides the consumer's dead-letter writer. The composition
+// root uses this to inject the fleet-shared durable writer built by
+// outbound/kafka.NewDeadLetterWriter (RequireAll + Hash + 10ms — a DLQ
+// publish that reports success before the broker stores the message, after
+// which the source offset is committed, is a silently lost poison message).
+// The inbound package cannot import the outbound one (arch-go fitness rule),
+// so the default fallback writer below re-states the same pinned config.
+func WithDLQWriter(w *kafkago.Writer) ConsumerOption {
+	return func(c *AnalyticsConsumer) { c.dlqWriter = w }
+}
+
 // NewAnalyticsConsumer constructs an AnalyticsConsumer reading topic from
 // brokers under AnalyticsConsumerGroup, with a dead-letter writer targeting
 // topic+".dlq" (ADR-0020 §DLQ).
-func NewAnalyticsConsumer(brokers []string, topic string, projection report.ProjectionStore, processed ProcessedEvents, logger *slog.Logger) *AnalyticsConsumer {
+func NewAnalyticsConsumer(brokers []string, topic string, projection report.ProjectionStore, processed ProcessedEvents, logger *slog.Logger, opts ...ConsumerOption) *AnalyticsConsumer {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -121,16 +136,20 @@ func NewAnalyticsConsumer(brokers []string, topic string, projection report.Proj
 		// affects the first join.
 		StartOffset: kafkago.FirstOffset,
 	})
-	return &AnalyticsConsumer{
+	c := &AnalyticsConsumer{
 		Reader:     reader,
 		Projection: projection,
 		Processed:  processed,
 		Logger:     logger,
 		dlqWriter:  newDLQWriter(brokers, topic+dlqTopicSuffix),
 	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
-// newDLQWriter builds the dead-letter writer for dlqTopic. It sets
+// newDLQWriter builds the dead-letter writer fallback for dlqTopic. It sets
 // AllowAutoTopicCreation, the fleet convention for every writer
 // (warehouse-infra/terraform/kafka.tf leaves topic creation to the
 // producing writer): "<topic>.dlq" is only ever written on the rare
@@ -139,10 +158,24 @@ func NewAnalyticsConsumer(brokers []string, topic string, projection report.Proj
 // "[3] Unknown Topic Or Partition", the offset is (correctly) not
 // committed, and Run aborts, stopping the projector on the very message
 // the DLQ exists to route around.
+//
+// Durability (ADR-0020): RequiredAcks RequireAll — the kafka-go default
+// RequireNone lets a DLQ publish report success before the broker stores
+// the message, after which the source offset IS committed: the poison
+// message is lost. BatchTimeout 10ms (a DLQ write is a synchronous single
+// message; the 1s default caps dead-lettering at ~1 msg/s/partition) and
+// the Hash balancer (the original message key still decides the partition,
+// preserving per-key order on the .dlq topic) mirror the fleet writer
+// config in outbound/kafka/writer_config.go, whose NewDeadLetterWriter the
+// composition root injects in production. This package cannot import that
+// one (arch fitness rule: inbound never depends on outbound), so the config
+// is re-stated here and pinned by TestNewDLQWriter_MatchesFleetSyncWriterConfig.
 func newDLQWriter(brokers []string, dlqTopic string) *kafkago.Writer {
 	return &kafkago.Writer{
 		Addr:                   kafkago.TCP(brokers...),
 		Topic:                  dlqTopic,
+		Balancer:               &kafkago.Hash{},
+		RequiredAcks:           kafkago.RequireAll,
 		AllowAutoTopicCreation: true,
 		// BatchTimeout: a DLQ write is a synchronous single message; with
 		// kafka-go's 1s default the writer holds every write for a full second

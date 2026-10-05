@@ -9,6 +9,31 @@ describe("apiPost", () => {
     vi.restoreAllMocks();
   });
 
+  it("sends a per-submit Idempotency-Key header (ADR-0019)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => ({ siteCode: "WH1", name: "Test", status: "Active" }),
+    }) as unknown as typeof fetch;
+    globalThis.fetch = fetchMock;
+
+    await apiPost("/sites", { siteCode: "WH1", name: "Test" });
+    const init = (fetchMock as ReturnType<typeof vi.fn>).mock.calls[0][1] as RequestInit;
+    const key = (init.headers as Record<string, string>)["Idempotency-Key"];
+    if (!key || key.length < 8) {
+      throw new Error(`expected a non-empty Idempotency-Key header, got ${JSON.stringify(key)}`);
+    }
+
+    // A second submit must carry a DIFFERENT key: one key per logical submit,
+    // so a user clicking save twice is two creates, not a replay.
+    await apiPost("/sites", { siteCode: "WH1", name: "Test" });
+    const secondInit = (fetchMock as ReturnType<typeof vi.fn>).mock.calls[1][1] as RequestInit;
+    const secondKey = (secondInit.headers as Record<string, string>)["Idempotency-Key"];
+    if (secondKey === key) {
+      throw new Error("two submits must not share one Idempotency-Key");
+    }
+  });
+
   it("returns the parsed JSON body on success", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
