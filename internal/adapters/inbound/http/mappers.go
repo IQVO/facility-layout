@@ -261,6 +261,7 @@ func toZoneGridResponse(grid *usecases.ZoneGrid) zoneGridResponse {
 					LocationCode: s.Code().String(),
 					Position:     s.Code().Position(),
 					LocationType: s.LocationType(),
+					Role:         string(s.Role()),
 					Status:       string(s.Status()),
 				})
 			}

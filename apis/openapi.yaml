@@ -660,11 +660,13 @@ paths:
                           - locationCode: WH1-STOR-AMB-A07-03-01-A
                             position: A
                             locationType: PalletRack
+                            role: Storage
                             status: Active
                       - positions:
                           - locationCode: WH1-STOR-AMB-A09-01-01-A
                             position: A
                             locationType: Shelf
+                            role: Storage
                             status: Active
                   - level: "02"
                     cells:
@@ -672,10 +674,12 @@ paths:
                           - locationCode: WH1-STOR-AMB-A07-03-02-A
                             position: A
                             locationType: PalletRack
+                            role: Storage
                             status: Active
                           - locationCode: WH1-STOR-AMB-A07-03-02-B
                             position: B
                             locationType: PalletRack
+                            role: Storage
                             status: Active
                       - null
         "404":
@@ -2800,7 +2804,7 @@ components:
     GridPosition:
       type: object
       description: One slot inside a grid cell.
-      required: [locationCode, position, locationType, status]
+      required: [locationCode, position, locationType, role, status]
       properties:
         locationCode:
           type: string
@@ -2812,6 +2816,8 @@ components:
         locationType:
           type: string
           example: PalletRack
+        role:
+          $ref: "#/components/schemas/LocationRole"
         status:
           $ref: "#/components/schemas/Status"
 

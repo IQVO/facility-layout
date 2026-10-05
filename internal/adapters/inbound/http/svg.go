@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/claudioed/facility-layout/internal/application/usecases"
+	"github.com/claudioed/facility-layout/internal/domain/placement"
 	"github.com/claudioed/facility-layout/internal/domain/shared"
 )
 
@@ -63,9 +64,18 @@ func renderLayoutSVG(layout *usecases.SiteLayout) string {
 			slotY := rowY + svgAisleHeader
 			for i, s := range aisleLayout.Slots {
 				slotX := svgMarginX + svgLabelWidth + i*(svgSlotWidth+svgSlotGap)
-				writef(&body, `  <rect x="%d" y="%d" width="%d" height="%d" fill="%s" stroke="#52606d" stroke-width="0.5" rx="2"><title>%s</title></rect>`+"\n",
-					slotX, slotY, svgSlotWidth, svgSlotHeight, slotColour(s.Status()),
-					escape(fmt.Sprintf("%s (%s, %s)", s.Code().String(), s.LocationType(), s.Status())))
+				writef(&body, `  <rect x="%d" y="%d" width="%d" height="%d" fill="%s" stroke="%s" stroke-width="0.5" rx="2"><title>%s</title></rect>`+"\n",
+					slotX, slotY, svgSlotWidth, svgSlotHeight, slotColour(s.Status()), roleStroke(s.Role()),
+					escape(fmt.Sprintf("%s (%s, %s, %s)", s.Code().String(), s.LocationType(), s.Role(), s.Status())))
+				// ADR-0016: a per-role monogram distinguishes functional
+				// locations (Dock, WorkCenter, …) from plain Storage at a
+				// glance, without a legend an operator has to keep open. Storage
+				// stays unmarked — it is the overwhelming majority and marking
+				// every slot would be noise, not signal.
+				if mono := roleMonogram(s.Role()); mono != "" {
+					writef(&body, `  <text x="%d" y="%d" font-family="monospace" font-size="9" font-weight="bold" fill="#1f2933">%s</text>`+"\n",
+						slotX+4, slotY+svgSlotHeight-4, mono)
+				}
 			}
 			rowY = slotY + svgSlotHeight + svgAisleGap
 		}
@@ -122,6 +132,44 @@ func slotColour(status shared.Status) string {
 	default:
 		return "#9fb3c8"
 	}
+}
+
+// roleMonogram returns the two-letter monogram drawn inside a functional
+// (non-Storage) slot's rect (ADR-0016), or "" for Storage. Deliberately
+// minimal — the SVG floor plan is an operator overview, not a data grid;
+// the full role is in the rect's <title> tooltip and the JSON layout/grid.
+func roleMonogram(role placement.LocationRole) string {
+	switch role {
+	case placement.Dock:
+		return "DK"
+	case placement.Yard:
+		return "YD"
+	case placement.WorkCenter:
+		return "WC"
+	case placement.Drop:
+		return "DP"
+	case placement.Staging:
+		return "ST"
+	case placement.QC:
+		return "QC"
+	case placement.Consolidation:
+		return "CO"
+	case placement.Shipping:
+		return "SH"
+	default:
+		return ""
+	}
+}
+
+// roleStroke outlines a slot by its functional role (ADR-0016): Storage
+// keeps the neutral default outline; every functional location gets a
+// darker, visible outline so a Dock door or WorkCenter stands out on the
+// plan even before the monogram is read.
+func roleStroke(role placement.LocationRole) string {
+	if roleMonogram(role) == "" {
+		return "#52606d"
+	}
+	return "#1f2933"
 }
 
 func hazmatSuffix(hazmat bool) string {

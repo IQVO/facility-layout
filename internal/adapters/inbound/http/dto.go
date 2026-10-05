@@ -340,7 +340,12 @@ type gridPositionResponse struct {
 	LocationCode string `json:"locationCode"`
 	Position     string `json:"position"`
 	LocationType string `json:"locationType"`
-	Status       string `json:"status"`
+	// Role is the slot's LocationRole (ADR-0016): the site layout response
+	// already carried it per slot, but the zone grid omitted it — an
+	// operator painting a zone could not tell a Dock or WorkCenter cell
+	// from a Storage one without a second request.
+	Role   string `json:"role"`
+	Status string `json:"status"`
 }
 
 // -------------------------------------------------------- travel graph ----
