@@ -69,9 +69,15 @@ migration.
 - `instance` is the request path.
 
 The mapping lives in exactly one place,
-`internal/adapters/inbound/http/errors.go`, as two parallel switch
-statements — `statusFor(err)` and `problemFor(err)` — keyed off **typed
-domain errors** with `errors.Is`. The domain never learns that HTTP exists.
+`internal/adapters/inbound/http/errors.go`. It was originally written as
+two parallel switch statements — `statusFor(err)` and `problemFor(err)` —
+keyed off **typed domain errors** with `errors.Is`; it has since been
+consolidated into **one `errorCategories` table** whose rows pair each
+typed error with its status and problem identity, so a new error needs
+one row, not two coordinated switch arms. (That consolidation is the
+improvement the "two switches" consequence below anticipated; the ADR
+records the current table shape.) The domain never learns that HTTP
+exists.
 
 The status-code semantics are fixed alongside it:
 
@@ -105,9 +111,13 @@ replicate the other four services' history: it starts where they ended up.
 
 ### Harder
 
-- Every new typed domain error needs an entry in **two** switch statements.
-  Forgetting one silently falls through to `500 internal-error`, which is
-  caught by tests rather than by the compiler.
+- Every new typed domain error needs a row in the `errorCategories`
+  table (`internal/adapters/inbound/http/errors.go`). An error with no
+  row silently falls through to `500 internal-error`, which is caught by
+  tests rather than by the compiler. *(Originally two coordinated switch
+  statements — `statusFor` and `problemFor` — where forgetting one of the
+  two arms had the same effect; the single table removed the chance of
+  the pair drifting apart.)*
 - The catalogue is large and grows with the domain. That is honest — the
   domain really does have that many distinct failure modes — but it is more
   to maintain than a single error string.
