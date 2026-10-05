@@ -213,7 +213,13 @@ paths:
                     detail: invalid character 'x' looking for beginning of value
                     instance: /sites
                 idempotencyKeyRequired:
-                  $ref: "#/components/responses/IdempotencyKeyRequired/content/application~1problem+json"
+                  summary: Idempotency-Key header absent or empty
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-required
+                    title: Idempotency-Key header is required
+                    status: 400
+                    detail: This endpoint creates a new resource on every call and requires a caller-supplied Idempotency-Key header so a retried request is never applied twice.
+                    instance: /sites
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
@@ -321,6 +327,8 @@ paths:
                 temperatureClass: Frozen
                 hazmat: false
                 status: Active
+                bayPitchM: 1.2
+                levelPitchM: 1.5
         "400":
           description: >
             Malformed input, or the Idempotency-Key header is absent or
@@ -331,9 +339,19 @@ paths:
                 $ref: "#/components/schemas/Problem"
               examples:
                 malformed:
-                  $ref: "#/components/responses/BadRequest/content/application~1problem+json/example"
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/malformed-location-code
+                    title: Malformed location code
+                    status: 400
+                    detail: "location code must have exactly 7 hyphen-joined segments (site-area-zone-aisle-bay-level-position): got 4 segments in \"WH1-STOR-AMB-A07\""
+                    instance: /locations
                 idempotencyKeyRequired:
-                  $ref: "#/components/responses/IdempotencyKeyRequired/content/application~1problem+json/example"
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-required
+                    title: Idempotency-Key header is required
+                    status: 400
+                    detail: This endpoint creates a new resource on every call and requires a caller-supplied Idempotency-Key header so a retried request is never applied twice.
+                    instance: /sites
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -348,9 +366,19 @@ paths:
                 $ref: "#/components/schemas/Problem"
               examples:
                 semantic:
-                  $ref: "#/components/responses/UnprocessableEntity/content/application~1problem+json/example"
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/placement-rule-violated
+                    title: Location type is not legal in this zone
+                    status: 422
+                    detail: "location type violates a placement rule for this zone: Shelf is denied in zone WH1-STOR-FRZ by rule [RULE-FRZ-NO-SHELF: Deny Shelf where temperatureClass=Frozen]"
+                    instance: /locations
                 idempotencyKeyReused:
-                  $ref: "#/components/responses/IdempotencyKeyReused/content/application~1problem+json/example"
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-reused
+                    title: Idempotency-Key was already used with a different request
+                    status: 422
+                    detail: The Idempotency-Key header on this request was already used with a request that had a different body. Use a new Idempotency-Key for a genuinely different request.
+                    instance: /sites
         "500":
           $ref: "#/components/responses/InternalError"
     get:
@@ -380,6 +408,8 @@ paths:
                   temperatureClass: Ambient
                   hazmat: false
                   status: Active
+                  bayPitchM: 1.2
+                  levelPitchM: 1.5
                 - zoneId: WH1-STOR-AMB
                   siteCode: WH1
                   areaCode: STOR
@@ -387,6 +417,8 @@ paths:
                   temperatureClass: Ambient
                   hazmat: false
                   status: Active
+                  bayPitchM: 1.2
+                  levelPitchM: 1.5
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -573,9 +605,19 @@ paths:
                 $ref: "#/components/schemas/Problem"
               examples:
                 malformed:
-                  $ref: "#/components/responses/BadRequest/content/application~1problem+json/example"
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/malformed-location-code
+                    title: Malformed location code
+                    status: 400
+                    detail: "location code must have exactly 7 hyphen-joined segments (site-area-zone-aisle-bay-level-position): got 4 segments in \"WH1-STOR-AMB-A07\""
+                    instance: /locations
                 idempotencyKeyRequired:
-                  $ref: "#/components/responses/IdempotencyKeyRequired/content/application~1problem+json/example"
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-required
+                    title: Idempotency-Key header is required
+                    status: 400
+                    detail: This endpoint creates a new resource on every call and requires a caller-supplied Idempotency-Key header so a retried request is never applied twice.
+                    instance: /sites
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -590,9 +632,19 @@ paths:
                 $ref: "#/components/schemas/Problem"
               examples:
                 semantic:
-                  $ref: "#/components/responses/UnprocessableEntity/content/application~1problem+json/example"
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/placement-rule-violated
+                    title: Location type is not legal in this zone
+                    status: 422
+                    detail: "location type violates a placement rule for this zone: Shelf is denied in zone WH1-STOR-FRZ by rule [RULE-FRZ-NO-SHELF: Deny Shelf where temperatureClass=Frozen]"
+                    instance: /locations
                 idempotencyKeyReused:
-                  $ref: "#/components/responses/IdempotencyKeyReused/content/application~1problem+json/example"
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-reused
+                    title: Idempotency-Key was already used with a different request
+                    status: 422
+                    detail: The Idempotency-Key header on this request was already used with a request that had a different body. Use a new Idempotency-Key for a genuinely different request.
+                    instance: /sites
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -642,6 +694,8 @@ paths:
                 temperatureClass: Ambient
                 hazmat: false
                 status: Active
+                bayPitchM: 1.2
+                levelPitchM: 1.5
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -681,6 +735,8 @@ paths:
                   temperatureClass: Ambient
                   hazmat: false
                   status: Active
+                  bayPitchM: 1.2
+                  levelPitchM: 1.5
                 columns:
                   - aisleId: WH1-STOR-AMB-A07
                     aisleCode: A07
@@ -781,9 +837,19 @@ paths:
                 $ref: "#/components/schemas/Problem"
               examples:
                 malformed:
-                  $ref: "#/components/responses/BadRequest/content/application~1problem+json/example"
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/malformed-location-code
+                    title: Malformed location code
+                    status: 400
+                    detail: "location code must have exactly 7 hyphen-joined segments (site-area-zone-aisle-bay-level-position): got 4 segments in \"WH1-STOR-AMB-A07\""
+                    instance: /locations
                 idempotencyKeyRequired:
-                  $ref: "#/components/responses/IdempotencyKeyRequired/content/application~1problem+json/example"
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-required
+                    title: Idempotency-Key header is required
+                    status: 400
+                    detail: This endpoint creates a new resource on every call and requires a caller-supplied Idempotency-Key header so a retried request is never applied twice.
+                    instance: /sites
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -798,9 +864,19 @@ paths:
                 $ref: "#/components/schemas/Problem"
               examples:
                 semantic:
-                  $ref: "#/components/responses/UnprocessableEntity/content/application~1problem+json/example"
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/placement-rule-violated
+                    title: Location type is not legal in this zone
+                    status: 422
+                    detail: "location type violates a placement rule for this zone: Shelf is denied in zone WH1-STOR-FRZ by rule [RULE-FRZ-NO-SHELF: Deny Shelf where temperatureClass=Frozen]"
+                    instance: /locations
                 idempotencyKeyReused:
-                  $ref: "#/components/responses/IdempotencyKeyReused/content/application~1problem+json/example"
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-reused
+                    title: Idempotency-Key was already used with a different request
+                    status: 422
+                    detail: The Idempotency-Key header on this request was already used with a request that had a different body. Use a new Idempotency-Key for a genuinely different request.
+                    instance: /sites
         "500":
           $ref: "#/components/responses/InternalError"
     get:
@@ -970,9 +1046,19 @@ paths:
                 $ref: "#/components/schemas/Problem"
               examples:
                 malformed:
-                  $ref: "#/components/responses/BadRequest/content/application~1problem+json/example"
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/malformed-location-code
+                    title: Malformed location code
+                    status: 400
+                    detail: "location code must have exactly 7 hyphen-joined segments (site-area-zone-aisle-bay-level-position): got 4 segments in \"WH1-STOR-AMB-A07\""
+                    instance: /locations
                 idempotencyKeyRequired:
-                  $ref: "#/components/responses/IdempotencyKeyRequired/content/application~1problem+json/example"
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-required
+                    title: Idempotency-Key header is required
+                    status: 400
+                    detail: This endpoint creates a new resource on every call and requires a caller-supplied Idempotency-Key header so a retried request is never applied twice.
+                    instance: /sites
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -987,9 +1073,19 @@ paths:
                 $ref: "#/components/schemas/Problem"
               examples:
                 semantic:
-                  $ref: "#/components/responses/UnprocessableEntity/content/application~1problem+json/example"
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/placement-rule-violated
+                    title: Location type is not legal in this zone
+                    status: 422
+                    detail: "location type violates a placement rule for this zone: Shelf is denied in zone WH1-STOR-FRZ by rule [RULE-FRZ-NO-SHELF: Deny Shelf where temperatureClass=Frozen]"
+                    instance: /locations
                 idempotencyKeyReused:
-                  $ref: "#/components/responses/IdempotencyKeyReused/content/application~1problem+json/example"
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-reused
+                    title: Idempotency-Key was already used with a different request
+                    status: 422
+                    detail: The Idempotency-Key header on this request was already used with a request that had a different body. Use a new Idempotency-Key for a genuinely different request.
+                    instance: /sites
         "500":
           $ref: "#/components/responses/InternalError"
     get:
@@ -1106,9 +1202,19 @@ paths:
                 $ref: "#/components/schemas/Problem"
               examples:
                 malformed:
-                  $ref: "#/components/responses/BadRequest/content/application~1problem+json/example"
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/malformed-location-code
+                    title: Malformed location code
+                    status: 400
+                    detail: "location code must have exactly 7 hyphen-joined segments (site-area-zone-aisle-bay-level-position): got 4 segments in \"WH1-STOR-AMB-A07\""
+                    instance: /locations
                 idempotencyKeyRequired:
-                  $ref: "#/components/responses/IdempotencyKeyRequired/content/application~1problem+json/example"
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-required
+                    title: Idempotency-Key header is required
+                    status: 400
+                    detail: This endpoint creates a new resource on every call and requires a caller-supplied Idempotency-Key header so a retried request is never applied twice.
+                    instance: /sites
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
@@ -1121,9 +1227,19 @@ paths:
                 $ref: "#/components/schemas/Problem"
               examples:
                 semantic:
-                  $ref: "#/components/responses/UnprocessableEntity/content/application~1problem+json/example"
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/placement-rule-violated
+                    title: Location type is not legal in this zone
+                    status: 422
+                    detail: "location type violates a placement rule for this zone: Shelf is denied in zone WH1-STOR-FRZ by rule [RULE-FRZ-NO-SHELF: Deny Shelf where temperatureClass=Frozen]"
+                    instance: /locations
                 idempotencyKeyReused:
-                  $ref: "#/components/responses/IdempotencyKeyReused/content/application~1problem+json/example"
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-reused
+                    title: Idempotency-Key was already used with a different request
+                    status: 422
+                    detail: The Idempotency-Key header on this request was already used with a request that had a different body. Use a new Idempotency-Key for a genuinely different request.
+                    instance: /sites
         "500":
           $ref: "#/components/responses/InternalError"
     get:
@@ -1257,9 +1373,19 @@ paths:
                 $ref: "#/components/schemas/Problem"
               examples:
                 malformed:
-                  $ref: "#/components/responses/BadRequest/content/application~1problem+json/example"
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/malformed-location-code
+                    title: Malformed location code
+                    status: 400
+                    detail: "location code must have exactly 7 hyphen-joined segments (site-area-zone-aisle-bay-level-position): got 4 segments in \"WH1-STOR-AMB-A07\""
+                    instance: /locations
                 idempotencyKeyRequired:
-                  $ref: "#/components/responses/IdempotencyKeyRequired/content/application~1problem+json/example"
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-required
+                    title: Idempotency-Key header is required
+                    status: 400
+                    detail: This endpoint creates a new resource on every call and requires a caller-supplied Idempotency-Key header so a retried request is never applied twice.
+                    instance: /sites
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -1274,9 +1400,19 @@ paths:
                 $ref: "#/components/schemas/Problem"
               examples:
                 semantic:
-                  $ref: "#/components/responses/UnprocessableEntity/content/application~1problem+json/example"
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/placement-rule-violated
+                    title: Location type is not legal in this zone
+                    status: 422
+                    detail: "location type violates a placement rule for this zone: Shelf is denied in zone WH1-STOR-FRZ by rule [RULE-FRZ-NO-SHELF: Deny Shelf where temperatureClass=Frozen]"
+                    instance: /locations
                 idempotencyKeyReused:
-                  $ref: "#/components/responses/IdempotencyKeyReused/content/application~1problem+json/example"
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-reused
+                    title: Idempotency-Key was already used with a different request
+                    status: 422
+                    detail: The Idempotency-Key header on this request was already used with a request that had a different body. Use a new Idempotency-Key for a genuinely different request.
+                    instance: /sites
         "500":
           $ref: "#/components/responses/InternalError"
     get:
@@ -1428,7 +1564,12 @@ paths:
                     detail: "location code must have exactly 7 hyphen-joined segments (site-area-zone-aisle-bay-level-position): got 4 segments in \"WH1-STOR-AMB-A07\""
                     instance: /locations
                 idempotencyKeyRequired:
-                  $ref: "#/components/responses/IdempotencyKeyRequired/content/application~1problem+json/example"
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-required
+                    title: Idempotency-Key header is required
+                    status: 400
+                    detail: This endpoint creates a new resource on every call and requires a caller-supplied Idempotency-Key header so a retried request is never applied twice.
+                    instance: /sites
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -1443,9 +1584,19 @@ paths:
                 $ref: "#/components/schemas/Problem"
               examples:
                 semantic:
-                  $ref: "#/components/responses/UnprocessableEntity/content/application~1problem+json/example"
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/placement-rule-violated
+                    title: Location type is not legal in this zone
+                    status: 422
+                    detail: "location type violates a placement rule for this zone: Shelf is denied in zone WH1-STOR-FRZ by rule [RULE-FRZ-NO-SHELF: Deny Shelf where temperatureClass=Frozen]"
+                    instance: /locations
                 idempotencyKeyReused:
-                  $ref: "#/components/responses/IdempotencyKeyReused/content/application~1problem+json/example"
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-reused
+                    title: Idempotency-Key was already used with a different request
+                    status: 422
+                    detail: The Idempotency-Key header on this request was already used with a request that had a different body. Use a new Idempotency-Key for a genuinely different request.
+                    instance: /sites
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -1802,22 +1953,6 @@ components:
       example: WH1-STOR-AMB-A07-03-02-B
 
   responses:
-    IdempotencyKeyRequired:
-      description: >-
-        The Idempotency-Key header was absent or empty on a protected
-        resource-creation POST (ADR 0019). Enforced whenever the service
-        runs with Postgres; the in-memory development mode does not enforce
-        it.
-      content:
-        application/problem+json:
-          schema:
-            $ref: "#/components/schemas/Problem"
-          example:
-            type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-required
-            title: Idempotency-Key header is required
-            status: 400
-            detail: This endpoint creates a new resource on every call and requires a caller-supplied Idempotency-Key header so a retried request is never applied twice.
-            instance: /sites
     IdempotencyKeyReused:
       description: >-
         The Idempotency-Key was already used with a request that had a
