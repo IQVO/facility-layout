@@ -954,6 +954,38 @@ paths:
                   $ref: "#/components/responses/IdempotencyKeyReused/content/application~1problem+json/example"
         "500":
           $ref: "#/components/responses/InternalError"
+    get:
+      operationId: listCrossAisles
+      summary: List a zone's cross-aisles
+      description: >
+        Returns every declared CrossAisle (ADR-0017) in the zone — its
+        zone-scoped connections between two of its aisles at a bay ordinal —
+        ordered by from-aisle, to-aisle, bay. A read model: it reflects what
+        was registered, including inactive (decommissioned) connections, so
+        a consumer can discover the declared connections without deriving
+        them from the travel graph's edges.
+      tags: [Aisles]
+      parameters:
+        - $ref: "#/components/parameters/ZoneId"
+      responses:
+        "200":
+          description: The zone's cross-aisles (an empty array when none).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CrossAisle"
+              example:
+                - zoneId: WH1-STOR-AMB
+                  fromAisle: A07
+                  toAisle: A08
+                  atBay: "02"
+                  active: true
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
 
   /zones/{zoneId}/travel-graph:
     get:
@@ -1632,11 +1664,18 @@ paths:
         result is flagged `estimated` when any leg of the route used a
         zone's bay-pitch fallback instead of real aisle centreline geometry.
 
+        Same-zone requests route over the zone's travel graph. Cross-zone
+        requests are honoured only when BOTH locations carry recorded
+        position geometry: the answer is the straight-line (beeline)
+        distance between the two positions, always flagged `estimated`
+        because it is a lower bound, not a routed path. When either
+        endpoint lacks geometry the request is refused (422, does not
+        guess) — the travel graph is per-zone, so no honest routed
+        cross-zone path exists yet.
 
-        Refuses (422, does not guess) when `from` and `to` are in different
-        zones — this phase's graph does not yet connect zones. This context
-        reports map TOPOLOGY only: travel TIME, congestion, and route choice
-        under load remain wes-work-planning's concern, never this one's.
+        This context reports map TOPOLOGY only: travel TIME, congestion,
+        and route choice under load remain wes-work-planning's concern,
+        never this one's.
       tags: [Layout]
       parameters:
         - name: from
@@ -1993,7 +2032,7 @@ components:
       description: >
         A behavioral classification scoped to a Site, bundling the Area and
         Zone code segments into one aggregate.
-      required: [zoneId, siteCode, areaCode, zoneCode, temperatureClass, hazmat, status]
+      required: [zoneId, siteCode, areaCode, zoneCode, temperatureClass, hazmat, status, bayPitchM, levelPitchM]
       properties:
         zoneId:
           type: string
@@ -2019,6 +2058,24 @@ components:
           example: false
         status:
           $ref: "#/components/schemas/Status"
+        bayPitchM:
+          type: number
+          format: double
+          description: >
+            The zone's effective bay pitch (ADR-0017): the explicit override
+            when one was set at registration, else the service default
+            (1.2 m). Used only by the travel graph's estimated-distance
+            fallback when aisle centreline geometry is missing.
+          example: 1.2
+        levelPitchM:
+          type: number
+          format: double
+          description: >
+            The zone's effective level pitch (ADR-0017): the explicit
+            override when one was set at registration, else the service
+            default (1.5 m). Used only by the travel graph's estimated
+            vertical spacing between adjacent levels.
+          example: 1.5
 
     RegisterZoneRequest:
       type: object
@@ -2044,6 +2101,30 @@ components:
             Whether this zone is rated for hazardous materials. JSON null is
             accepted and means the same as false (the default).
           example: false
+        bayPitchM:
+          type: number
+          format: double
+          nullable: true
+          exclusiveMinimum: true
+          minimum: 0
+          description: >
+            Optional bay-pitch override for the travel graph's
+            estimated-distance fallback (ADR-0017). Omitted (or null) keeps
+            the service default (1.2 m). Must be sent together with
+            `levelPitchM`: a one-sided pitch is rejected 422 `invalid-pitch`.
+          example: 1.5
+        levelPitchM:
+          type: number
+          format: double
+          nullable: true
+          exclusiveMinimum: true
+          minimum: 0
+          description: >
+            Optional level-pitch override for the travel graph's estimated
+            vertical spacing (ADR-0017). Omitted (or null) keeps the service
+            default (1.5 m). Must be sent together with `bayPitchM`: a
+            one-sided pitch is rejected 422 `invalid-pitch`.
+          example: 2.0
 
     Point3D:
       type: object

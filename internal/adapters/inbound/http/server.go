@@ -71,10 +71,11 @@ type Server struct {
 	SetLocationGeometry       *usecases.SetLocationGeometry
 	SetAisleGeometry          *usecases.SetAisleGeometry
 	RegisterFixedStructure    *usecases.RegisterFixedStructure
-	ListFixedStructures       *usecases.ListFixedStructures
-	RegisterCrossAisle        *usecases.RegisterCrossAisle
-	GetZoneTravelGraph        *usecases.GetZoneTravelGraph
-	EstimateTravelDistance    *usecases.EstimateTravelDistance
+	ListFixedStructures    *usecases.ListFixedStructures
+	RegisterCrossAisle     *usecases.RegisterCrossAisle
+	ListCrossAisles        *usecases.ListCrossAisles
+	GetZoneTravelGraph     *usecases.GetZoneTravelGraph
+	EstimateTravelDistance *usecases.EstimateTravelDistance
 
 	// IdempotencyPool, when non-nil, wires RequireIdempotencyKey (see
 	// idempotency.go) onto every true resource-creation POST below. A
@@ -182,6 +183,7 @@ func NewRouter(s *Server, logger *slog.Logger, opts ...RouterOption) http.Handle
 		r.Get("/{zoneId}/aisles/{aisleCode}", s.handleGetAisle)
 		r.Put("/{zoneId}/aisles/{aisleCode}/geometry", s.handleSetAisleGeometry)
 		idempotent(r).Post("/{zoneId}/cross-aisles", s.handleRegisterCrossAisle)
+		r.Get("/{zoneId}/cross-aisles", s.handleListCrossAisles)
 		r.Get("/{zoneId}/travel-graph", s.handleGetZoneTravelGraph)
 	})
 
@@ -295,7 +297,7 @@ func (s *Server) handleRegisterZone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	registered, err := s.RegisterZone.Execute(r.Context(), chi.URLParam(r, "siteCode"), req.AreaCode, req.ZoneCode, temperatureClass, req.Hazmat)
+	registered, err := s.RegisterZone.Execute(r.Context(), chi.URLParam(r, "siteCode"), req.AreaCode, req.ZoneCode, temperatureClass, req.Hazmat, req.BayPitchM, req.LevelPitchM)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -747,6 +749,22 @@ func (s *Server) handleRegisterCrossAisle(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, http.StatusCreated, toCrossAisleResponse(registered))
+}
+
+// handleListCrossAisles answers GET /zones/{zoneId}/cross-aisles
+// (ADR-0017): every declared connection in the zone, ordered from-aisle,
+// to-aisle, bay — the read half the POST already deserved.
+func (s *Server) handleListCrossAisles(w http.ResponseWriter, r *http.Request) {
+	connections, err := s.ListCrossAisles.Execute(r.Context(), chi.URLParam(r, "zoneId"))
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	out := make([]crossAisleResponse, 0, len(connections))
+	for _, c := range connections {
+		out = append(out, toCrossAisleResponse(c))
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // handleGetZoneTravelGraph returns one zone's travel graph as nodes +

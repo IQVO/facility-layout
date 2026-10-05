@@ -134,6 +134,9 @@ func newIdempotencyRouter(t *testing.T, pool *pgxpool.Pool) http.Handler {
 		RegisterCrossAisle: &usecases.RegisterCrossAisle{
 			Zones: zones, Aisles: aisles, CrossAisles: crossAisles, Events: publisher, Clock: clock, UnitOfWork: uow,
 		},
+		ListCrossAisles: &usecases.ListCrossAisles{
+			Zones: zones, CrossAisles: crossAisles,
+		},
 
 		IdempotencyPool: pool,
 	}

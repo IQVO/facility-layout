@@ -100,6 +100,12 @@ const sidebar: SidebarsConfig = {
           label: "Register a connection between two aisles",
           className: "api-method post",
         },
+        {
+          type: "doc",
+          id: "api-reference/rest/list-cross-aisles",
+          label: "List a zone's cross-aisles",
+          className: "api-method get",
+        },
       ],
     },
     {

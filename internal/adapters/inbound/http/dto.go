@@ -11,10 +11,15 @@ type registerSiteRequest struct {
 }
 
 type registerZoneRequest struct {
-	AreaCode         string `json:"areaCode"`
-	ZoneCode         string `json:"zoneCode"`
-	TemperatureClass string `json:"temperatureClass"`
-	Hazmat           bool   `json:"hazmat"`
+	AreaCode         string   `json:"areaCode"`
+	ZoneCode         string   `json:"zoneCode"`
+	TemperatureClass string   `json:"temperatureClass"`
+	Hazmat           bool     `json:"hazmat"`
+	// BayPitchM/LevelPitchM are optional ADR-0017 pitch overrides for the
+	// travel graph's estimated-distance fallback. nil keeps the defaults;
+	// supplying exactly one of the two is a 422 (invalid-pitch).
+	BayPitchM   *float64 `json:"bayPitchM,omitempty"`
+	LevelPitchM *float64 `json:"levelPitchM,omitempty"`
 }
 
 type registerAisleRequest struct {
@@ -160,6 +165,12 @@ type zoneResponse struct {
 	TemperatureClass string `json:"temperatureClass"`
 	Hazmat           bool   `json:"hazmat"`
 	Status           string `json:"status"`
+	// BayPitchM/LevelPitchM (ADR-0017) are the zone's effective pitch
+	// values — the explicit override when one is set, else the service
+	// default — so a consumer never has to know the defaults to reason
+	// about estimated distances.
+	BayPitchM   float64 `json:"bayPitchM"`
+	LevelPitchM float64 `json:"levelPitchM"`
 }
 
 type aisleResponse struct {

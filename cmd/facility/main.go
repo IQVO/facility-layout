@@ -244,6 +244,9 @@ func newServer(a adapterSet, clock ports.Clock, locationMetrics ports.LocationMe
 		RegisterCrossAisle: &usecases.RegisterCrossAisle{
 			Zones: a.zones, Aisles: a.aisles, CrossAisles: a.crossAisles, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork,
 		},
+		ListCrossAisles: &usecases.ListCrossAisles{
+			Zones: a.zones, CrossAisles: a.crossAisles,
+		},
 		GetZoneTravelGraph: &usecases.GetZoneTravelGraph{
 			Zones: a.zones, Aisles: a.aisles, Slots: a.slots, CrossAisles: a.crossAisles,
 		},

@@ -75,5 +75,5 @@ func buildZoneGraph(ctx context.Context, zones ports.ZoneRepo, aisles ports.Aisl
 		}
 	}
 
-	return travel.Build(aisleGeoms, crossRefs, travel.Pitch{BayPitchM: z.BayPitchM()}), nil
+	return travel.Build(aisleGeoms, crossRefs, travel.Pitch{BayPitchM: z.BayPitchM(), LevelPitchM: z.LevelPitchM()}), nil
 }

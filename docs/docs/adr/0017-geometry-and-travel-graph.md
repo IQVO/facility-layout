@@ -10,7 +10,10 @@ description: "The warehouse map has no coordinates, no fixed structures, and no 
 
 ## Status
 
-**Accepted.**
+**Accepted.** Cross-zone estimation semantics, the zone-pitch API surface,
+and the cross-aisle read model were amended in place by the 2026-10
+ADR-conformance pass; the to-scale SVG redraw is recorded below as an
+accepted deferral.
 
 ## Context
 
@@ -74,7 +77,13 @@ by default and treated as "not supplied"):
   the walkable path a resource travels along that aisle.
 - `Zone` gains optional `bayPitchM`/`levelPitchM` — the estimated spacing
   between bays/levels, used only as a fallback when a zone has no real
-  geometry recorded yet.
+  geometry recorded yet. Both are settable at zone registration
+  (`bayPitchM`/`levelPitchM` on `POST /sites/{siteCode}/zones`; supplying
+  exactly one of the two is a 422 — a half-specified pitch would silently
+  mix an override with a default) and always readable as the *effective*
+  value (explicit override, else the service default) on every zone
+  response, so a consumer never has to know the defaults to reason about
+  an estimated distance.
 - A new site-scoped aggregate, `FixedStructure` (`kind`: `Wall | Column |
   Office | Conveyor | Other`, a rectangular footprint, a label), mirrors
   SAP's "fix structures... walls, offices" as first-class objects on the
@@ -93,8 +102,13 @@ position. When it does not, the graph falls back to the zone's
 `bayPitchM`/`levelPitchM` and the response is explicitly flagged
 `estimated: true` — the service returns a labelled estimate rather than
 silently reporting a false-precision number computed from data that was
-never actually measured. A pair of locations in two different zones where
-neither has real geometry returns an explicit
+never actually measured. A pair of locations in two different zones is
+answered with the straight-line (beeline) distance between the two
+recorded positions — flagged `estimated: true` — when BOTH carry real
+position geometry, honouring the ADR's original "refuse where neither
+zone has geometry" rule at the level it was written: geometry, not zone
+identity, is what makes an estimate honest. When either endpoint has no
+recorded geometry the request still returns an explicit
 `ErrNoRouteBetweenZones` (422) rather than an invented cross-zone
 estimate; this is a conscious decision the user should revisit if
 day-one estimated whole-site distance turns out to matter more than the
@@ -145,7 +159,9 @@ does not need to change anything.
   was chosen over inventing a whole-site pitch fallback because a wrong
   number silently used in a WES travel-time calculation is worse than a
   clear 422; it is flagged here as the one design point in this ADR most
-  likely to be revisited if it blocks real usage.
+  likely to be revisited if it blocks real usage. (Where both endpoints
+  do carry position geometry, the beeline amendment above already
+  answers the query.)
 - Bulk import (ADR-0006) grows six more optional columns (`x`, `y`, `z`,
   `widthM`, `depthM`, `heightM`) plus `pickSequence`; existing import
   files are unaffected.
@@ -160,6 +176,15 @@ does not need to change anything.
   *time* (as opposed to distance), congestion, and route choice under load
   remain `wes-work-planning`'s concern; slotting optimization that would
   use this distance data remains out of this service entirely.
+- **Accepted deferral — to-scale SVG redraw.** The SVG floor plan renders
+  zones with real geometry to scale today, but redrawing the no-geometry
+  ordinal grid (and the per-role glyph layer ADR-0016 added) as a
+  true-to-scale mixed floor plan is deferred: it needs a layout engine
+  (collision, padding, label placement) that does not exist here, and no
+  consumer has asked for it yet. The current renderer remains the
+  contract: to-scale where geometry exists, ordinal grid otherwise,
+  per-role monogram distinction on top. Revisit when a consumer needs
+  printed floor plans.
 
 ## Related
 

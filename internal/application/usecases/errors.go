@@ -64,8 +64,9 @@ var (
 	// the same two aisles at the same bay already exists in the zone.
 	ErrDuplicateCrossAisle = errors.New("a cross-aisle between these aisles at this bay already exists")
 	// ErrNoRouteBetweenZones is returned when a distance is requested
-	// between two location codes in different zones — this phase does
-	// not connect zones on the travel graph, so a cross-zone request is
-	// refused rather than guessed at.
-	ErrNoRouteBetweenZones = errors.New("no route: the two locations are in different zones, which this context does not yet connect on the travel graph")
+	// between two location codes in different zones and the estimate the
+	// ADR allows — real position geometry on BOTH endpoints — is not
+	// available: the travel graph is per-zone and cross-aisles are
+	// zone-scoped, so without geometry there is nothing honest to report.
+	ErrNoRouteBetweenZones = errors.New("no route: the two locations are in different zones and at least one has no recorded position geometry")
 )
