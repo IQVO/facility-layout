@@ -70,6 +70,16 @@ curl -sf "${BASE_URL}/healthz" >/dev/null # fail loudly if it never came up
 #   TestRegisterCrossAisleHTTP "422s on an aisle mismatch"
 #   (internal/adapters/inbound/http/travel_test.go).
 #
+# registerZone (ADR-0017): bayPitchM/levelPitchM are both-or-neither — a
+#   one-sided pitch is a 422 invalid-pitch — and JSON null means "not
+#   sent". That ternary cross-field rule (absent/null/both) cannot be
+#   encoded in OpenAPI 3.0.3: required-based oneOf branches misclassify
+#   explicit nulls both ways. Tested by "422s on a one-sided pitch" and
+#   "the effective pitches survive a read-back"
+#   (internal/adapters/inbound/http/travel_read_test.go) and
+#   internal/domain/zone pitch tests. The Zone response contract is still
+#   exercised by listZones, getZone and getZoneGrid.
+#
 # setAisleGeometry: the centreline's start and end must differ (a zero-length
 #   centreline carries no travel-distance information) — cross-field
 #   equality, inexpressible in a schema. Tested by TestNewSegment
@@ -92,4 +102,5 @@ st run apis/openapi.yaml \
   --exclude-operation-id registerLocationSlot \
   --exclude-operation-id importFacilityLayout \
   --exclude-operation-id registerCrossAisle \
-  --exclude-operation-id setAisleGeometry
+  --exclude-operation-id setAisleGeometry \
+  --exclude-operation-id registerZone
