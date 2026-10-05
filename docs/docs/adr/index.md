@@ -76,6 +76,11 @@ updated. The history of what was believed and when is the point.
 | [0024](./0024-cloudevents-mandatory-envelope.md) | CloudEvents 1.0 as the mandatory event envelope | Accepted |
 | [0025](./0025-optimistic-concurrency-version-column.md) | Optimistic concurrency: version column on location_slots | Accepted |
 | [0026](./0026-housekeeping-sweeper.md) | Housekeeping sweeper for idempotency_keys and published outbox rows | Accepted |
+| [0027](./0027-console-write-screens.md) | Write-capable console screens (extends ADR-0011's read-only adoption) | Accepted |
+| [0028](./0028-boot-retry-and-startup-probe.md) | Boot retry for Istio sidecar resets and a matching startupProbe | Accepted |
+| [0029](./0029-gateway-api-httproute.md) | Gateway API HTTPRoute exposure template | Accepted |
+| [0030](./0030-dlq-bounded-retry-and-slog-otel-bridge.md) | DLQ topic-not-ready bounded retry and the slog-to-OTel bridge | Accepted |
+| [0031](./0031-kafka-writer-durability.md) | Kafka writer durability: RequireAll acks with a 10ms batch timeout | Accepted |
 
 ## The Kafka record that was deferred until the adapter existed
 

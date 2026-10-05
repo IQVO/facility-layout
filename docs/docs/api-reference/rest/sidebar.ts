@@ -276,6 +276,12 @@ const sidebar: SidebarsConfig = {
           label: "Liveness probe",
           className: "api-method get",
         },
+        {
+          type: "doc",
+          id: "api-reference/rest/get-readyz",
+          label: "Readiness probe",
+          className: "api-method get",
+        },
       ],
     },
   ],

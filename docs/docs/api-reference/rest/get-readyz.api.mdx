@@ -1,0 +1,59 @@
+---
+id: get-readyz
+title: "Readiness probe"
+description: "Returns 200 while the process is accepting traffic, 503 once graceful shutdown (ADR-0020) has begun: readiness is flipped to not-ready as the FIRST step of the shutdown sequence, before the listener closes, so a Kubernetes readinessProbe gets a window to stop routing new requests during the drain. Like /healthz it does not check downstream dependencies."
+sidebar_label: "Readiness probe"
+hide_title: true
+hide_table_of_contents: true
+api: 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
+sidebar_class_name: "get api-method"
+info_path: docs/api-reference/rest/facility-layout-api
+custom_edit_url: null
+---
+
+import MethodEndpoint from "@theme/ApiExplorer/MethodEndpoint";
+import ParamsDetails from "@theme/ParamsDetails";
+import RequestSchema from "@theme/RequestSchema";
+import StatusCodes from "@theme/StatusCodes";
+import OperationTabs from "@theme/OperationTabs";
+import TabItem from "@theme/TabItem";
+import Heading from "@theme/Heading";
+import Translate from "@docusaurus/Translate";
+
+<Heading
+  as={"h1"}
+  className={"openapi__heading"}
+  children={"Readiness probe"}
+>
+</Heading>
+
+<MethodEndpoint
+  method={"get"}
+  path={"/readyz"}
+  context={"endpoint"}
+>
+  
+</MethodEndpoint>
+
+
+
+Returns 200 while the process is accepting traffic, 503 once graceful shutdown (ADR-0020) has begun: readiness is flipped to not-ready as the FIRST step of the shutdown sequence, before the listener closes, so a Kubernetes readinessProbe gets a window to stop routing new requests during the drain. Like /healthz it does not check downstream dependencies.
+
+<ParamsDetails>
+  
+</ParamsDetails>
+
+<RequestSchema
+  {...require("./get-readyz.RequestSchema.json")}
+>
+  
+</RequestSchema>
+
+<StatusCodes
+  {...require("./get-readyz.StatusCodes.json")}
+>
+  
+</StatusCodes>
+
+
+      
