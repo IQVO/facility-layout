@@ -65,7 +65,7 @@ func run() error {
 
 	httpAddr := getenv("HTTP_ADDR", ":8080")
 
-	adapters, relay, closeKafka, closePool, err := buildAdapters(publisherConfigFromEnv(), logger)
+	adapters, relay, sweeper, closeKafka, closePool, err := buildAdapters(publisherConfigFromEnv(), logger)
 	if err != nil {
 		return err
 	}
@@ -122,6 +122,26 @@ func run() error {
 		}()
 	} else {
 		close(relayDone)
+	}
+
+	// The housekeeping sweeper (ADR-0026) bounds the two append-only
+	// tables — idempotency_keys past their TTL, PUBLISHED outbox_events
+	// past retention — in the same process, sharing the shutdown signal.
+	// Wired whenever Postgres is configured (both tables exist even when
+	// the kafka publisher is not selected); HOUSEKEEPING_INTERVAL=0
+	// disables it inside Run.
+	sweeperDone := make(chan struct{})
+	defer func() { <-sweeperDone }()
+	if sweeper != nil {
+		go func() {
+			defer close(sweeperDone)
+			logger.Info("housekeeping sweeper running")
+			if err := sweeper.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+				errCh <- err
+			}
+		}()
+	} else {
+		close(sweeperDone)
 	}
 
 	select {
@@ -295,6 +315,12 @@ type publisherConfig struct {
 	// relayInterval is how long the outbox relay sleeps between empty
 	// passes (OUTBOX_RELAY_INTERVAL).
 	relayInterval time.Duration
+	// housekeeping tunes the Sweeper (ADR-0026): HOUSEKEEPING_INTERVAL,
+	// IDEMPOTENCY_KEY_TTL, OUTBOX_RETENTION. Zero interval disables the
+	// sweeper; zero TTL/retention disables that half of it.
+	housekeepingInterval time.Duration
+	idempotencyKeyTTL    time.Duration
+	outboxRetention      time.Duration
 }
 
 // buildAdapters wires the Postgres adapters when DATABASE_URL is set, or
@@ -305,14 +331,15 @@ type publisherConfig struct {
 // whether the store is Postgres or in-memory. With BOTH Postgres and
 // kafka configured, use cases publish into the transactional outbox
 // (ADR-0018) and the returned relay drains it onto Kafka; the store and
-// the topic can no longer diverge. The mode matrix:
+// the topic can no longer diverge. The returned Sweeper (ADR-0026) is
+// non-nil whenever Postgres is configured. The mode matrix:
 //
 //	DATABASE_URL | EVENT_PUBLISHER | publisher wired                    | relay
 //	unset        | log (default)   | log                                | no
 //	unset        | kafka           | direct Kafka fan-out (no outbox)   | no
 //	set          | log (default)   | log                                | no
 //	set          | kafka           | outbox (fans out to both topics)   | yes
-func buildAdapters(cfg publisherConfig, logger *slog.Logger) (adapterSet, *postgres.OutboxRelay, func() error, func(), error) {
+func buildAdapters(cfg publisherConfig, logger *slog.Logger) (adapterSet, *postgres.OutboxRelay, *postgres.Sweeper, func() error, func(), error) {
 	noop := func() {}
 	noopKafkaClose := func() error { return nil }
 	kafkaEnabled := cfg.eventPublisher == "kafka"
@@ -323,7 +350,7 @@ func buildAdapters(cfg publisherConfig, logger *slog.Logger) (adapterSet, *postg
 
 	pool, err := dialPostgres(cfg, logger)
 	if err != nil {
-		return adapterSet{}, nil, noopKafkaClose, noop, err
+		return adapterSet{}, nil, nil, noopKafkaClose, noop, err
 	}
 
 	base := adapterSet{
@@ -337,19 +364,26 @@ func buildAdapters(cfg publisherConfig, logger *slog.Logger) (adapterSet, *postg
 		crossAisles:   postgres.NewCrossAisleRepo(pool),
 	}
 
+	sweeper := postgres.NewSweeper(pool,
+		postgres.WithSweepInterval(cfg.housekeepingInterval),
+		postgres.WithIdempotencyKeyTTL(cfg.idempotencyKeyTTL),
+		postgres.WithOutboxRetention(cfg.outboxRetention),
+		postgres.WithSweeperLogger(logger),
+	)
+
 	if !kafkaEnabled {
 		base.publisher = events.NewLogPublisher(logger)
 		base.idempotencyPool = pool
-		return base, nil, noopKafkaClose, pool.Close, nil
+		return base, nil, sweeper, noopKafkaClose, pool.Close, nil
 	}
 
-	return outboxAdapters(cfg, logger, base, pool)
+	return outboxAdapters(cfg, logger, base, pool, sweeper)
 }
 
 // memoryAdapters is the no-database branch of buildAdapters: in-memory
 // repositories with either the log publisher or, when EVENT_PUBLISHER=kafka,
 // direct Kafka fan-out (no outbox — there is no store to keep in step with).
-func memoryAdapters(cfg publisherConfig, logger *slog.Logger, kafkaEnabled bool) (adapterSet, *postgres.OutboxRelay, func() error, func(), error) {
+func memoryAdapters(cfg publisherConfig, logger *slog.Logger, kafkaEnabled bool) (adapterSet, *postgres.OutboxRelay, *postgres.Sweeper, func() error, func(), error) {
 	logger.Info("database url not configured; using in-memory adapters")
 	pub := ports.EventPublisher(events.NewLogPublisher(logger))
 	closeKafka := func() error { return nil }
@@ -374,14 +408,14 @@ func memoryAdapters(cfg publisherConfig, logger *slog.Logger, kafkaEnabled bool)
 		structures:    memory.NewFixedStructureRepo(),
 		crossAisles:   memory.NewCrossAisleRepo(),
 		publisher:     pub,
-	}, nil, closeKafka, func() {}, nil
+	}, nil, nil, closeKafka, func() {}, nil
 }
 
 // outboxAdapters is the DATABASE_URL + EVENT_PUBLISHER=kafka branch
 // (ADR-0018): every domain event is enqueued onto BOTH the integration
 // topic and the analytics topic in the same transaction as the aggregate
 // write, and the returned relay drains the outbox onto Kafka.
-func outboxAdapters(cfg publisherConfig, logger *slog.Logger, base adapterSet, pool *pgxpool.Pool) (adapterSet, *postgres.OutboxRelay, func() error, func(), error) {
+func outboxAdapters(cfg publisherConfig, logger *slog.Logger, base adapterSet, pool *pgxpool.Pool, sweeper *postgres.Sweeper) (adapterSet, *postgres.OutboxRelay, *postgres.Sweeper, func() error, func(), error) {
 	brokers := strings.Split(cfg.kafkaBrokers, ",")
 	kafkaPublisher := kafka.NewPublisher(brokers, uuidLike)
 	analyticsPublisher := kafka.NewAnalyticsPublisher(brokers, uuidLike)
@@ -403,7 +437,7 @@ func outboxAdapters(cfg publisherConfig, logger *slog.Logger, base adapterSet, p
 	logger.Info("event publisher configured", "publisher", "kafka", "mode", "outbox",
 		"integration_topic", kafka.Topic, "analytics_topic", kafka.AnalyticsTopic, "brokers", brokers)
 
-	return base, relay, closeKafka, pool.Close, nil
+	return base, relay, sweeper, closeKafka, pool.Close, nil
 }
 
 // dialPostgres runs the schema migrations, opens the pool, and verifies it
@@ -455,6 +489,12 @@ func publisherConfigFromEnv() publisherConfig {
 		eventPublisher:        getenv("EVENT_PUBLISHER", ""),
 		kafkaBrokers:          getenv("KAFKA_BROKERS", "localhost:9092"),
 		relayInterval:         durationEnv("OUTBOX_RELAY_INTERVAL", time.Second),
+		// Housekeeping (ADR-0026): a zero/negative value disables the
+		// respective knob (durationEnv falls back to the default on a
+		// malformed value; an explicit "0s" parses to 0 and disables).
+		housekeepingInterval: durationEnvRaw("HOUSEKEEPING_INTERVAL", postgres.DefaultSweepInterval),
+		idempotencyKeyTTL:    durationEnvRaw("IDEMPOTENCY_KEY_TTL", postgres.DefaultIdempotencyKeyTTL),
+		outboxRetention:      durationEnvRaw("OUTBOX_RETENTION", postgres.DefaultOutboxRetention),
 	}
 }
 
@@ -498,6 +538,21 @@ func durationEnv(key string, fallback time.Duration) time.Duration {
 	}
 	d, err := time.ParseDuration(v)
 	if err != nil || d <= 0 {
+		return fallback
+	}
+	return d
+}
+
+// durationEnvRaw is durationEnv for knobs where ZERO is meaningful (it
+// disables the feature): only absence or a malformed value falls back to
+// the default, an explicit "0s"/"0" is preserved as-is.
+func durationEnvRaw(key string, fallback time.Duration) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
 		return fallback
 	}
 	return d

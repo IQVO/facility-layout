@@ -74,6 +74,8 @@ updated. The history of what was believed and when is the point.
 | [0022](./0022-horizontal-autoscaling-and-pgxpool-tuning.md) | Per-workload HorizontalPodAutoscaler and pgxpool MaxConns/statement_timeout tuning | Accepted |
 | [0023](./0023-migrations-direct-postgres-connection.md) | Run golang-migrate against a direct Postgres connection, not PgBouncer | Accepted |
 | [0024](./0024-cloudevents-mandatory-envelope.md) | CloudEvents 1.0 as the mandatory event envelope | Accepted |
+| [0025](./0025-optimistic-concurrency-version-column.md) | Optimistic concurrency: version column on location_slots | Accepted |
+| [0026](./0026-housekeeping-sweeper.md) | Housekeeping sweeper for idempotency_keys and published outbox rows | Accepted |
 
 ## The Kafka record that was deferred until the adapter existed
 

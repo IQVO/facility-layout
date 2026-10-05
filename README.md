@@ -216,6 +216,9 @@ migrate -source file://migrations -database "$DATABASE_URL" up
 | `EVENT_PUBLISHER` | *(unset)* | `kafka` publishes the full Published Language to `warehouse.facility.events` (and the analytics topic); with `DATABASE_URL` also set, publishing goes through the transactional outbox (ADR-0018) and a background relay drains it — unset ⇒ log publisher |
 | `KAFKA_BROKERS` | `localhost:9092` | Comma-separated broker list, used when `EVENT_PUBLISHER=kafka` |
 | `OUTBOX_RELAY_INTERVAL` | `1s` | How long the outbox relay sleeps between empty passes (ADR-0018; only relevant with `DATABASE_URL` + `EVENT_PUBLISHER=kafka`) |
+| `HOUSEKEEPING_INTERVAL` | `1h` | Housekeeping sweeper interval (ADR-0026; `0` disables; only relevant with `DATABASE_URL`) |
+| `IDEMPOTENCY_KEY_TTL` | `24h` | How long an idempotency_keys row is kept before the sweeper deletes it (ADR-0026; `0` disables) |
+| `OUTBOX_RETENTION` | `168h` | How long a PUBLISHED outbox_events row is kept before the sweeper deletes it (ADR-0026; `0` disables) |
 | `MIGRATIONS_PATH` | `migrations` | Directory of golang-migrate SQL files |
 | `LOG_LEVEL` | `info` | `debug`/`info`/`warn`/`error`, case-insensitive |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `localhost:4317` | OTel Collector, `host:port` or a full URL |
