@@ -2,10 +2,10 @@
 // consumer, analytics_consumer.go consumes the analytics topic and projects the
 // facility-layout "Layout Catalog Growth & Change" read model.
 //
-// Consistent with the ADR-0009 integration publisher and the ADR-0010 analytics
-// publisher, the analytics pipeline is trace-free: facility-layout has no
-// observability/OTel package, so this consumer opens no spans and reads no trace
-// headers.
+// The analytics stream carries the W3C trace context in its message
+// headers (injected by the outbound adapters; see
+// outbound/kafka/trace_headers.go), so a publish→consume hop is one
+// trace.
 package kafka
 
 import (
