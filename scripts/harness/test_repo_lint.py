@@ -15,7 +15,23 @@ import unittest
 LINT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "repo_lint.py")
 
 
-def make(files):
+DEP_GOMOD = """  - package-ecosystem: "gomod"
+    directory: "/"
+"""
+DEP_ACTIONS = """  - package-ecosystem: "github-actions"
+    directory: "/"
+"""
+
+
+def make(files, auto_dep=True):
+    """auto_dep: add a valid dependabot.yml when the fixture has workflows/go.mod and none of its own, so tests of
+    the OTHER rules are not tripped by R6 (the R6 tests pass auto_dep=False)."""
+    files = dict(files)
+    has_dep = any(k.startswith(".github/dependabot") for k in files)
+    wf = any(k.startswith(".github/workflows/") and k.endswith((".yml", ".yaml")) for k in files)
+    gomod = "go.mod" in files
+    if auto_dep and not has_dep and (wf or gomod):
+        files[".github/dependabot.yml"] = "version: 2\nupdates:\n" + (DEP_GOMOD if gomod else "") + (DEP_ACTIONS if wf else "")
     root = tempfile.mkdtemp(prefix="rl-")
     for rel, body in files.items():
         p = os.path.join(root, rel)
@@ -232,6 +248,48 @@ class RepoLint(unittest.TestCase):
     def test_r5_skipped_in_the_template_repo(self):
         files = {".github/workflows/ci.yml.template": "x: {{SERVICE}}\n", "Makefile": "PKG := {{RICHEST_AGGREGATE}}\n"}
         self.assertEqual(lint(make(files))[0], 0)
+
+    # ---- R6 ----
+    def test_r6_incident_no_dependabot_config_at_all(self):
+        files = {"go.mod": "module x\n", ".github/workflows/ci.yml": "name: CI\non: push\njobs:\n  a:\n    runs-on: x\n    steps:\n      - run: true\n"}
+        code, out = lint(make(files, auto_dep=False))
+        self.assertEqual(code, 1, out)
+        self.assertIn("[R6]", out)
+        self.assertIn("gomod", out)
+        self.assertIn("github-actions", out)
+
+    def test_r6_partial_coverage_reports_only_the_missing_ecosystem(self):
+        dep = """
+            version: 2
+            updates:
+              - package-ecosystem: "gomod"
+                directory: "/"
+                schedule:
+                  interval: "weekly"
+        """
+        files = {"go.mod": "module x\n", ".github/dependabot.yml": dep,
+                 ".github/workflows/ci.yml": "name: CI\non: push\njobs:\n  a:\n    runs-on: x\n    steps:\n      - run: true\n"}
+        code, out = lint(make(files, auto_dep=False))
+        self.assertEqual(code, 1)
+        self.assertEqual(out.count("[R6]"), 1, out)
+        self.assertIn("github-actions", out)
+
+    def test_r6_full_coverage_and_comment_between_keys(self):
+        dep = """
+            version: 2
+            updates:
+              - package-ecosystem: "gomod"
+                directory: "/"
+              - package-ecosystem: "github-actions"
+                # actions are pinned by SHA
+                directory: "/"
+        """
+        files = {"go.mod": "module x\n", ".github/dependabot.yml": dep,
+                 ".github/workflows/ci.yml": "name: CI\non: push\njobs:\n  a:\n    runs-on: x\n    steps:\n      - run: true\n"}
+        self.assertEqual(lint(make(files))[0], 0, lint(make(files))[1])
+
+    def test_r6_not_required_without_go_or_workflows(self):
+        self.assertEqual(lint(make({"README.md": "x\n"}))[0], 0)
 
     def test_empty_repo_is_clean(self):
         self.assertEqual(lint(make({"README.md": "x\n"}))[0], 0)
