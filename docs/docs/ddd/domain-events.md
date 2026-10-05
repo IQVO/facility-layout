@@ -273,7 +273,7 @@ A walkable connection between two aisles of the same zone was declared.
 |---|---|
 | `outbound/kafka` — `Publisher` | `EVENT_PUBLISHER=kafka`. Encodes each event as a CloudEvents 1.0 event (structured mode, `source=/warehouse/facility-layout`, `type` = the event type, `subject` = aggregate id, `dataschema=urn:warehouse:facility-layout:events:<EventName>:v1`, `data` = the event's own JSON; [ADR-0024](../adr/0024-cloudevents-mandatory-envelope.md)) and writes it to `warehouse.facility.events`, keyed by the raising aggregate's identity. |
 | `outbound/kafka` — `AnalyticsPublisher` | `EVENT_PUBLISHER=kafka`, alongside the one above (the composition root fans out to both). Writes the same occurrence (same `type` and `id`) as a CloudEvent with `dataschema=urn:warehouse:facility-layout:analytics:<EventName>:v1` to `warehouse.facility.analytics`. |
-| `outbound/postgres` — event publisher | Default with `DATABASE_URL` set. Appends to the `events` table (`event_name`, `event_type`, `occurred_at`, `payload JSONB`). |
+| `outbound/postgres` — outbox publisher | Default with `DATABASE_URL` set. Writes each event to the `outbox_events` table inside the same transaction as the state change; the relay ([ADR-0018](../adr/0018-transactional-outbox.md)) later fans the encoded messages out to Kafka when `EVENT_PUBLISHER=kafka`. |
 | `outbound/events` — log publisher | Default in-memory mode. Writes each event to the service log. |
 | `outbound/events` — buffered publisher | Tests. Collects events in memory for assertion. |
 

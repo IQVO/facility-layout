@@ -49,11 +49,15 @@ The forces:
   `com.warehouse.wms.facility-layout.<entity>.<Event>`). The envelope can carry
   the event's own JSON verbatim as `data`; no per-event marshalling switch is
   needed.
-- **This service has no OTel wiring.** The other services inject W3C trace
-  context into Kafka headers. facility-layout has no observability package yet,
-  so trace propagation across the message boundary is deliberately **out of
-  scope** here and left as a follow-up (it is additive and does not change the
-  contract).
+- **~~This service has no OTel wiring.~~** *(Resolved 2026-10.)* The other
+  services inject W3C trace context into Kafka headers; facility-layout
+  originally had no observability package, so trace propagation across
+  the message boundary was deliberately out of scope and left as a
+  follow-up. That follow-up is now closed: the outbound Kafka adapters
+  (`Publisher`, `AnalyticsPublisher`, `RelaySink`) inject the W3C trace
+  context of the publishing context into every message's headers via the
+  telemetry package's process-wide propagator, so a publish→consume hop
+  is one trace. It is additive and does not change the contract.
 
 ## Decision
 
