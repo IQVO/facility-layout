@@ -58,12 +58,7 @@ func run() error {
 	logger := telemetry.NewLogger(os.Stdout, getenv("LOG_LEVEL", "info"), serviceName)
 	slog.SetDefault(logger)
 
-	shutdownTelemetry, err := telemetry.Setup(
-		context.Background(),
-		serviceName,
-		getenv("SERVICE_VERSION", "dev"),
-		getenv("OTEL_EXPORTER_OTLP_ENDPOINT", telemetry.DefaultOTLPEndpoint),
-	)
+	shutdownTelemetry, err := setupTelemetry(serviceName)
 	if err != nil {
 		return err
 	}
@@ -133,19 +128,7 @@ func run() error {
 
 	consumerCtx, cancelConsumer := context.WithCancel(context.Background())
 	defer cancelConsumer()
-	// consumerDone closes once the consumer's Run goroutine has actually
-	// returned -- including having committed (or dead-lettered, ADR-0020
-	// §DLQ) the offset for whatever message it was mid-handling when
-	// cancelConsumer is called -- so graceful shutdown can wait for a REAL
-	// stop, not just fire-and-forget the cancel.
-	consumerDone := make(chan struct{})
-	go func() {
-		defer close(consumerDone)
-		logger.Info("analytics consumer starting", "topic", outboundkafka.AnalyticsTopic, "group", inboundkafka.AnalyticsConsumerGroup, "brokers", kafkaBrokers)
-		if err := consumer.Run(consumerCtx); err != nil {
-			logger.Error("analytics consumer stopped", "error", err)
-		}
-	}()
+	consumerDone := startConsumer(consumerCtx, logger, consumer, kafkaBrokers)
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
@@ -181,6 +164,36 @@ func run() error {
 	}
 
 	return shutdownErr
+}
+
+// startConsumer runs the analytics consumer's Run loop on ctx and
+// returns a channel closed once Run has actually returned -- including
+// having committed (or dead-lettered, ADR-0020 §DLQ) the offset for
+// whatever message it was mid-handling when ctx is cancelled -- so
+// graceful shutdown can wait for a REAL stop, not just fire-and-forget
+// the cancel.
+func startConsumer(ctx context.Context, logger *slog.Logger, consumer *inboundkafka.AnalyticsConsumer, brokers []string) chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		logger.Info("analytics consumer starting", "topic", outboundkafka.AnalyticsTopic, "group", inboundkafka.AnalyticsConsumerGroup, "brokers", brokers)
+		if err := consumer.Run(ctx); err != nil {
+			logger.Error("analytics consumer stopped", "error", err)
+		}
+	}()
+	return done
+}
+
+// setupTelemetry configures OTel for this process and returns the
+// shutdown func; split out of run() purely to keep run()'s shutdown
+// sequence readable as one block.
+func setupTelemetry(serviceName string) (func(context.Context) error, error) {
+	return telemetry.Setup(
+		context.Background(),
+		serviceName,
+		getenv("SERVICE_VERSION", "dev"),
+		getenv("OTEL_EXPORTER_OTLP_ENDPOINT", telemetry.DefaultOTLPEndpoint),
+	)
 }
 
 // newAdminMux builds the projector's admin endpoints behind the same

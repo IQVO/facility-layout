@@ -130,19 +130,8 @@ func run() error {
 	// Wired whenever Postgres is configured (both tables exist even when
 	// the kafka publisher is not selected); HOUSEKEEPING_INTERVAL=0
 	// disables it inside Run.
-	sweeperDone := make(chan struct{})
+	sweeperDone := startBackground(ctx, logger, sweeper, "housekeeping sweeper running", errCh)
 	defer func() { <-sweeperDone }()
-	if sweeper != nil {
-		go func() {
-			defer close(sweeperDone)
-			logger.Info("housekeeping sweeper running")
-			if err := sweeper.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
-				errCh <- err
-			}
-		}()
-	} else {
-		close(sweeperDone)
-	}
 
 	select {
 	case err := <-errCh:
@@ -151,6 +140,29 @@ func run() error {
 	}
 
 	return gracefulShutdown(logger, httpServer, readiness, stopRelay, relayDone)
+}
+
+// startBackground runs a background worker (the housekeeping sweeper;
+// anything with the same Run(ctx) error shape) on ctx, reporting a
+// non-cancel error to errCh. It returns a channel closed when the worker
+// has fully stopped, so the caller can wait for it during shutdown;
+// a nil worker closes the channel immediately.
+func startBackground(ctx context.Context, logger *slog.Logger, worker interface {
+	Run(context.Context) error
+}, startMsg string, errCh chan<- error) chan struct{} {
+	done := make(chan struct{})
+	if worker == nil {
+		close(done)
+		return done
+	}
+	go func() {
+		defer close(done)
+		logger.Info(startMsg)
+		if err := worker.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			errCh <- err
+		}
+	}()
+	return done
 }
 
 // gracefulShutdown drains the process (ADR-0020, mirroring
