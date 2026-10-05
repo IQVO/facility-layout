@@ -151,6 +151,12 @@ func startBackground(ctx context.Context, logger *slog.Logger, worker interface 
 	Run(context.Context) error
 }, startMsg string, errCh chan<- error) chan struct{} {
 	done := make(chan struct{})
+	// A typed nil (*postgres.Sweeper)(nil) boxed into this interface
+	// parameter is != nil, so the guard below alone would let it through
+	// and panic in Run. Normalize it before checking.
+	if sw, ok := worker.(*postgres.Sweeper); ok && sw == nil {
+		worker = nil
+	}
 	if worker == nil {
 		close(done)
 		return done
