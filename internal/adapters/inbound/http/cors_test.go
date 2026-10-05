@@ -44,4 +44,3 @@ func TestCORSPreflightAllowsIdempotencyKey(t *testing.T) {
 		}
 	}
 }
-

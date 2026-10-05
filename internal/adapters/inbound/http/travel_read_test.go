@@ -149,8 +149,8 @@ func TestEstimateTravelDistanceCrossZoneHTTP(t *testing.T) {
 	setGeometry := func(ts *testServer, code string, x, y, z float64) {
 		ts.t.Helper()
 		ts.do(http.MethodPut, "/locations/"+code+"/geometry", map[string]any{
-			"position":    map[string]any{"xM": x, "yM": y, "zM": z},
-			"dimensions":  map[string]any{"widthM": 1, "depthM": 1, "heightM": 1},
+			"position":     map[string]any{"xM": x, "yM": y, "zM": z},
+			"dimensions":   map[string]any{"widthM": 1, "depthM": 1, "heightM": 1},
 			"pickSequence": nil,
 		}).assertStatus(ts.t, http.StatusOK)
 	}

@@ -11,10 +11,10 @@ type registerSiteRequest struct {
 }
 
 type registerZoneRequest struct {
-	AreaCode         string   `json:"areaCode"`
-	ZoneCode         string   `json:"zoneCode"`
-	TemperatureClass string   `json:"temperatureClass"`
-	Hazmat           bool     `json:"hazmat"`
+	AreaCode         string `json:"areaCode"`
+	ZoneCode         string `json:"zoneCode"`
+	TemperatureClass string `json:"temperatureClass"`
+	Hazmat           bool   `json:"hazmat"`
 	// BayPitchM/LevelPitchM are optional ADR-0017 pitch overrides for the
 	// travel graph's estimated-distance fallback. nil keeps the defaults;
 	// supplying exactly one of the two is a 422 (invalid-pitch).

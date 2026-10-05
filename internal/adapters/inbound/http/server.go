@@ -71,11 +71,11 @@ type Server struct {
 	SetLocationGeometry       *usecases.SetLocationGeometry
 	SetAisleGeometry          *usecases.SetAisleGeometry
 	RegisterFixedStructure    *usecases.RegisterFixedStructure
-	ListFixedStructures    *usecases.ListFixedStructures
-	RegisterCrossAisle     *usecases.RegisterCrossAisle
-	ListCrossAisles        *usecases.ListCrossAisles
-	GetZoneTravelGraph     *usecases.GetZoneTravelGraph
-	EstimateTravelDistance *usecases.EstimateTravelDistance
+	ListFixedStructures       *usecases.ListFixedStructures
+	RegisterCrossAisle        *usecases.RegisterCrossAisle
+	ListCrossAisles           *usecases.ListCrossAisles
+	GetZoneTravelGraph        *usecases.GetZoneTravelGraph
+	EstimateTravelDistance    *usecases.EstimateTravelDistance
 
 	// IdempotencyPool, when non-nil, wires RequireIdempotencyKey (see
 	// idempotency.go) onto every true resource-creation POST below. A

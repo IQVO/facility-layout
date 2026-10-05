@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	"github.com/segmentio/kafka-go"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
 // TestInjectTraceContext pins ADR-0009's closed follow-up: outgoing Kafka
