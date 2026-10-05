@@ -10,10 +10,14 @@ description: "Expose this bounded context to the AI ecosystem via an MCP server 
 
 ## Status
 
-**Accepted.** The reference implementation and pilot for this pattern across
+**Accepted — auth section superseded by ADR-0015.** The reference
+implementation and pilot for this pattern across
 the estate is `fulfillment-execution` (its ADR-0008); this record is
 `facility-layout` adopting that same decision, adapted to a read-only Open Host
-Service.
+Service. The static-bearer-key authentication this ADR originally specified
+for the MCP endpoint was removed fleet-wide by
+[ADR-0015](0015-remove-rest-mcp-auth.md); the endpoint is unauthenticated
+pending a fresh auth-model decision.
 
 **Addendum (2026-09-07) — deployable.** Until this date `cmd/mcp` existed only
 as code: the Dockerfile did not build it and the Helm chart had no MCP
