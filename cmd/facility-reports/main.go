@@ -5,8 +5,9 @@
 // writer (cmd/facility-projector) is a separate deployable and owns the schema
 // (ADR-0010).
 //
-// Consistent with the rest of the analytics pipeline, this process is
-// trace-free: facility-layout has no observability/OTel package for it.
+// The process wires the same OTel telemetry as cmd/facility (ADR-0012): the
+// chart injects OTEL_* env into this pod, so its HTTP router is traced and
+// metered via otelchi/otelchimetric under its own service name.
 package main
 
 import (
@@ -16,17 +17,21 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
 	inboundhttp "github.com/claudioed/facility-layout/internal/adapters/inbound/http"
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/analyticsstore"
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/bootretry"
+	"github.com/claudioed/facility-layout/internal/adapters/outbound/telemetry"
 )
 
 // errMissingAnalyticsURL is returned when ANALYTICS_DATABASE_URL is unset.
 var errMissingAnalyticsURL = errors.New("ANALYTICS_DATABASE_URL is required")
+
+// defaultServiceName is the OTel service name reported when
+// OTEL_SERVICE_NAME is unset (the chart sets it to "facility-reports").
+const defaultServiceName = "facility-reports"
 
 func main() {
 	if err := run(); err != nil {
@@ -36,8 +41,27 @@ func main() {
 }
 
 func run() error {
-	logger := newLogger(getenv("LOG_LEVEL", "info"))
+	serviceName := getenv("OTEL_SERVICE_NAME", defaultServiceName)
+
+	logger := telemetry.NewLogger(os.Stdout, getenv("LOG_LEVEL", "info"), serviceName)
 	slog.SetDefault(logger)
+
+	shutdownTelemetry, err := telemetry.Setup(
+		context.Background(),
+		serviceName,
+		getenv("SERVICE_VERSION", "dev"),
+		getenv("OTEL_EXPORTER_OTLP_ENDPOINT", telemetry.DefaultOTLPEndpoint),
+	)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdownTelemetry(shutdownCtx); err != nil {
+			logger.Warn("telemetry shutdown reported an error", "error", err)
+		}
+	}()
 
 	rootCtx := context.Background()
 
@@ -71,7 +95,7 @@ func run() error {
 	// before the HTTP server itself stops accepting connections.
 	readiness := &inboundhttp.Readiness{}
 	handlers.Readiness = readiness
-	router := inboundhttp.NewReportsRouter(handlers, logger)
+	router := inboundhttp.NewReportsRouter(handlers, logger, inboundhttp.WithServiceName(serviceName))
 
 	srv := &http.Server{Addr: httpAddr, Handler: router, ReadHeaderTimeout: 5 * time.Second}
 
@@ -97,22 +121,6 @@ func run() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return srv.Shutdown(ctx)
-}
-
-// newLogger builds a JSON slog logger at the given level.
-func newLogger(level string) *slog.Logger {
-	var lvl slog.Level
-	switch strings.ToLower(level) {
-	case "debug":
-		lvl = slog.LevelDebug
-	case "warn", "warning":
-		lvl = slog.LevelWarn
-	case "error":
-		lvl = slog.LevelError
-	default:
-		lvl = slog.LevelInfo
-	}
-	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: lvl}))
 }
 
 func getenv(key, fallback string) string {

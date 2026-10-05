@@ -6,8 +6,9 @@
 // database and serves no reports; the reader (cmd/facility-reports) is a
 // separate deployable (ADR-0010).
 //
-// Consistent with the rest of the analytics pipeline, this process is
-// trace-free: facility-layout has no observability/OTel package for it.
+// The process wires the same OTel telemetry as cmd/facility (ADR-0012): the
+// chart injects OTEL_* env into this pod, and its admin server is traced and
+// metered via otelchi/otelchimetric under its own service name.
 package main
 
 import (
@@ -22,17 +23,27 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/riandyrn/otelchi"
+	otelchimetric "github.com/riandyrn/otelchi/metric"
+
 	inboundkafka "github.com/claudioed/facility-layout/internal/adapters/inbound/kafka"
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/analyticsstore"
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/bootretry"
 	outboundkafka "github.com/claudioed/facility-layout/internal/adapters/outbound/kafka"
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/postgres"
+	"github.com/claudioed/facility-layout/internal/adapters/outbound/telemetry"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // errMissingAnalyticsURL is returned when ANALYTICS_DATABASE_URL is unset: the
 // projector is the writer of the analytical database and cannot start without it.
 var errMissingAnalyticsURL = errors.New("ANALYTICS_DATABASE_URL is required")
+
+// defaultServiceName is the OTel service name reported when
+// OTEL_SERVICE_NAME is unset (the chart sets it to "facility-projector").
+const defaultServiceName = "facility-projector"
 
 func main() {
 	if err := run(); err != nil {
@@ -42,8 +53,27 @@ func main() {
 }
 
 func run() error {
-	logger := newLogger(getenv("LOG_LEVEL", "info"))
+	serviceName := getenv("OTEL_SERVICE_NAME", defaultServiceName)
+
+	logger := telemetry.NewLogger(os.Stdout, getenv("LOG_LEVEL", "info"), serviceName)
 	slog.SetDefault(logger)
+
+	shutdownTelemetry, err := telemetry.Setup(
+		context.Background(),
+		serviceName,
+		getenv("SERVICE_VERSION", "dev"),
+		getenv("OTEL_EXPORTER_OTLP_ENDPOINT", telemetry.DefaultOTLPEndpoint),
+	)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdownTelemetry(shutdownCtx); err != nil {
+			logger.Warn("telemetry shutdown reported an error", "error", err)
+		}
+	}()
 
 	rootCtx := context.Background()
 
@@ -92,7 +122,7 @@ func run() error {
 	// shutdown.
 	var notReady atomic.Bool
 
-	srv := &http.Server{Addr: adminAddr, Handler: newAdminMux(&notReady), ReadHeaderTimeout: 5 * time.Second}
+	srv := &http.Server{Addr: adminAddr, Handler: newAdminMux(&notReady, serviceName), ReadHeaderTimeout: 5 * time.Second}
 
 	go func() {
 		logger.Info("projector admin server listening", "addr", adminAddr)
@@ -153,16 +183,25 @@ func run() error {
 	return shutdownErr
 }
 
-// newAdminMux builds the projector's admin endpoints: /healthz is a pure
-// liveness signal, never flipped by shutdown; /readyz mirrors notReady so a
-// Kubernetes readinessProbe observes the shutdown flip (ADR-0020).
-func newAdminMux(notReady *atomic.Bool) *http.ServeMux {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+// newAdminMux builds the projector's admin endpoints behind the same
+// otelchi tracing and otelchimetric HTTP metrics the main router carries
+// (ADR-0012 — the chart injects OTEL_* env into this pod): /healthz is a
+// pure liveness signal, never flipped by shutdown; /readyz mirrors notReady
+// so a Kubernetes readinessProbe observes the shutdown flip (ADR-0020).
+func newAdminMux(notReady *atomic.Bool, serviceName string) http.Handler {
+	r := chi.NewRouter()
+	r.Use(middleware.RequestID)
+	r.Use(otelchi.Middleware(serviceName, otelchi.WithChiRoutes(r)))
+	metricCfg := otelchimetric.NewBaseConfig(serviceName)
+	r.Use(otelchimetric.NewServerRequestDuration(metricCfg))
+	r.Use(otelchimetric.NewServerActiveRequests(metricCfg))
+	r.Use(middleware.Recoverer)
+
+	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
+	r.Get("/readyz", func(w http.ResponseWriter, _ *http.Request) {
 		if notReady.Load() {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write([]byte(`{"status":"not_ready"}`))
@@ -171,7 +210,7 @@ func newAdminMux(notReady *atomic.Bool) *http.ServeMux {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ready"}`))
 	})
-	return mux
+	return r
 }
 
 // openAnalyticsPool runs the projector-owned analytical schema migrations,
@@ -198,23 +237,6 @@ func openAnalyticsPool(ctx context.Context, logger *slog.Logger, analyticsURL, m
 		return nil, err
 	}
 	return pool, nil
-}
-
-// newLogger builds a JSON slog logger at the given level. The analytics
-// processes log structured JSON but do not wire OTel, so this is a plain handler.
-func newLogger(level string) *slog.Logger {
-	var lvl slog.Level
-	switch strings.ToLower(level) {
-	case "debug":
-		lvl = slog.LevelDebug
-	case "warn", "warning":
-		lvl = slog.LevelWarn
-	case "error":
-		lvl = slog.LevelError
-	default:
-		lvl = slog.LevelInfo
-	}
-	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: lvl}))
 }
 
 func getenv(key, fallback string) string {
