@@ -125,19 +125,19 @@ func goldenCases(t *testing.T) []goldenCase {
 			p + "locationslot.LocationSlotDecommissioned", code.String(), code.String(),
 			`{` + base("locationslot", "LocationSlotDecommissioned") + `,"locationCode":"WH1-STOR-AMB-A07-03-02-B"}`},
 		{"FacilityLayoutImported", shared.NewFacilityLayoutImported(at, 10, 9, 1),
-			p + "locationslot.FacilityLayoutImported", outboundkafka.ImportSubject, p + "locationslot.FacilityLayoutImported",
+			p + "locationslot.FacilityLayoutImported", outboundkafka.ImportSubject, goldenID,
 			`{` + base("locationslot", "FacilityLayoutImported") + `,"rowsSubmitted":10,"slotsImported":9,"rowsRejected":1}`},
 		{"LocationGeometryUpdated", shared.NewLocationGeometryUpdated(at, code, mustPoint(t, 1, 2, 3), mustDims(t, 1.2, 1, 1.5), &seq),
-			p + "locationslot.LocationGeometryUpdated", code.String(), p + "locationslot.LocationGeometryUpdated",
+			p + "locationslot.LocationGeometryUpdated", code.String(), code.String(),
 			`{` + base("locationslot", "LocationGeometryUpdated") + `,"locationCode":"WH1-STOR-AMB-A07-03-02-B","xM":1,"yM":2,"zM":3,"widthM":1.2,"depthM":1,"heightM":1.5,"pickSequence":4}`},
 		{"AisleGeometryUpdated", shared.NewAisleGeometryUpdated(at, "WH1-STOR-AMB-A07", segment),
-			p + "aisle.AisleGeometryUpdated", "WH1-STOR-AMB-A07", p + "aisle.AisleGeometryUpdated",
+			p + "aisle.AisleGeometryUpdated", "WH1-STOR-AMB-A07", "WH1-STOR-AMB-A07",
 			`{` + base("aisle", "AisleGeometryUpdated") + `,"aisleId":"WH1-STOR-AMB-A07","startXM":0,"startYM":0,"startZM":0,"endXM":0,"endYM":10,"endZM":0,"lengthM":10}`},
 		{"FixedStructureRegistered", shared.NewFixedStructureRegistered(at, "s-1", "WH1", "Column", rect, "C1"),
-			p + "structure.FixedStructureRegistered", "s-1", p + "structure.FixedStructureRegistered",
+			p + "structure.FixedStructureRegistered", "s-1", "s-1",
 			`{` + base("structure", "FixedStructureRegistered") + `,"structureId":"s-1","siteCode":"WH1","kind":"Column","xM":1,"yM":2,"zM":0,"widthM":3,"depthM":4,"heightM":5,"label":"C1"}`},
 		{"CrossAisleRegistered", shared.NewCrossAisleRegistered(at, "WH1-STOR-AMB", "A07", "A08", "03"),
-			p + "crossaisle.CrossAisleRegistered", "WH1-STOR-AMB/A07-A08@03", p + "crossaisle.CrossAisleRegistered",
+			p + "crossaisle.CrossAisleRegistered", "WH1-STOR-AMB/A07-A08@03", "WH1-STOR-AMB/A07-A08@03",
 			`{` + base("crossaisle", "CrossAisleRegistered") + `,"zoneId":"WH1-STOR-AMB","fromAisle":"A07","toAisle":"A08","atBay":"03"}`},
 	}
 }
@@ -201,6 +201,51 @@ func TestPublisher_GoldenCloudEventPerType(t *testing.T) {
 			}
 			assertGolden(t, w.msgs[0], tc, "events")
 		})
+	}
+}
+
+// TestPublisher_KeysAreAggregateIdentityNotEventType guards the partition-key
+// contract: no event is keyed by its event-type string (which would pin every
+// occurrence of that type to one partition), events about one aggregate share
+// its key with that aggregate's lifecycle events, and the batch-outcome
+// FacilityLayoutImported (no aggregate) is keyed by its CloudEvents id so
+// batches spread over partitions while an outbox redelivery stays put.
+func TestPublisher_KeysAreAggregateIdentityNotEventType(t *testing.T) {
+	encode := func(t *testing.T, ev shared.DomainEvent, id string) string {
+		t.Helper()
+		enc, err := outboundkafka.NewPublisher(nil, func() string { return id }).Encode(context.Background(), ev, id)
+		if err != nil {
+			t.Fatalf("Encode %s: %v", ev.EventName(), err)
+		}
+		return string(enc.Key)
+	}
+	for _, tc := range goldenCases(t) {
+		t.Run(tc.name, func(t *testing.T) {
+			key := encode(t, tc.event, goldenID)
+			if key == tc.event.EventType() || key == "" {
+				t.Fatalf("key = %q: must be a non-empty aggregate identity, not the event type", key)
+			}
+		})
+	}
+
+	at := time.Date(2026, 2, 3, 4, 5, 6, 0, time.UTC)
+	code := mustLocationCode(t)
+	capacity, err := shared.NewCapacity(500, 1)
+	if err != nil {
+		t.Fatalf("NewCapacity: %v", err)
+	}
+	slotKey := encode(t, shared.NewLocationSlotRegistered(at, code, "PalletRack", "Storage", "", nil, capacity), "a")
+	geoKey := encode(t, shared.NewLocationGeometryUpdated(at, code, mustPoint(t, 1, 2, 3), mustDims(t, 1, 1, 1), nil), "b")
+	if slotKey != geoKey {
+		t.Errorf("LocationGeometryUpdated key %q != LocationSlotRegistered key %q for the same location", geoKey, slotKey)
+	}
+
+	imp := shared.NewFacilityLayoutImported(at, 1, 1, 0)
+	if k1, k2 := encode(t, imp, "id-1"), encode(t, imp, "id-2"); k1 == k2 {
+		t.Errorf("two import batches share key %q: they must spread across partitions", k1)
+	}
+	if k1, k2 := encode(t, imp, "id-1"), encode(t, imp, "id-1"); k1 != k2 {
+		t.Errorf("redelivery of one import changed key: %q vs %q", k1, k2)
 	}
 }
 

@@ -77,10 +77,11 @@ message is a CloudEvents 1.0 event in structured content mode
 `time`, `datacontenttype`, `dataschema` and `data` (the domain event's own
 JSON) — with the Kafka header
 `content-type: application/cloudevents+json; charset=UTF-8`. The Kafka key is
-the identity of the aggregate that raised it for the registration and
-decommission events, so per-aggregate order is preserved; the four ADR 0017
-geometry events and `FacilityLayoutImported` are keyed by their event type
-instead (their `subject` still names the aggregate — see
+the identity of the aggregate that raised it, so per-aggregate order is
+preserved — including the four ADR 0017 geometry/structure/cross-aisle
+events ([ADR 0032](../adr/0032-aggregate-partition-keys-for-geometry-events.md));
+only `FacilityLayoutImported`, a batch outcome with no aggregate, is keyed by
+its CloudEvents `id` (its `subject` is the fixed `layout-import`; see
 [Domain events](../ddd/domain-events.md#catalogue-at-a-glance)). Dispatch on the **full** `type` string (e.g.
 `com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered`),
 dedupe on `id`, and DLQ/skip anything that fails CloudEvents validation.

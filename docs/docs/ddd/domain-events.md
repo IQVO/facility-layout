@@ -262,10 +262,11 @@ Every event is published to **both** topics when `EVENT_PUBLISHER=kafka`:
 `warehouse.facility.analytics` (analytics, `dataschema`
 `urn:warehouse:facility-layout:analytics:<EventName>:v1`), under the **same**
 CloudEvents `id`. The Kafka key is the partition key; the CloudEvents
-`subject` names the aggregate instance. For the five events in the lower
-half of the table the publisher's `aggregateKey` falls back to the event
-`type` string, so all occurrences of that event share one partition — the
-`subject` still identifies the aggregate.
+`subject` names the aggregate instance. Every event is keyed by its
+aggregate's identity (so all events about one aggregate share a partition and
+stay ordered); the only exception is `FacilityLayoutImported`, a batch outcome
+with no aggregate, which is keyed by its CloudEvents `id`
+([ADR 0032](../adr/0032-aggregate-partition-keys-for-geometry-events.md)).
 
 | CloudEvents `type` | Kafka key (partition) | `subject` | Producer use case(s) | Known consumers |
 |---|---|---|---|---|
@@ -276,15 +277,15 @@ half of the table the publisher's `aggregateKey` falls back to the event
 | `com.warehouse.wms.facility-layout.placementrule.PlacementRuleDefined` | `ruleId` | `ruleId` | `DefinePlacementRule` | own projector |
 | `com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered` | `locationCode` | `locationCode` | `RegisterLocationSlot`, `ImportFacilityLayout` | `inventory-storage`, `warehouse-planning`, own projector |
 | `com.warehouse.wms.facility-layout.locationslot.LocationSlotDecommissioned` | `locationCode` | `locationCode` | `DecommissionLocationSlot` | `inventory-storage`, `warehouse-planning`, own projector |
-| `com.warehouse.wms.facility-layout.locationslot.FacilityLayoutImported` | event `type` | `layout-import` | `ImportFacilityLayout` | own projector |
-| `com.warehouse.wms.facility-layout.locationslot.LocationGeometryUpdated` | event `type` | `locationCode` | `SetLocationGeometry`, `ImportFacilityLayout` | none |
-| `com.warehouse.wms.facility-layout.aisle.AisleGeometryUpdated` | event `type` | `aisleId` | `SetAisleGeometry` | none |
-| `com.warehouse.wms.facility-layout.structure.FixedStructureRegistered` | event `type` | `structureId` | `RegisterFixedStructure` | none |
-| `com.warehouse.wms.facility-layout.crossaisle.CrossAisleRegistered` | event `type` | `zoneId/fromAisle-toAisle@atBay` | `RegisterCrossAisle` | none |
+| `com.warehouse.wms.facility-layout.locationslot.FacilityLayoutImported` | event `id` (batch outcome, no aggregate) | `layout-import` | `ImportFacilityLayout` | own projector |
+| `com.warehouse.wms.facility-layout.locationslot.LocationGeometryUpdated` | `locationCode` | `locationCode` | `SetLocationGeometry`, `ImportFacilityLayout` | none |
+| `com.warehouse.wms.facility-layout.aisle.AisleGeometryUpdated` | `aisleId` | `aisleId` | `SetAisleGeometry` | none |
+| `com.warehouse.wms.facility-layout.structure.FixedStructureRegistered` | `structureId` | `structureId` | `RegisterFixedStructure` | none |
+| `com.warehouse.wms.facility-layout.crossaisle.CrossAisleRegistered` | `zoneId/fromAisle-toAisle@atBay` | `zoneId/fromAisle-toAisle@atBay` | `RegisterCrossAisle` | none |
 
 Source: `internal/domain/shared/events.go`,
 `internal/adapters/outbound/kafka/publisher.go` (`aggregateKey`,
-`SubjectOf`), `internal/adapters/inbound/kafka/analytics_consumer.go`.
+`partitionKey`, `SubjectOf`), `internal/adapters/inbound/kafka/analytics_consumer.go`.
 
 ## Which use case emits what
 

@@ -159,7 +159,6 @@ flowchart LR
     H2["No routed cross-zone path:<br/>straight line or 422"]:::hotspot
     H3["Cross-aisle edges always<br/>estimated from bay pitch"]:::hotspot
     H4["FixedStructure not yet<br/>an obstacle in the graph"]:::hotspot
-    H5["Geometry events keyed by<br/>event type, not aggregate"]:::hotspot
 
     OP --> C8 --> G6 --> E8
     OP --> C9 --> G3 --> E9
@@ -174,7 +173,6 @@ flowchart LR
     R5 -.- H2
     G7 -.- H3
     G8 -.- H4
-    E8 -.- H5
 
     classDef actor fill:#fff59d,stroke:#b59f00,color:#000,font-size:11px
     classDef command fill:#4aa3df,stroke:#1f6f9f,color:#000
@@ -251,4 +249,4 @@ Source: `internal/application/usecases/decommission_location_slot.go`,
 | H2 no routed cross-zone path | Hotspot | `estimate_travel_distance.go` (`crossZoneBeeline`), [ADR 0017](../adr/0017-geometry-and-travel-graph.md) |
 | H3 cross-aisle edges always estimated | Hotspot | `travel.crossAisleDistance` |
 | H4 FixedStructure not an obstacle | Hotspot | `internal/domain/structure/fixed_structure.go` package comment ("in a later phase") |
-| H5 geometry and import events keyed by event type | Hotspot | `kafka.aggregateKey` default branch — all occurrences of those five event types share one partition |
+| ~~H5 geometry and import events keyed by event type~~ | Resolved | Now keyed by aggregate identity (`FacilityLayoutImported`: by CloudEvents `id`) — `kafka.aggregateKey` / `partitionKey`, [ADR 0032](../adr/0032-aggregate-partition-keys-for-geometry-events.md) |
