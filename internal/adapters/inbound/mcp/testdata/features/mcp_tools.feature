@@ -144,3 +144,39 @@ Feature: MCP tool behavioral evals
   Scenario: A wrong-typed travel argument is rejected without coercion
     When I call the tool "estimate_travel_distance" with argument "from" = 7
     Then the tool call does not succeed silently
+
+  # Fleet tool-error convention (ADR-0033): a tool error reads
+  # "<slug>: detail", the slug being the REST problem slug for the same
+  # condition, so a caller can tell a rejection from an internal failure.
+
+  Scenario: An unknown site error carries the REST slug
+    When I call the tool "get_site_layout" with argument "siteCode" = "GHOST"
+    Then the tool call fails with the error slug "site-not-found"
+
+  Scenario: An unknown zone error carries the REST slug
+    When I call the tool "get_zone_grid" with argument "zoneId" = "WH1-NOPE-XXX"
+    Then the tool call fails with the error slug "zone-not-found"
+
+  Scenario: An unknown functional role error carries the REST slug
+    When I call the tool "list_functional_locations" with arguments
+      | siteCode | WH1       |
+      | role     | Warehouse |
+    Then the tool call fails with the error slug "unknown-location-role"
+
+  Scenario: A malformed location code error carries the REST slug
+    When I call the tool "estimate_travel_distance" with arguments
+      | from | not-a-code                |
+      | to   | WH1-STOR-AMB-A07-02-01-A |
+    Then the tool call fails with the error slug "malformed-location-code"
+
+  Scenario: A blank location code is a missing-location-code error
+    When I call the tool "estimate_travel_distance" with arguments
+      | from |                          |
+      | to   | WH1-STOR-AMB-A07-02-01-A |
+    Then the tool call fails with the error slug "missing-location-code"
+
+  Scenario: A cross-zone refusal carries the REST slug
+    When I call the tool "estimate_travel_distance" with arguments
+      | from | WH1-STOR-AMB-A07-01-01-A |
+      | to   | WH1-RCV-AMB-D01-01-01-A  |
+    Then the tool call fails with the error slug "no-route-between-zones"

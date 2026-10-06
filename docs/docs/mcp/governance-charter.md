@@ -137,6 +137,14 @@ bounds the exposure here.
 3. Domain errors **MUST** surface as clean structured tool errors, mapped from
    RFC 7807. The existing invariants are the safety net for model-invoked writes
    and **MUST NOT** be bypassed.
+4. A tool error **MUST** read `<slug>: detail`, where the slug is the stable
+   problem slug the service's REST adapter uses for the same condition, and an
+   unexpected (untyped) failure **MUST** read
+   `internal-error: an unexpected internal error occurred`, never carrying
+   infrastructure detail. Callers classify on the slug, never on the prose.
+   `warehouse-planning` introduced the convention; `facility-layout` adopts it
+   in [ADR 0033](../adr/0033-slug-prefixed-mcp-tool-errors.md), with a test
+   keeping the MCP slug table one-for-one with the REST problem table.
 
 ## 9. Auditability
 
@@ -197,6 +205,13 @@ Jaeger and Grafana alongside HTTP.
 
 ### Pinned behavioral contracts the evals found
 
+- A tool error is `<slug>: detail` on an `isError` result — the slug is the REST
+  problem slug for the same condition (`site-not-found`, `zone-not-found`,
+  `malformed-location-code`, `missing-location-code`, `no-route-between-zones`,
+  …) and an unexpected failure is `internal-error`
+  ([ADR 0033](../adr/0033-slug-prefixed-mcp-tool-errors.md)). The E3 scenarios
+  pin the prefix over the wire; `TestSlugTableMatchesRESTOneForOne` pins the
+  parity with the REST table.
 - Typed tool schemas are **strict** (`additionalProperties: false`, the
   SDK default): stray model-generated argument keys are rejected with a
   validation error, not silently ignored — even for `list_sites`, which

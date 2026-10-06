@@ -28,6 +28,16 @@ each one uses.
 Every current consumer defaults to a `permissive` mode, so none of them needs
 this service to be up in order to start.
 
+**MCP tool errors.** A failed tool call is an `isError` result whose text reads
+`<slug>: detail`; the slug is the same problem slug the REST API reports for
+that condition (`site-not-found`, `malformed-location-code`,
+`missing-location-code`, …) and an unexpected failure is `internal-error`.
+Classify on the slug, not on the prose — a `*-not-found`, `unknown-*`,
+`malformed-*`, `invalid-*` or `missing-*` slug is a rejection of your input;
+`internal-error` is a failure on this side
+([ADR 0033](../adr/0033-slug-prefixed-mcp-tool-errors.md)). Text without a
+slug (older servers) is unclassified.
+
 ## Synchronous validation
 
 The narrowest useful integration, and the one that needs nothing new:
@@ -81,7 +91,7 @@ the identity of the aggregate that raised it, so per-aggregate order is
 preserved — including the four ADR 0017 geometry/structure/cross-aisle
 events ([ADR 0032](../adr/0032-aggregate-partition-keys-for-geometry-events.md));
 only `FacilityLayoutImported`, a batch outcome with no aggregate, is keyed by
-its CloudEvents `id` (its `subject` is the fixed `layout-import`; see
+its CloudEvents `id` (its `subject` is the fixed `layout-import`; kept by decision on 2026-10-06 — no consumer needs import ordering, and keying by site would be a contract change, [ADR 0034](../adr/0034-facility-layout-imported-stays-keyed-by-cloudevents-id.md); see
 [Domain events](../ddd/domain-events.md#catalogue-at-a-glance)). Dispatch on the **full** `type` string (e.g.
 `com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered`),
 dedupe on `id`, and DLQ/skip anything that fails CloudEvents validation.
