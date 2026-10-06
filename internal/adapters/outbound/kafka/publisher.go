@@ -3,10 +3,13 @@
 //
 // facility-layout is an Open Host Service with a Published Language: its
 // domain events ARE its integration contract, and every downstream service
-// (inventory-storage, wes-work-planning, workforce-management,
-// fulfillment-execution) is a Conformist to them. Unlike a service that
-// forwards a single enriched event, this publisher therefore emits EVERY
-// domain event to the integration topic — the whole Published Language.
+// (inventory-storage, which consumes the zone and location-slot events into
+// its location-classification cache, and warehouse-planning, which consumes
+// the location-slot events into its storage/station tally) is a Conformist
+// to them; the remaining events are published for future Conformists.
+// Unlike a service that forwards a single enriched event, this publisher
+// therefore emits EVERY domain event to the integration topic — the whole
+// Published Language.
 //
 // Every message is a CloudEvents 1.0 event in structured content mode
 // (ADR-0024), built by internal/adapters/kafka/cloudevents. The events

@@ -69,7 +69,7 @@ info:
     inventory-storage ADR-0013 (the location-classification cache).
   contact:
     name: Warehouse Systems Platform Team
-    url: https://github.com/claudioed/facility-layout
+    url: https://github.com/IQVO/facility-layout
     email: claudioed.oliveira@gmail.com
   license:
     name: Apache 2.0
