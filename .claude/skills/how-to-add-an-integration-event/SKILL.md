@@ -83,16 +83,20 @@ new `.v2` type + `:v2` dataschema, never a mutation.
 
 ### 3. Partition key and `subject`: the aggregate's identity
 
-`aggregateKey(event)` (`publisher.go:101`) type-switches on the event and
-returns its aggregate id (`SiteCode`, `ZoneID`, `AisleID`, etc.) so all
-events for one aggregate land on the same partition, preserving
-per-aggregate order. Adding a new event type means adding a `case` here
-too — `FacilityLayoutImported` and the `default` both fall back to
-`event.EventType()` because a bulk-import event has no single natural
-aggregate id; that fallback still gives a stable, non-empty key rather
-than an empty string. The CloudEvents `subject` comes from `SubjectOf`
-(`publisher.go`): it must ALWAYS be the real aggregate id (never the type
-fallback) — add a `case` there too if the key falls back.
+`aggregateKey(event)` (`publisher.go`) type-switches on the event and
+returns its aggregate id (`SiteCode`, `ZoneID`, `AisleID`, `LocationCode`,
+`StructureID`, a composite for cross-aisles, etc.) so all events for one
+aggregate land on the same partition, preserving per-aggregate order. Adding
+a new event type means adding a `case` here too. The `default` falls back to
+`event.EventType()` only as a guard for an event added without a case;
+`TestPublisher_KeysAreAggregateIdentityNotEventType` rejects an event-type key
+for every golden case, so add the case and the golden row together
+(ADR-0032).
+
+The one exception is `FacilityLayoutImported`: a bulk import has no single
+aggregate, so its partition key is its CloudEvents id (`partitionKey`) and its
+`subject` is the fixed `ImportSubject` (`layout-import`). The CloudEvents
+`subject` otherwise equals the aggregate key (`SubjectOf`).
 
 ### 4. Contract + docs
 
