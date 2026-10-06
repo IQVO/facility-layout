@@ -10,9 +10,9 @@
 //
 // Every message is a CloudEvents 1.0 event in structured content mode
 // (ADR-0024), built by internal/adapters/kafka/cloudevents. The events
-// already serialize themselves to JSON (their struct tags are the wire
-// shape), so the CloudEvent's `data` is the domain event's own JSON
-// verbatim; no per-event marshalling switch is needed.
+// carry no serialisation tags: the CloudEvent's `data` is the adapter DTO
+// that cloudevents.WireData maps from each domain event, so the JSON wire
+// shape is owned here, not by the domain.
 package kafka
 
 import (
@@ -103,11 +103,15 @@ func (p *Publisher) Encode(_ context.Context, event shared.DomainEvent, eventId 
 // encodeCloudEvent builds the structured-mode CloudEvent for event on one
 // stream (integration or analytics). The `type` is the event's own
 // Published Language type, `subject` its aggregate id, `time` its
-// occurred-at, and `data` the event's own JSON.
+// occurred-at, and `data` the event's wire DTO (cloudevents.WireData).
 func encodeCloudEvent(topic, stream string, event shared.DomainEvent, eventId string) (Encoded, error) {
 	entity, err := entityOf(event)
 	if err != nil {
 		return Encoded{}, err
+	}
+	data, err := cloudevents.WireData(event)
+	if err != nil {
+		return Encoded{}, fmt.Errorf("kafka: encode %s for %s: %w", event.EventName(), topic, err)
 	}
 	value, err := cloudevents.New(cloudevents.Spec{
 		ID:        eventId,
@@ -117,7 +121,7 @@ func encodeCloudEvent(topic, stream string, event shared.DomainEvent, eventId st
 		Time:      event.OccurredAt(),
 		Stream:    stream,
 		Version:   1,
-		Data:      event,
+		Data:      data,
 	})
 	if err != nil {
 		return Encoded{}, fmt.Errorf("kafka: encode %s for %s: %w", event.EventName(), topic, err)

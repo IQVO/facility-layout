@@ -169,7 +169,7 @@ event in structured content mode — mandatory, no other envelope
 ([ADR-0024](docs/docs/adr/0024-cloudevents-mandatory-envelope.md)):
 `source=/warehouse/facility-layout`, `subject`=aggregate id,
 `dataschema=urn:warehouse:facility-layout:<events|analytics>:<EventName>:v1`,
-`data`=the domain event's own JSON, Kafka header
+`data`=the event's JSON wire DTO (adapter-owned, same field names as the Published Language; domain events carry no struct tags), Kafka header
 `content-type: application/cloudevents+json; charset=UTF-8`.
 
 CloudEvents `type` convention, identical to the other warehouse-systems services:
