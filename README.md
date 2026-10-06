@@ -865,10 +865,8 @@ go test ./internal/domain/... ./internal/application/... -race \
   -coverpkg=./internal/domain/...,./internal/application/...
 go tool cover -func=coverage.out | tail -1
 
-# Postgres integration tests (build-tagged; skipped without DATABASE_URL)
-docker compose up -d postgres
-DATABASE_URL="postgres://facility:facility@localhost:5432/facility?sslmode=disable" \
-  go test -tags=integration ./... -race -count=1
+# integration tests (build-tagged; testcontainers boots its own Postgres/Kafka — needs only Docker)
+go test -tags=integration ./... -race -count=1
 
 # BDD acceptance suite (godog/Gherkin, over the real HTTP API)
 go test ./... -run TestFeatures -v
