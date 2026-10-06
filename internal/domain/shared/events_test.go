@@ -112,6 +112,38 @@ func assertDomainEventIdentity(t *testing.T, tc domainEventCase, at time.Time) {
 	}
 }
 
+func TestSiteCapabilityChangedCarriesFullLWWState(t *testing.T) {
+	at := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+	event := shared.NewSiteCapabilityChanged(at, "WH1", true, false, 42)
+
+	if event.EventName() != "SiteCapabilityChanged" {
+		t.Fatalf("event name = %q", event.EventName())
+	}
+	if event.EventType() != "com.warehouse.wms.facility-layout.site.SiteCapabilityChanged" {
+		t.Fatalf("event type = %q", event.EventType())
+	}
+	if event.SiteCode != "WH1" || !event.TransferOriginEnabled || event.TransferDestinationEnabled || event.CapabilityRevision != 42 {
+		t.Fatalf("event did not preserve the full capability state: %+v", event)
+	}
+
+	payload, err := json.Marshal(event)
+	if err != nil {
+		t.Fatalf("marshal event: %v", err)
+	}
+	var data map[string]any
+	if err := json.Unmarshal(payload, &data); err != nil {
+		t.Fatalf("unmarshal event: %v", err)
+	}
+	for _, field := range []string{"site_code", "transfer_origin_enabled", "transfer_destination_enabled", "capability_revision"} {
+		if _, ok := data[field]; !ok {
+			t.Errorf("payload missing %q: %s", field, payload)
+		}
+	}
+	if _, leaksPII := data["site_name"]; leaksPII {
+		t.Errorf("capability event must not contain site_name: %s", payload)
+	}
+}
+
 func TestLocationSlotRegisteredCarriesResolvedParents(t *testing.T) {
 	at := time.Date(2026, 8, 22, 9, 0, 0, 0, time.UTC)
 	code, err := shared.ParseLocationCode("WH1-STOR-FRZ-A02-01-03-A")

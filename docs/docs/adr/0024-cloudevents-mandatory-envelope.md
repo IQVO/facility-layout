@@ -86,6 +86,7 @@ field is removed; `dataschema` replaces it.
 | `type` | `subject` | Kafka key |
 |---|---|---|
 | `com.warehouse.wms.facility-layout.site.SiteRegistered` | `siteCode` | `siteCode` |
+| `com.warehouse.wms.facility-layout.site.SiteCapabilityChanged` | `site_code` | `site_code` |
 | `com.warehouse.wms.facility-layout.zone.ZoneRegistered` | `zoneId` | `zoneId` |
 | `com.warehouse.wms.facility-layout.aisle.AisleRegistered` | `aisleId` | `aisleId` |
 | `com.warehouse.wms.facility-layout.aisle.AisleGeometryUpdated` | `aisleId` | event type (unchanged) |

@@ -203,6 +203,8 @@ func aggregateKey(event shared.DomainEvent) string {
 	switch e := event.(type) {
 	case shared.SiteRegistered:
 		return e.SiteCode
+	case shared.SiteCapabilityChanged:
+		return e.SiteCode
 	case shared.ZoneRegistered:
 		return e.ZoneID
 	case shared.AisleRegistered:
