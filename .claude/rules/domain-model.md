@@ -176,8 +176,10 @@ On the wire this `type` is the `type` attribute of a mandatory CloudEvents
 12. SetLocationGeometry / SetAisleGeometry / RegisterCrossAisle /
     RegisterFixedStructure -> the ADR-0017 geometry writes
 13. GetZoneTravelGraph(zoneRef) / EstimateTravelDistance(from, to) -> the
-    travel graph and shortest same-zone distance (read models, ADR-0017)
+    travel graph and shortest same-zone distance; across zones a
+    straight-line estimate only when both slots have position geometry
+    (read models, ADR-0017)
 
 Plus single-resource/list reads (`GetSite`, `ListSites`, `GetZone`, …,
-`GetLocationClassification`, `ListFixedStructures`) — 30 use-case structs
+`GetLocationClassification`, `ListFixedStructures`) — 31 use-case structs
 in `internal/application/usecases/`.

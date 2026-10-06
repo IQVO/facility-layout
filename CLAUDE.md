@@ -13,8 +13,9 @@ language everywhere. Module `github.com/claudioed/facility-layout`, Go 1.26.
 ## Hard rules
 
 - **Own bounded context, own service**: consumed by `inventory-storage`
-  (WMS) and `wes-work-planning`/`fulfillment-execution` (WES). Never a
-  package bolted onto `inventory-storage`. This service is an Open Host
+  (WMS), `wes-work-planning`/`fulfillment-execution`/`warehouse-planning`
+  (WES) and `warehouse-ops-agent` (MCP). Never a package bolted onto
+  `inventory-storage`. This service is an Open Host
   Service with a Published Language (events + REST) and has NO inbound
   dependency on any other fleet service, ever. Downstream Conformists never
   get write access, and this service never reaches into their aggregates.

@@ -25,7 +25,7 @@ graph LR
     end
 
     subgraph App["Application"]
-        UC["usecases<br/>30 use cases"]
+        UC["usecases<br/>31 use cases"]
         P["ports<br/>OUT interfaces only"]
     end
 
@@ -77,12 +77,14 @@ internal/
     inbound/http/             chi handlers, DTOs, RFC 7807 error mapping, SVG rendering, reports handler
     inbound/mcp/              MCP tools, resource template and prompt over the read use cases
     inbound/kafka/            analytics topic consumer (projector only)
-    outbound/postgres/        pgxpool repos + golang-migrate migrations + events outbox
+    outbound/postgres/        pgxpool repos, golang-migrate runner, UnitOfWork, transactional outbox (publisher + relay), housekeeping sweeper
     outbound/memory/          thread-safe in-memory repos for tests and local runs
     outbound/events/          log + buffered publishers
-    outbound/kafka/           integration (warehouse.facility.events) + analytics publishers
+    outbound/kafka/           integration (warehouse.facility.events) + analytics publishers, FanOut, RelaySink, DLQ writer
     outbound/analyticsstore/  analytical-database projection and report queries
     outbound/telemetry/       OpenTelemetry setup and the LocationMetrics recorder
+    outbound/bootretry/       bounded boot retry for the first Postgres/Kafka dial (ADR 0028)
+    kafka/cloudevents/        the ONLY CloudEvents 1.0 helper (New / Decode / content-type header)
   analytics/                  the catalog-growth report model
   architecture/               arch-go fitness tests
 migrations/                   golang-migrate SQL (migrations/analytics for the analytical DB)
@@ -90,7 +92,7 @@ migrations/                   golang-migrate SQL (migrations/analytics for the a
 
 ## The ports
 
-All eleven are **driven** (outbound) interfaces. There are no inbound port
+All twelve are **driven** (outbound) interfaces. There are no inbound port
 interfaces: a use case struct *is* the inbound port, called directly by the
 HTTP and MCP adapters.
 
@@ -129,6 +131,12 @@ type EventPublisher interface {
 	Publish(ctx context.Context, event shared.DomainEvent) error
 }
 
+// UnitOfWork brackets a use case's Save(s) and Publish(es) in one
+// transaction (ADR-0018). nil means "no transactional backing".
+type UnitOfWork interface {
+	Execute(ctx context.Context, fn func(ctx context.Context) error) error
+}
+
 type Clock interface {
 	Now() time.Time
 }
@@ -146,7 +154,7 @@ produced by the validating constructor.
 
 ## The use cases
 
-Thirty use-case structs live in `internal/application/usecases/`, one per
+Thirty-one use-case structs live in `internal/application/usecases/`, one per
 file group:
 
 | Kind | Use cases |
@@ -155,7 +163,7 @@ file group:
 | Write — **real orchestration** | **`RegisterLocationSlot`** (full chain of custody + rule set + functional attributes), **`ImportFacilityLayout`** (per-row, partial success) |
 | Write — geometry (ADR 0017) | `SetLocationGeometry`, `SetAisleGeometry`, `RegisterCrossAisle`, `RegisterFixedStructure` |
 | Read models — no writes, no events | `GetSiteLayout`, `GetZoneGrid`, `GetZoneTravelGraph`, `EstimateTravelDistance`, `ListLocationsByRole` |
-| Single-resource and list reads | `GetSite`, `ListSites`, `GetZone`, `ListZones`, `GetAisle`, `ListAisles`, `GetLocationType`, `ListLocationTypes`, `GetPlacementRule`, `ListPlacementRules`, `GetLocationSlot`, `GetLocationClassification`, `ListFixedStructures` |
+| Single-resource and list reads | `GetSite`, `ListSites`, `GetZone`, `ListZones`, `GetAisle`, `ListAisles`, `ListCrossAisles`, `GetLocationType`, `ListLocationTypes`, `GetPlacementRule`, `ListPlacementRules`, `GetLocationSlot`, `GetLocationClassification`, `ListFixedStructures` |
 
 Only two use cases carry real placement logic. That is intentional: the
 invariants live in the domain, and the application layer's job is resolution
@@ -193,7 +201,16 @@ rule as an executable fitness test. It fails the build if:
 - an inbound adapter imports an outbound adapter, or vice versa,
 - anything other than `cmd` wires every layer together,
 - the `ports` package contains anything but interfaces,
-- the domain grows a catch-all `utils`/`common` package.
+- the domain grows a catch-all `utils`/`common` package,
+- the OLTP domain or application imports the analytics read side
+  (`internal/analytics/report`, `outbound/analyticsstore`).
+
+Sibling fitness tests in the same package guard the fleet rules:
+`TestMCPAdapterDependencyRule`, `TestNoAuthMiddlewareReintroduced`,
+`TestCloudEventsOnly`, `TestEventCatalogueMatchesContract` (every event
+type `apis/asyncapi.yaml` declares appears in the CloudEvents ADR catalogue), `TestKafkaConsumerGroupNeverHardcodedInline`,
+`TestReplayConsumersSetCommitInterval` and the testcontainers sensors for
+the integration tests.
 
 It runs as its own blocking `arch-test` job in CI. A layering violation is
 therefore a red build, not a review comment somebody might miss.
@@ -204,12 +221,17 @@ therefore a red build, not a review comment somebody might miss.
 reads the environment, picks the adapters, constructs the use cases and
 mounts the router:
 
-- `DATABASE_URL` set → Postgres repositories, migrations run at startup, the
-  Postgres event publisher.
-- `DATABASE_URL` unset → in-memory repositories and the log publisher.
-- `EVENT_PUBLISHER=kafka` → independently of the store, the Kafka integration
-  and analytics publishers, fanned out together, replace the publisher
-  above.
+- `DATABASE_URL` set → Postgres repositories, migrations run at startup
+  (against `MIGRATIONS_DATABASE_URL` when set, [ADR 0023](../adr/0023-migrations-direct-postgres-connection.md)),
+  the Idempotency-Key middleware and the housekeeping sweeper.
+- `DATABASE_URL` unset → in-memory repositories; the Idempotency-Key check
+  is skipped.
+- `EVENT_PUBLISHER` unset → the log publisher, whatever the store.
+- `EVENT_PUBLISHER=kafka` without a database → the Kafka integration and
+  analytics publishers, fanned out directly (`FanOut`).
+- `EVENT_PUBLISHER=kafka` with a database → the transactional outbox
+  publisher plus a `UnitOfWork`, and the outbox relay goroutine that drains
+  `outbox_events` onto both topics ([ADR 0018](../adr/0018-transactional-outbox.md)).
 
 Because the swap happens at exactly one place and every port is an interface
 over domain types, the HTTP layer and the entire test suite are identical in
