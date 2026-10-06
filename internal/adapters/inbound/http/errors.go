@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/claudioed/facility-layout/internal/application/ports"
 	"github.com/claudioed/facility-layout/internal/application/usecases"
 	"github.com/claudioed/facility-layout/internal/domain/aisle"
 	"github.com/claudioed/facility-layout/internal/domain/placement"
@@ -73,6 +74,12 @@ var errorCategories = []errorCategory{
 	{zone.ErrAlreadyDecommissioned, http.StatusConflict, problemInfo{"already-decommissioned", "This structure is already decommissioned"}},
 	{slot.ErrAlreadyDecommissioned, http.StatusConflict, problemInfo{"already-decommissioned", "This structure is already decommissioned"}},
 	{slot.ErrSlotDecommissioned, http.StatusConflict, problemInfo{"already-decommissioned", "This structure is already decommissioned"}},
+
+	// 409 Conflict: optimistic-concurrency guard (ADR-0025) — another
+	// writer modified the row between this caller's load and its Save.
+	// Distinct from every other 409 above: the request was not rejected on
+	// its merits; the caller should re-fetch and retry.
+	{ports.ErrConcurrentModification, http.StatusConflict, problemInfo{"concurrent-modification", "The resource was modified by another writer; re-fetch and retry"}},
 
 	// 422 Unprocessable Entity: semantically invalid values and rule
 	// violations.

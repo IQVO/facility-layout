@@ -64,10 +64,15 @@ type CrossAisleRef struct {
 	AtBay       string
 }
 
-// Pitch supplies the fallback per-bay distance for a zone when an aisle
-// carries no centreline geometry.
+// Pitch supplies the fallback per-bay and per-level distance for a zone
+// when an aisle carries no centreline geometry (ADR-0017). LevelPitchM is
+// the estimated vertical spacing between adjacent levels; the bay graph
+// itself has no level dimension (nodes are aisle+bay waypoints), so it is
+// consumed by the distance use case for the vertical component of a route
+// whose endpoints sit on different levels without real z geometry.
 type Pitch struct {
-	BayPitchM float64
+	BayPitchM   float64
+	LevelPitchM float64
 }
 
 // Graph is an immutable adjacency-list representation of one zone's
@@ -75,7 +80,13 @@ type Pitch struct {
 type Graph struct {
 	adjacency map[Node][]Edge
 	nodes     map[Node]struct{}
+	pitch     Pitch
 }
+
+// LevelPitchM returns the zone's estimated vertical spacing between
+// adjacent levels, carried through from Build for callers that must price
+// a level change no bay-graph edge can see.
+func (g Graph) LevelPitchM() float64 { return g.pitch.LevelPitchM }
 
 // Route is the result of a successful Distance query: the total length in
 // metres, whether any segment of it was estimated rather than measured,
@@ -92,7 +103,7 @@ type Route struct {
 // when OneWay); each cross-aisle contributes one bidirectional edge pair
 // between its two aisles at their shared bay.
 func Build(aisles []AisleGeom, crossAisles []CrossAisleRef, pitch Pitch) Graph {
-	g := Graph{adjacency: make(map[Node][]Edge), nodes: make(map[Node]struct{})}
+	g := Graph{adjacency: make(map[Node][]Edge), nodes: make(map[Node]struct{}), pitch: pitch}
 
 	for _, a := range aisles {
 		for i, bay := range a.Bays {

@@ -75,24 +75,6 @@ updates:
           - "minor"
           - "patch"
 
-  # web/ is the Vite micro-frontend (npm); same reasoning as /docs above.
-  - package-ecosystem: "npm"
-    directory: "/web"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "06:00"
-    open-pull-requests-limit: 5
-    commit-message:
-      prefix: "npm"
-      include: "scope"
-    labels:
-      - "dependencies"
-      - "npm"
-      - "web"
-    groups:
-      npm-web-minor-and-patch:
-        applies-to: version-updates
-        update-types:
-          - "minor"
-          - "patch"
+  # web/ is intentionally NOT listed: it depends on file:../../warehouse-ui-kit (a sibling repo) and
+  # Dependabot cannot fetch path dependencies outside the repository, so an npm entry for /web fails on
+  # every run. Security alerts for web/ are fixed with scoped npm overrides (see the fleet recipe).

@@ -315,7 +315,7 @@ func TestUseCasesPropagateInfrastructureFailures(t *testing.T) {
 			name: "RegisterZone: parent lookup fails",
 			run: func(_ *testing.T, h *harness) error {
 				uc := &usecases.RegisterZone{Sites: &faultySiteRepo{SiteRepo: h.sites, failFind: true}, Zones: h.zones, Events: h.publisher, Clock: h.clock}
-				_, err := uc.Execute(h.ctx(), "WH1", "STOR", "AMB", shared.Ambient, false)
+				_, err := uc.Execute(h.ctx(), "WH1", "STOR", "AMB", shared.Ambient, false, nil, nil)
 				return err
 			},
 		},
@@ -324,7 +324,7 @@ func TestUseCasesPropagateInfrastructureFailures(t *testing.T) {
 			run: func(_ *testing.T, h *harness) error {
 				h.mustRegisterSite("WH1", "Fulfilment Centre One")
 				uc := &usecases.RegisterZone{Sites: h.sites, Zones: &faultyZoneRepo{ZoneRepo: h.zones, failFind: true}, Events: h.publisher, Clock: h.clock}
-				_, err := uc.Execute(h.ctx(), "WH1", "STOR", "AMB", shared.Ambient, false)
+				_, err := uc.Execute(h.ctx(), "WH1", "STOR", "AMB", shared.Ambient, false, nil, nil)
 				return err
 			},
 		},
@@ -333,7 +333,7 @@ func TestUseCasesPropagateInfrastructureFailures(t *testing.T) {
 			run: func(_ *testing.T, h *harness) error {
 				h.mustRegisterSite("WH1", "Fulfilment Centre One")
 				uc := &usecases.RegisterZone{Sites: h.sites, Zones: &faultyZoneRepo{ZoneRepo: h.zones, failSave: true}, Events: h.publisher, Clock: h.clock}
-				_, err := uc.Execute(h.ctx(), "WH1", "STOR", "AMB", shared.Ambient, false)
+				_, err := uc.Execute(h.ctx(), "WH1", "STOR", "AMB", shared.Ambient, false, nil, nil)
 				return err
 			},
 		},
@@ -342,7 +342,7 @@ func TestUseCasesPropagateInfrastructureFailures(t *testing.T) {
 			run: func(_ *testing.T, h *harness) error {
 				h.mustRegisterSite("WH1", "Fulfilment Centre One")
 				uc := &usecases.RegisterZone{Sites: h.sites, Zones: h.zones, Events: faultyPublisher{}, Clock: h.clock}
-				_, err := uc.Execute(h.ctx(), "WH1", "STOR", "AMB", shared.Ambient, false)
+				_, err := uc.Execute(h.ctx(), "WH1", "STOR", "AMB", shared.Ambient, false, nil, nil)
 				return err
 			},
 		},

@@ -27,10 +27,10 @@ const AnalyticsTopic = "warehouse.facility.analytics"
 // untouched. The composition root fans out to BOTH so the integration and
 // analytics streams stay independent.
 //
-// Consistent with the ADR-0009 integration publisher, this adapter is
-// trace-free: facility-layout has no observability/OTel package for the
-// analytics processes, so no producer span is opened and no trace headers are
-// injected.
+// Consistent with the ADR-0009 integration publisher, every Send
+// injects the W3C trace context of the publishing context into the
+// message headers (see trace_headers.go), so the analytics projector
+// can link its consume spans to the producer's trace.
 type AnalyticsPublisher struct {
 	Writer Writer
 	NewId  func() string
@@ -79,9 +79,10 @@ func (p *AnalyticsPublisher) Publish(ctx context.Context, event shared.DomainEve
 
 // Send writes one already-encoded message to AnalyticsTopic (the Writer's
 // fixed topic; see Publisher.send's doc comment for why enc.Topic is not
-// applied here).
+// applied here). The W3C trace context of ctx is injected into the
+// message headers (ADR-0009).
 func (p *AnalyticsPublisher) Send(ctx context.Context, enc Encoded) error {
-	msg := kafkago.Message{Key: enc.Key, Value: enc.Value, Headers: []kafkago.Header{cloudevents.ContentTypeHeader()}}
+	msg := kafkago.Message{Key: enc.Key, Value: enc.Value, Headers: injectTraceContext(ctx, []kafkago.Header{cloudevents.ContentTypeHeader()})}
 	return p.Writer.WriteMessages(ctx, msg)
 }
 

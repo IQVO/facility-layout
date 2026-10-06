@@ -13,8 +13,9 @@ language everywhere. Module `github.com/claudioed/facility-layout`, Go 1.26.
 ## Hard rules
 
 - **Own bounded context, own service**: consumed by `inventory-storage`
-  (WMS) and `wes-work-planning`/`fulfillment-execution` (WES). Never a
-  package bolted onto `inventory-storage`. This service is an Open Host
+  (WMS), `wes-work-planning`/`fulfillment-execution`/`warehouse-planning`
+  (WES) and `warehouse-ops-agent` (MCP). Never a package bolted onto
+  `inventory-storage`. This service is an Open Host
   Service with a Published Language (events + REST) and has NO inbound
   dependency on any other fleet service, ever. Downstream Conformists never
   get write access, and this service never reaches into their aggregates.
@@ -43,7 +44,7 @@ language everywhere. Module `github.com/claudioed/facility-layout`, Go 1.26.
   part of the Go module or its quality gate.
 - Every package has a doc comment; gofmt/go vet clean. Table-driven tests
   (domain + application with in-memory adapter), one httptest per endpoint,
-  build-tagged Postgres integration test (skipped without `DATABASE_URL`).
+  build-tagged Postgres integration tests (testcontainers; need Docker, never skip).
 - Config via env: `DATABASE_URL`, `HTTP_ADDR` (default `:8080`),
   `ANALYTICS_DATABASE_URL`, `EVENT_PUBLISHER` (`kafka` or unset).
 
@@ -71,7 +72,7 @@ Run from the repo root, not the docs site:
 make check-fast  # quick gate — run before saying "done"
 make check       # fmt-check + vet + build + lint + test — before every commit
 make check-all   # check + coverage(90%) + arch-test + bdd — before every push
-make integration # Postgres integration tests — needs DATABASE_URL
+make integration # Postgres/Kafka integration tests — needs Docker (testcontainers)
 make vuln        # govulncheck — after touching go.mod/go.sum
 make mutation    # gremlins on internal/domain — after changing domain behaviour
 ```
@@ -99,6 +100,9 @@ Claude Code loads each rule below automatically when you touch the matching path
 
 | When touching | Read |
 |---|---|
+| `cmd/**`, `internal/**`, `migrations/**` | `.claude/rules/architecture.md` |
+| `internal/domain/**`, `internal/application/**`, `internal/adapters/inbound/mcp/**` ... | `.claude/rules/domain-model.md` |
+| `internal/adapters/kafka/**`, `internal/adapters/outbound/kafka/**`, `internal/adapters/outbound/events/**` ... | `.claude/rules/events-and-analytics.md` |
 | `internal/adapters/inbound/http/**`, `apis/openapi*.yaml`, `apis/openapi/**` ... | `.claude/rules/rest-api-and-frontend.md` |
 | `.github/**`, `Makefile`, `.gremlins.yaml` ... | `.claude/rules/testing-and-quality.md` |
 

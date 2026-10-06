@@ -191,6 +191,7 @@ type gridBody struct {
 				LocationCode string `json:"locationCode"`
 				Position     string `json:"position"`
 				LocationType string `json:"locationType"`
+				Role         string `json:"role"`
 				Status       string `json:"status"`
 			} `json:"positions"`
 		} `json:"cells"`
@@ -423,4 +424,80 @@ func TestLayout_AbsentOrJSONFormatIsAccepted(t *testing.T) {
 	ts := seedDrawableSite(t)
 	ts.do(http.MethodGet, "/sites/WH1/layout", nil).assertStatus(t, http.StatusOK)
 	ts.do(http.MethodGet, "/sites/WH1/layout?format=json", nil).assertStatus(t, http.StatusOK)
+}
+
+// ADR-0016 gap fix: the zone grid must carry each slot's role, like the
+// site layout already did.
+func TestZoneGrid_CarriesSlotRole(t *testing.T) {
+	ts := newTestServer(t)
+	ts.seedSite()
+	// A Dock location type + slot, alongside plain Storage.
+	ts.do(http.MethodPost, "/location-types", map[string]any{
+		"name": "DockDoor", "role": "Dock",
+	}).assertStatus(t, http.StatusCreated)
+	ts.seedZone("RCV", "AMB", "Ambient", false)
+	ts.seedAisle("WH1-RCV-AMB", "D01", 1, "TwoWay")
+	ts.do(http.MethodPost, "/locations", map[string]any{
+		"locationCode": "WH1-RCV-AMB-D01-01-01-A", "locationType": "DockDoor", "dockFlow": "Inbound",
+	}).assertStatus(t, http.StatusCreated)
+	ts.seedLocationType("PalletRack", 1200, 2.4)
+	ts.do(http.MethodPost, "/locations", map[string]any{
+		"locationCode": "WH1-RCV-AMB-D01-01-02-A", "locationType": "PalletRack",
+	}).assertStatus(t, http.StatusCreated)
+
+	var grid gridBody
+	ts.do(http.MethodGet, "/zones/WH1-RCV-AMB/grid", nil).assertStatus(t, http.StatusOK).decode(t, &grid)
+
+	roles := map[string]string{}
+	for _, row := range grid.Rows {
+		for _, cell := range row.Cells {
+			if cell == nil {
+				continue
+			}
+			for _, pos := range cell.Positions {
+				roles[pos.LocationCode] = pos.Role
+			}
+		}
+	}
+	if roles["WH1-RCV-AMB-D01-01-01-A"] != "Dock" {
+		t.Fatalf("dock slot role = %q, want Dock", roles["WH1-RCV-AMB-D01-01-01-A"])
+	}
+	if roles["WH1-RCV-AMB-D01-01-02-A"] != "Storage" {
+		t.Fatalf("storage slot role = %q, want Storage", roles["WH1-RCV-AMB-D01-01-02-A"])
+	}
+}
+
+// ADR-0016 gap fix: the SVG floor plan must distinguish functional roles —
+// a monogram inside every non-Storage slot's rect, and the role in the
+// tooltip; Storage rects stay unmarked.
+func TestSVG_DistinguishesFunctionalRoles(t *testing.T) {
+	ts := newTestServer(t)
+	ts.seedSite()
+	ts.do(http.MethodPost, "/location-types", map[string]any{
+		"name": "DockDoor", "role": "Dock",
+	}).assertStatus(t, http.StatusCreated)
+	ts.seedZone("RCV", "AMB", "Ambient", false)
+	ts.seedAisle("WH1-RCV-AMB", "D01", 1, "TwoWay")
+	ts.do(http.MethodPost, "/locations", map[string]any{
+		"locationCode": "WH1-RCV-AMB-D01-01-01-A", "locationType": "DockDoor", "dockFlow": "Inbound",
+	}).assertStatus(t, http.StatusCreated)
+	ts.seedLocationType("PalletRack", 1200, 2.4)
+	ts.do(http.MethodPost, "/locations", map[string]any{
+		"locationCode": "WH1-RCV-AMB-D01-01-02-A", "locationType": "PalletRack",
+	}).assertStatus(t, http.StatusCreated)
+
+	res := ts.do(http.MethodGet, "/sites/WH1/layout?format=svg", nil).assertStatus(t, http.StatusOK)
+	doc := string(res.body)
+
+	if !strings.Contains(doc, ">DK<") {
+		t.Fatal("SVG must carry the DK monogram on the Dock slot")
+	}
+	if !strings.Contains(doc, "(DockDoor, Dock, Active)") {
+		t.Fatal("SVG tooltip must name the slot's role")
+	}
+	if strings.Contains(doc, ">ST<") && strings.Contains(doc, "PalletRack (Storage, Active)") {
+		// ST monogram would collide with a Staging slot; with none seeded
+		// here, its presence would mean Storage is being marked too.
+		t.Fatal("Storage slots must not carry a role monogram")
+	}
 }

@@ -68,7 +68,7 @@ func TestRegisterZone(t *testing.T) {
 	t.Run("registers a zone under an active site", func(t *testing.T) {
 		h := newHarness(t)
 		h.mustRegisterSite("WH1", "Fulfilment Centre One")
-		z, err := h.registerZone.Execute(h.ctx(), "WH1", "STOR", "FRZ", shared.Frozen, false)
+		z, err := h.registerZone.Execute(h.ctx(), "WH1", "STOR", "FRZ", shared.Frozen, false, nil, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -80,7 +80,7 @@ func TestRegisterZone(t *testing.T) {
 
 	t.Run("rejects an unknown parent site", func(t *testing.T) {
 		h := newHarness(t)
-		_, err := h.registerZone.Execute(h.ctx(), "NOPE", "STOR", "AMB", shared.Ambient, false)
+		_, err := h.registerZone.Execute(h.ctx(), "NOPE", "STOR", "AMB", shared.Ambient, false, nil, nil)
 		assertErrorIs(t, err, usecases.ErrSiteNotFound)
 		h.assertNotPublished("ZoneRegistered")
 	})
@@ -89,7 +89,7 @@ func TestRegisterZone(t *testing.T) {
 		h := newHarness(t)
 		h.mustRegisterSite("WH1", "Fulfilment Centre One")
 		decommissionSite(t, h, "WH1")
-		_, err := h.registerZone.Execute(h.ctx(), "WH1", "STOR", "AMB", shared.Ambient, false)
+		_, err := h.registerZone.Execute(h.ctx(), "WH1", "STOR", "AMB", shared.Ambient, false, nil, nil)
 		assertErrorIs(t, err, usecases.ErrSiteNotActive)
 	})
 
@@ -97,14 +97,14 @@ func TestRegisterZone(t *testing.T) {
 		h := newHarness(t)
 		h.mustRegisterSite("WH1", "Fulfilment Centre One")
 		h.mustRegisterZone("WH1", "STOR", "AMB", shared.Ambient, false)
-		_, err := h.registerZone.Execute(h.ctx(), "WH1", "STOR", "AMB", shared.Chilled, true)
+		_, err := h.registerZone.Execute(h.ctx(), "WH1", "STOR", "AMB", shared.Chilled, true, nil, nil)
 		assertErrorIs(t, err, usecases.ErrDuplicateZone)
 	})
 
 	t.Run("rejects an invalid zone definition", func(t *testing.T) {
 		h := newHarness(t)
 		h.mustRegisterSite("WH1", "Fulfilment Centre One")
-		_, err := h.registerZone.Execute(h.ctx(), "WH1", "STOR", "AMB", "Tepid", false)
+		_, err := h.registerZone.Execute(h.ctx(), "WH1", "STOR", "AMB", "Tepid", false, nil, nil)
 		assertErrorIs(t, err, shared.ErrUnknownTemperatureClass)
 	})
 }

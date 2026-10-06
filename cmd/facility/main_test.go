@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"os"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/claudioed/facility-layout/internal/adapters/outbound/postgres"
 )
 
 // TestMigrationsDatabaseURLFallback proves the fallback wiring
@@ -123,4 +127,80 @@ func migrationsDirForTest(t *testing.T) string {
 // need to pass one in but don't assert on its output.
 func quietLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
+// TestStartBackground_TypedNilSweeperDoesNotPanic reproduces the contract
+// job crash: with no DATABASE_URL the service runs in-memory and
+// memoryAdapters returns a typed-nil *postgres.Sweeper. Boxing that into
+// startBackground's interface parameter makes worker != nil, so the old
+// guard let it through and worker.Run dereferenced a nil receiver,
+// SIGSEGV-panicking the whole process ~5ms after boot (Schemathesis's
+// in-memory service died before probing a single endpoint). The
+// normalization inside startBackground must treat it as "no worker".
+func TestStartBackground_TypedNilSweeperDoesNotPanic(t *testing.T) {
+	logger := quietLogger()
+	errCh := make(chan error, 1)
+	var typedNilSweeper *postgres.Sweeper
+
+	done := startBackground(context.Background(), logger, typedNilSweeper, "housekeeping sweeper running", errCh)
+
+	select {
+	case <-done:
+		// done closed without launching the goroutine: correct.
+	case <-time.After(5 * time.Second):
+		t.Fatal("startBackground did not return a closed done channel for a typed-nil sweeper within 5s")
+	case err := <-errCh:
+		t.Fatalf("startBackground reported an error for a typed-nil sweeper: %v", err)
+	}
+	select {
+	case err := <-errCh:
+		t.Fatalf("unexpected error from typed-nil sweeper: %v", err)
+	default:
+	}
+}
+
+// TestStartBackground_RealWorkerRuns proves the normalization did not
+// break the positive path: a non-nil worker is still started and its
+// Run error (non-cancel) is still surfaced on errCh.
+func TestStartBackground_RealWorkerRuns(t *testing.T) {
+	logger := quietLogger()
+	errCh := make(chan error, 1)
+	ran := make(chan struct{})
+	worker := workerStub{ran: ran}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := startBackground(ctx, logger, worker, "housekeeping sweeper running", errCh)
+
+	select {
+	case <-ran:
+	case <-time.After(5 * time.Second):
+		t.Fatal("worker.Run was never called within 5s")
+	}
+	select {
+	case err := <-errCh:
+		t.Fatalf("unexpected error: %v", err)
+	default:
+	}
+	select {
+	case <-done:
+		t.Fatal("done must not be closed while the worker is still running")
+	default:
+	}
+	cancel() // Run returns on ctx cancel; wait for the goroutine to finish.
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("worker goroutine did not stop within 5s of ctx cancel")
+	}
+}
+
+// workerStub is a minimal Run(context.Context) error used to prove
+// startBackground's positive path.
+type workerStub struct{ ran chan struct{} }
+
+func (w workerStub) Run(ctx context.Context) error {
+	close(w.ran)
+	<-ctx.Done()
+	return ctx.Err()
 }

@@ -45,7 +45,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: python3 scripts/harness/guide_lint.py
+      - run: python3 scripts/harness/repo_lint.py
       - run: python3 scripts/harness/test_hook.py
+      - run: python3 scripts/harness/test_repo_lint.py
 
 
   # Complexity gate as its own named check: cyclomatic (gocyclo, cyclop),
@@ -182,32 +184,14 @@ jobs:
   integration:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: facility
-          POSTGRES_PASSWORD: facility
-          POSTGRES_DB: facility
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
+    # No Postgres service container: every integration test boots its own
+    # Postgres (and Kafka) via testcontainers on the runner's Docker daemon.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
-      - name: Create isolated analytics database
-        env:
-          PGPASSWORD: facility
-        run: psql -h localhost -U facility -d postgres -c 'CREATE DATABASE facility_analytics;'
-      - name: Integration tests
-        env:
-          DATABASE_URL: "postgres://facility:facility@localhost:5432/facility?sslmode=disable"
-          ANALYTICS_DATABASE_URL: "postgres://facility:facility@localhost:5432/facility_analytics?sslmode=disable"
+      - name: Integration tests (testcontainers; each test boots its own Postgres/Kafka)
         run: |
           set -euo pipefail
           go build -tags=integration ./...
@@ -560,7 +544,7 @@ jobs:
           cosign sign --yes \
             ghcr.io/iqvo/facility-layout@${{ steps.build.outputs.digest }}
       - name: Generate SBOM (SPDX) for the published image
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           image: ghcr.io/iqvo/facility-layout@${{ steps.build.outputs.digest }}
           format: spdx-json

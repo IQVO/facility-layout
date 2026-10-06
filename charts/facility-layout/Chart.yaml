@@ -4,7 +4,7 @@ description: Facility Layout — the warehouse map (site, area, zone, aisle and 
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
-home: https://github.com/claudioed/facility-layout
+home: https://github.com/IQVO/facility-layout
 keywords:
   - ddd
   - hexagonal-architecture

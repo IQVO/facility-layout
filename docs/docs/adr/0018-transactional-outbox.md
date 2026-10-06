@@ -97,7 +97,9 @@ about which one anything reads from.
 - The relay adds one background goroutine and one extra table to operate;
   `outbox_events` needs the estate's usual retention/archival policy for a
   table that grows unbounded on `published_at`, same as
-  `process-path-management`'s.
+  `process-path-management`'s. *(That retention now exists:
+  [ADR-0026](./0026-housekeeping-sweeper.md)'s sweeper deletes PUBLISHED
+  rows past a retention, default 7d; unpublished rows are never swept.)*
 - `EVENT_PUBLISHER=kafka` with no `DATABASE_URL` (an in-memory-repos,
   direct-Kafka deployment) is intentionally left non-transactional: there is
   no Postgres transaction to bind the publish to, so this mode is unchanged

@@ -56,6 +56,14 @@ type LocationSlot struct {
 	position     shared.Point3D
 	dimensions   shared.Dimensions
 	pickSequence *int
+	// version is the optimistic-concurrency token (ADR-0025): inert
+	// infrastructure metadata exactly like the aggregate's own id, never
+	// read by business logic. NewLocationSlot starts it at 1;
+	// RehydrateLocationSlot populates it from the row that was read, and a
+	// persistence adapter's Save rejects the write when the stored row's
+	// version has moved on (ports.ErrConcurrentModification) so a
+	// read-modify-write caller must re-fetch rather than blind-overwrite.
+	version int
 }
 
 // NewLocationSlot validates and constructs an Active LocationSlot.
@@ -113,6 +121,7 @@ func NewLocationSlot(
 		functional:   functional,
 		capacity:     capacity,
 		status:       shared.Active,
+		version:      1,
 	}, nil
 }
 
@@ -120,8 +129,9 @@ func NewLocationSlot(
 // without re-running the registration invariants (the rule set may have
 // changed since; existing slots are not retroactively invalidated).
 // position/dimensions are the zero value when no geometry was ever set
-// (ADR-0017); pickSequence is nil under the same condition.
-// Persistence adapters only.
+// (ADR-0017); pickSequence is nil under the same condition. version is the
+// row's optimistic-concurrency version (ADR-0025); pass 1 for a row written
+// before the version column existed. Persistence adapters only.
 func RehydrateLocationSlot(
 	code shared.LocationCode,
 	locationType string,
@@ -132,11 +142,13 @@ func RehydrateLocationSlot(
 	position shared.Point3D,
 	dimensions shared.Dimensions,
 	pickSequence *int,
+	version int,
 ) *LocationSlot {
 	return &LocationSlot{
 		code: code, locationType: locationType, role: role,
 		functional: functional, capacity: capacity, status: status,
 		position: position, dimensions: dimensions, pickSequence: pickSequence,
+		version: version,
 	}
 }
 
@@ -188,6 +200,11 @@ func (s *LocationSlot) Dimensions() shared.Dimensions { return s.dimensions }
 // SequenceHint plus the slot's bay/level/position segments instead
 // (ADR-0017).
 func (s *LocationSlot) PickSequence() *int { return s.pickSequence }
+
+// Version returns the slot's optimistic-concurrency version (ADR-0025).
+// Infrastructure metadata only: domain logic never branches on it; the
+// persistence adapters use it to reject a Save built from a stale read.
+func (s *LocationSlot) Version() int { return s.version }
 
 // SetGeometry records the slot's physical position and footprint. Rejected
 // on a Decommissioned slot: a retired location's physical facts are

@@ -27,6 +27,8 @@ func toZoneResponse(z *zone.Zone) zoneResponse {
 		TemperatureClass: string(z.TemperatureClass()),
 		Hazmat:           z.Hazmat(),
 		Status:           string(z.Status()),
+		BayPitchM:        z.BayPitchM(),
+		LevelPitchM:      z.LevelPitchM(),
 	}
 }
 
@@ -261,6 +263,7 @@ func toZoneGridResponse(grid *usecases.ZoneGrid) zoneGridResponse {
 					LocationCode: s.Code().String(),
 					Position:     s.Code().Position(),
 					LocationType: s.LocationType(),
+					Role:         string(s.Role()),
 					Status:       string(s.Status()),
 				})
 			}

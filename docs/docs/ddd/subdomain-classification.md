@@ -13,7 +13,8 @@ DDD splits a domain into Core, Supporting and Generic subdomains by
 *competitive differentiation*. Physical-location structure is well
 understood, has an established industry pattern, and is not where a retailer
 or 3PL wins. It sits in the same bucket the platform's DDD reference puts
-Cartonization and WCS in.
+Cartonization and WCS in. The [Core Domain Chart](./core-domain-chart.md)
+plots that position on business differentiation against model complexity.
 
 | Subdomain | Type | Why |
 |---|---|---|
@@ -78,14 +79,19 @@ other warehouse-systems service and never will:
 - It never mutates another context's data, and none of them get write access
   to this one's aggregates.
 
-`inventory-storage`, `wes-work-planning` and `fulfillment-execution` are
-downstream **Conformists** to whatever this service publishes.
+`inventory-storage`, `warehouse-planning`, `wes-work-planning`,
+`fulfillment-execution` and `warehouse-ops-agent` are downstream
+**Conformists** to whatever this service publishes.
 
 :::note[Current status]
 Those relationships are wired in code: `inventory-storage` consumes the
-`warehouse.facility.events` Kafka topic, `wes-work-planning` calls
-`GET /distance`, and `fulfillment-execution` reads a location's `role` via
-`GET /locations/{locationCode}`. `workforce-management` has no relationship
+`warehouse.facility.events` Kafka topic (with a REST classification
+fallback), `warehouse-planning` consumes `LocationSlotRegistered` /
+`LocationSlotDecommissioned` from the same topic for storage capacity,
+`wes-work-planning` calls `GET /distance`, `fulfillment-execution` reads a
+location's `role` via `GET /locations/{locationCode}`, and
+`warehouse-ops-agent` uses the MCP server and the catalog-growth report.
+`workforce-management` has no relationship
 with this service. See [Context map](../ecosystem/context-map.md) for the
 details.
 :::

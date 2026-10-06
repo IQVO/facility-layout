@@ -140,14 +140,7 @@ channels:
       Language, not a subset. The one live consumer today is
       inventory-storage's location-classification cache (ZoneRegistered,
       LocationSlotRegistered, LocationSlotDecommissioned); everything else
-      is available, unconsumed Published Language. There is a second,
-      separate topic, `warehouse.facility.analytics`, feeding this service's
-      own analytical read model (the Layout Catalog Growth & Change report);
-      it has exactly one consumer — this service's own
-      `cmd/facility-projector` — and is not part of the cross-context
-      integration contract described here. It carries the same CloudEvents
-      (same `type` and `id` per occurrence) with
-      `dataschema=urn:warehouse:facility-layout:analytics:<EventName>:v1`.
+      is available, unconsumed Published Language.
     subscribe:
       operationId: onFacilityEvent
       summary: Consume facility-layout's Published Language.
@@ -160,6 +153,46 @@ channels:
         inventory-storage precedent: per-process-unique consumer group,
         FirstOffset replay, readiness gated on catching up to the high
         watermark observed at start.
+      message:
+        oneOf:
+          - $ref: '#/components/messages/siteRegistered'
+          - $ref: '#/components/messages/zoneRegistered'
+          - $ref: '#/components/messages/aisleRegistered'
+          - $ref: '#/components/messages/locationTypeRegistered'
+          - $ref: '#/components/messages/placementRuleDefined'
+          - $ref: '#/components/messages/locationSlotRegistered'
+          - $ref: '#/components/messages/locationSlotDecommissioned'
+          - $ref: '#/components/messages/facilityLayoutImported'
+          - $ref: '#/components/messages/locationGeometryUpdated'
+          - $ref: '#/components/messages/aisleGeometryUpdated'
+          - $ref: '#/components/messages/fixedStructureRegistered'
+          - $ref: '#/components/messages/crossAisleRegistered'
+
+  warehouse.facility.analytics:
+    description: >
+      The analytics topic of this bounded context (ADR-0010), named after
+      the `AnalyticsTopic` constant in
+      `internal/adapters/outbound/kafka/analytics_publisher.go`
+      (`warehouse.facility.analytics`). The composition root fans EVERY
+      domain event out to it alongside the integration topic when
+      `EVENT_PUBLISHER=kafka` and `analytics.enabled` — same CloudEvent
+      `type` and `id` per occurrence, with
+      `dataschema=urn:warehouse:facility-layout:analytics:<EventName>:v1`.
+      It is NOT part of the cross-context integration contract: it exists
+      so this service's own analytical read model (the "Layout Catalog
+      Growth & Change" data product) can evolve independently of the OLTP
+      Published Language. Cross-context consumers should subscribe to
+      `warehouse.facility.events`, not here.
+    subscribe:
+      operationId: onFacilityAnalyticsEvent
+      summary: Consume facility-layout's analytics stream (internal data product).
+      description: >
+        The only supported consumer is this service's own
+        `cmd/facility-projector` (single writer of the analytical
+        database, ADR-0010). It follows the same at-least-once discipline:
+        per-process-unique consumer group, FirstOffset replay,
+        idempotent projection keyed on the CloudEvent `id`, readiness
+        gated on catching up to the high watermark observed at start.
       message:
         oneOf:
           - $ref: '#/components/messages/siteRegistered'

@@ -103,8 +103,9 @@ map look like", not "what happened to order X".
 `internal/adapters/inbound/http/server.go` gained a `go-chi/cors` global
 middleware, `CORS_ALLOWED_ORIGINS` env var (default
 `http://localhost:5173,http://localhost:5186` — the shell's dev origin plus
-this remote's own dev port), `GET`/`POST`/`PUT`/`DELETE`, no credentials
-(static-bearer-key auth, not cookies, so credentials are never required).
+this remote's own dev port), `GET`/`POST`/`PUT`/`DELETE`, no credentials (the API is unauthenticated —
+the static-bearer-key layer was later removed by ADR-0015 — so no cookies
+or credentials are ever involved).
 Added directly to the existing HTTP adapter, not via a gateway — identical to
 ADR-0002's rationale for the other four services, applied here even though
 this service sits outside the BFF's fan-out, because `facility-mfe` still

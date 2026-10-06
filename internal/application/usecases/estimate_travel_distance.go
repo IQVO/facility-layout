@@ -2,9 +2,11 @@ package usecases
 
 import (
 	"context"
+	"math"
 
 	"github.com/claudioed/facility-layout/internal/application/ports"
 	"github.com/claudioed/facility-layout/internal/domain/shared"
+	"github.com/claudioed/facility-layout/internal/domain/slot"
 	"github.com/claudioed/facility-layout/internal/domain/travel"
 )
 
@@ -29,10 +31,16 @@ type TravelDistance struct {
 	Route     []travel.Node
 }
 
-// Execute resolves from and to to their zones and slots, refusing
-// (ErrNoRouteBetweenZones) rather than guessing when they are in different
-// zones — this phase's graph does not connect zones. Both locations must
-// exist (ErrLocationSlotNotFound).
+// Execute resolves from and to to their zones and slots. Same-zone
+// requests route over the zone's travel graph (aisles, bays, cross-aisles).
+// Cross-zone requests are honoured ONLY when both endpoints carry real
+// position geometry (ADR-0017's "refuse where neither zone has geometry"):
+// the answer is the straight-line (beeline) distance between the two
+// positions, flagged estimated=true because it is not a routed path — the
+// travel graph is per-zone and cross-aisles are zone-scoped, so no honest
+// routed cross-zone path exists yet. Without geometry on both endpoints it
+// still refuses (ErrNoRouteBetweenZones) rather than inventing a number.
+// Both locations must exist (ErrLocationSlotNotFound).
 func (uc *EstimateTravelDistance) Execute(ctx context.Context, from, to shared.LocationCode) (*TravelDistance, error) {
 	fromSlot, err := uc.Slots.FindByCode(ctx, from)
 	if err != nil {
@@ -50,7 +58,7 @@ func (uc *EstimateTravelDistance) Execute(ctx context.Context, from, to shared.L
 	}
 
 	if from.ZoneID() != to.ZoneID() {
-		return nil, ErrNoRouteBetweenZones
+		return crossZoneBeeline(fromSlot, toSlot)
 	}
 
 	graph, err := buildZoneGraph(ctx, uc.Zones, uc.Aisles, uc.Slots, uc.CrossAisles, from.ZoneID())
@@ -65,4 +73,31 @@ func (uc *EstimateTravelDistance) Execute(ctx context.Context, from, to shared.L
 		return nil, err
 	}
 	return &TravelDistance{MetresM: route.MetresM, Estimated: route.Estimated, Route: route.Nodes}, nil
+}
+
+// crossZoneBeeline is the geometry-backed cross-zone estimate ADR-0017
+// allows: the 3D straight-line distance between the two slots' recorded
+// positions, flagged estimated (it ignores aisles, racks and walls — it is
+// a lower bound a consumer can reason about, not a routed path). It
+// refuses with ErrNoRouteBetweenZones when either endpoint has no recorded
+// position: with the graph per-zone, a pitch-based guess across a zone
+// boundary is exactly the false precision the ADR refuses to publish.
+func crossZoneBeeline(fromSlot, toSlot *slot.LocationSlot) (*TravelDistance, error) {
+	fromPos, toPos := fromSlot.Position(), toSlot.Position()
+	if fromPos.IsZero() || toPos.IsZero() {
+		return nil, ErrNoRouteBetweenZones
+	}
+	dx := fromPos.XM() - toPos.XM()
+	dy := fromPos.YM() - toPos.YM()
+	dz := fromPos.ZM() - toPos.ZM()
+	metres := math.Sqrt(dx*dx + dy*dy + dz*dz)
+	from, to := fromSlot.Code(), toSlot.Code()
+	return &TravelDistance{
+		MetresM:   metres,
+		Estimated: true,
+		Route: []travel.Node{
+			{AisleID: from.AisleID(), Bay: from.Bay()},
+			{AisleID: to.AisleID(), Bay: to.Bay()},
+		},
+	}, nil
 }

@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/claudioed/facility-layout/internal/application/ports"
 	"github.com/claudioed/facility-layout/internal/domain/placement"
 	"github.com/claudioed/facility-layout/internal/domain/shared"
 	"github.com/claudioed/facility-layout/internal/domain/slot"
@@ -27,23 +28,29 @@ func NewSlotRepo(pool *pgxpool.Pool) *SlotRepo {
 
 const slotColumns = `code, site_segment, area_segment, zone_segment, aisle_segment,
 	bay_segment, level_segment, position_segment, location_type, role, dock_flow, activities,
-	max_weight_kg, max_volume_m3, status, x_m, y_m, z_m, width_m, depth_m, height_m, pick_sequence`
+	max_weight_kg, max_volume_m3, status, x_m, y_m, z_m, width_m, depth_m, height_m, pick_sequence, version`
 
-// Save upserts the slot.
+// Save upserts the slot, version-guarded against a concurrent writer
+// (ADR-0025, optimistic concurrency): on an existing row it only applies
+// when the row's current version still matches s.Version(), and always
+// advances the row by exactly one version. ports.ErrConcurrentModification
+// is returned when the row exists but its version no longer matches — the
+// caller must re-fetch and re-apply its change, not blindly re-Save the
+// same in-memory aggregate.
 func (r *SlotRepo) Save(ctx context.Context, s *slot.LocationSlot) error {
 	code := s.Code()
 	functional := s.Functional()
 	position := s.Position()
 	dimensions := s.Dimensions()
-	_, err := querierFrom(ctx, r.pool).Exec(ctx, `
+	tag, err := querierFrom(ctx, r.pool).Exec(ctx, `
 		INSERT INTO location_slots (
 			code, site_segment, area_segment, zone_segment, aisle_segment,
 			bay_segment, level_segment, position_segment,
 			zone_id, aisle_id, location_type, role, dock_flow, activities,
 			max_weight_kg, max_volume_m3, status,
-			x_m, y_m, z_m, width_m, depth_m, height_m, pick_sequence
+			x_m, y_m, z_m, width_m, depth_m, height_m, pick_sequence, version
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, 1)
 		ON CONFLICT (code) DO UPDATE SET
 			location_type = EXCLUDED.location_type,
 			role = EXCLUDED.role,
@@ -58,7 +65,9 @@ func (r *SlotRepo) Save(ctx context.Context, s *slot.LocationSlot) error {
 			width_m = EXCLUDED.width_m,
 			depth_m = EXCLUDED.depth_m,
 			height_m = EXCLUDED.height_m,
-			pick_sequence = EXCLUDED.pick_sequence
+			pick_sequence = EXCLUDED.pick_sequence,
+			version = location_slots.version + 1
+		WHERE location_slots.version = $25
 	`,
 		code.String(), code.Site(), code.Area(), code.Zone(), code.Aisle(),
 		code.Bay(), code.Level(), code.Position(),
@@ -67,8 +76,17 @@ func (r *SlotRepo) Save(ctx context.Context, s *slot.LocationSlot) error {
 		nullableFloat(s.Capacity()), nullableVolume(s.Capacity()), string(s.Status()),
 		nullablePositionX(position), nullablePositionY(position), nullablePositionZ(position),
 		nullableDimensionWidth(dimensions), nullableDimensionDepth(dimensions), nullableDimensionHeight(dimensions),
-		s.PickSequence())
-	return err
+		s.PickSequence(), s.Version())
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		// The row exists (this is the ON CONFLICT arm; a plain INSERT into
+		// an empty slot always affects exactly 1 row) but its version no
+		// longer matches what s was loaded at.
+		return ports.ErrConcurrentModification
+	}
+	return nil
 }
 
 // FindByCode returns the slot, or (nil, nil) when it does not exist.
@@ -127,10 +145,11 @@ func scanSlot(row scanner) (*slot.LocationSlot, error) {
 	var maxWeightKg, maxVolumeM3 *float64
 	var xM, yM, zM, widthM, depthM, heightM *float64
 	var pickSequence *int
+	var version int
 
 	if err := row.Scan(&raw, &site, &area, &zoneSeg, &aisleSeg, &bay, &level, &position,
 		&locationType, &role, &dockFlow, &activities, &maxWeightKg, &maxVolumeM3, &status,
-		&xM, &yM, &zM, &widthM, &depthM, &heightM, &pickSequence); err != nil {
+		&xM, &yM, &zM, &widthM, &depthM, &heightM, &pickSequence, &version); err != nil {
 		return nil, err
 	}
 
@@ -158,7 +177,7 @@ func scanSlot(row scanner) (*slot.LocationSlot, error) {
 	if err != nil {
 		return nil, err
 	}
-	return slot.RehydrateLocationSlot(code, locationType, locationRole, functional, capacity, st, position3D, dimensions, pickSequence), nil
+	return slot.RehydrateLocationSlot(code, locationType, locationRole, functional, capacity, st, position3D, dimensions, pickSequence, version), nil
 }
 
 // nullableDockFlow returns functional's DockFlow as a pointer, or nil when

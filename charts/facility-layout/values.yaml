@@ -149,11 +149,24 @@ autoscaling:
 config:
   httpAddr: ":8080"
   migrationsPath: "migrations"
-  # Selects the outbound EventPublisher (ADR-0009): "log" (default) keeps the
-  # Postgres outbox/log publisher; "kafka" additionally fans out to the
-  # integration topic AND, when analytics.enabled, the analytics topic that
-  # the projector consumes. Existing default behavior is unchanged.
+  # Selects the outbound EventPublisher (ADR-0009): "log" (default) logs
+  # events only — NO outbox rows are written and nothing reaches Kafka;
+  # "kafka" writes events through the Postgres transactional outbox
+  # (ADR-0018) and relays them to the integration topic AND, when
+  # analytics.enabled, the analytics topic the projector consumes.
   eventPublisher: "log"   # "log" or "kafka"
+  # How long the outbox relay sleeps between empty passes (ADR-0018).
+  # Only read when eventPublisher is "kafka" and a database URL is
+  # configured; rendered into the ConfigMap as OUTBOX_RELAY_INTERVAL.
+  outboxRelayInterval: "1s"
+  # Housekeeping sweeper (ADR-0026): bounds the two append-only tables.
+  # Rendered as HOUSEKEEPING_INTERVAL / IDEMPOTENCY_KEY_TTL /
+  # OUTBOX_RETENTION. "0s" disables the respective knob (the whole
+  # sweeper for the interval, one half for a TTL/retention). Only read
+  # when a database URL is configured.
+  housekeepingInterval: "1h"
+  idempotencyKeyTTL: "24h"
+  outboxRetention: "168h"
 
 # OpenTelemetry. The service pushes traces, metrics and logs over OTLP/gRPC
 # to a Collector; nothing is scraped from the pod. A Collector that is down
