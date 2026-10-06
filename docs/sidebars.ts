@@ -40,6 +40,17 @@ const sidebars: SidebarsConfig = {
         'ddd/invariants',
         'ddd/domain-events',
         'ddd/hexagonal-architecture',
+        {
+          type: 'category',
+          label: 'DDD artifacts (ddd-crew)',
+          collapsed: false,
+          link: {type: 'doc', id: 'ddd/ddd-artifacts'},
+          items: [
+            'ddd/core-domain-chart',
+            'ddd/bounded-context-canvas',
+            'ddd/aggregate-design-canvas',
+          ],
+        },
       ],
     },
     {

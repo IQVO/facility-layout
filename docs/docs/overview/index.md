@@ -43,6 +43,9 @@ WH1-STOR-AMB-A07-03-02-B
 | What does this building look like, top to bottom? | `GET /sites/{siteCode}/layout` |
 | What does one zone look like as a paintable grid? | `GET /zones/{zoneId}/grid` |
 | Which aisle comes next in walk order? | An Aisle's `SequenceHint` |
+| How far apart are two slots on the map? | `GET /distance?from=&to=` (routed within a zone; straight-line estimate across zones when both slots have position geometry) |
+| Which of a site's slots are dock doors, work centers, QC stations…? | `GET /sites/{siteCode}/locations?role=` |
+| Is this slot in a hazmat or temperature-controlled zone? | `GET /locations/{locationCode}/classification` |
 
 ## Strategic position, in one paragraph
 
@@ -52,7 +55,8 @@ and is not a competitive differentiator, and it is needed by contexts on both
 sides of the WMS/WES line: `inventory-storage` needs location validity to
 accept a stow, and `wes-work-planning` / `fulfillment-execution` need
 zone/aisle adjacency for travel-path and congestion reasoning. Neither owns
-it; both consume it. Following the reference's discipline —
+it; both consume it (as do `warehouse-planning`, for storage capacity, and
+`warehouse-ops-agent`, over MCP). Following the reference's discipline —
 *"extract generic logic instead of duplicating it"* — it is therefore its own
 bounded context and its own service, not a package bolted onto
 `inventory-storage`. See
