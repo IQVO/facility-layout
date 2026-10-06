@@ -8,9 +8,10 @@ description: How a downstream context integrates — synchronous REST, Kafka eve
 # Consuming this service
 
 :::info[Current status]
-Four services consume `facility-layout` today: `inventory-storage` over
-Kafka (with a REST fallback), `wes-work-planning` and `fulfillment-execution`
-over REST, and `warehouse-ops-agent` over MCP. See the
+Five services consume `facility-layout` today: `inventory-storage` over
+Kafka (with a REST fallback), `warehouse-planning` over Kafka,
+`wes-work-planning` and `fulfillment-execution` over REST, and
+`warehouse-ops-agent` over MCP (plus the catalog-growth report REST). See the
 [Context map](./context-map.md) for the exact endpoints, events and switches
 each one uses.
 :::
@@ -20,7 +21,7 @@ each one uses.
 | Need | Style | In use by |
 |---|---|---|
 | "Is this exact location valid, right now, before I accept this stow?" | **Synchronous REST** — `GET /locations/{locationCode}` or `/classification` | `inventory-storage` (`LOCATION_LOOKUP_MODE=http`), `fulfillment-execution` (role lookup) |
-| "Keep a local read model of the building's structure in sync" | **Event subscription** — `warehouse.facility.events` | `inventory-storage` (`LOCATION_LOOKUP_MODE=kafka`) |
+| "Keep a local read model of the building's structure in sync" | **Event subscription** — `warehouse.facility.events` | `inventory-storage` (`LOCATION_LOOKUP_MODE=kafka`), `warehouse-planning` (storage-capacity tally) |
 | "How far apart are these two locations?" | **Synchronous REST** — `GET /distance?from=&to=` | `wes-work-planning` |
 | "Let an agent explore the map" | **MCP** — `cmd/mcp`, Streamable HTTP | `warehouse-ops-agent` |
 
@@ -60,7 +61,8 @@ For structure rather than a single slot:
 | Where are the dock doors / work centers / yard spots? | `GET /sites/{siteCode}/locations?role={LocationRole}` |
 | What is this slot for? | `GET /locations/{locationCode}` — the `role` field (plus `dockFlow` / `activities`) |
 | Walkable topology of a zone | `GET /zones/{zoneId}/travel-graph` |
-| Distance between two slots in the same zone | `GET /distance?from=&to=` → `{metresM, estimated, route}` |
+| Declared cross-aisle connections of a zone | `GET /zones/{zoneId}/cross-aisles` |
+| Distance between two slots | `GET /distance?from=&to=` → `{metresM, estimated, route}` — routed over the zone's travel graph when both slots share a zone; across zones a straight-line estimate (`estimated: true`) only when both slots have recorded position geometry, otherwise `422 no-route-between-zones` |
 
 ## Event subscription
 
@@ -74,9 +76,13 @@ message is a CloudEvents 1.0 event in structured content mode
 `id`, `source=/warehouse/facility-layout`, `type`, `subject` (aggregate id),
 `time`, `datacontenttype`, `dataschema` and `data` (the domain event's own
 JSON) — with the Kafka header
-`content-type: application/cloudevents+json; charset=UTF-8`, keyed by the
-identity of the aggregate that raised it, so per-aggregate order is
-preserved. Dispatch on the **full** `type` string (e.g.
+`content-type: application/cloudevents+json; charset=UTF-8`. The Kafka key is
+the identity of the aggregate that raised it, so per-aggregate order is
+preserved — including the four ADR 0017 geometry/structure/cross-aisle
+events ([ADR 0032](../adr/0032-aggregate-partition-keys-for-geometry-events.md));
+only `FacilityLayoutImported`, a batch outcome with no aggregate, is keyed by
+its CloudEvents `id` (its `subject` is the fixed `layout-import`; see
+[Domain events](../ddd/domain-events.md#catalogue-at-a-glance)). Dispatch on the **full** `type` string (e.g.
 `com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered`),
 dedupe on `id`, and DLQ/skip anything that fails CloudEvents validation.
 
@@ -96,6 +102,10 @@ first offset on every start under a per-instance consumer group, uses
 `ZoneRegistered`, `LocationSlotRegistered` and `LocationSlotDecommissioned`,
 ignores the rest, and gates its readiness on the replay finishing
 ([ADR 0013](../adr/0013-first-published-language-consumer.md)).
+`warehouse-planning` is the second: under a fixed consumer group it folds
+`LocationSlotRegistered` (Storage slots by location type, WorkCenter slots
+by activity) and `LocationSlotDecommissioned` into a capacity tally, deduping
+on the CloudEvents `id`.
 
 ## Rules for a consumer
 

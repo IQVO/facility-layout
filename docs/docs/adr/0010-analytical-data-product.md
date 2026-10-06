@@ -80,7 +80,8 @@ The composition root (`cmd/facility`) **fans out** when `EVENT_PUBLISHER=kafka`,
 publishing every domain event to BOTH topics through a small fan-out publisher,
 so the integration and analytics streams stay independent.
 
-**Data payload choice.** facility-layout's domain events already serialize
+**Data payload choice.** *(Amended 2026-10: the wire shape is now owned by adapter
+DTOs, not domain struct tags; bytes unchanged.)* facility-layout's domain events already serialize
 themselves to their wire shape (their struct tags ARE the contract), so — as the
 ADR-0009 integration publisher does — the analytics envelope carries the event's
 own JSON as its `data` field verbatim, rather than building a bespoke snake_case

@@ -29,7 +29,7 @@ it has no generated page in this section.
 The pages under **REST API (from `openapi.yaml`)** are generated at build
 time by `docusaurus-plugin-openapi-docs` directly from
 [`apis/openapi.yaml`](https://github.com/IQVO/facility-layout/blob/main/apis/openapi.yaml)
-in this repository — the same ~2,600-line OpenAPI 3.0.3 document that is
+in this repository — the same ~3,100-line OpenAPI 3.0.3 document that is
 linted in CI:
 
 ```bash
@@ -83,20 +83,15 @@ graph LR
 |---|---:|---:|
 | Sites | 2 | 3 |
 | Zones | 2 | 3 |
-| Aisles | 3 | 5 |
+| Aisles | 4 | 6 |
 | Location Types | 2 | 3 |
 | Placement Rules | 2 | 3 |
-| Locations | 5 | 6 |
+| Locations | 6 | 6 |
 | Layout | 6 | 7 |
-| Health | 1 | 1 |
-| **Total** | **23** | **31** |
+| Health | 2 | 2 |
+| **Total** | **26** | **33** |
 
-Every one of the 31 operations the router mounts has a corresponding
-operation in `apis/openapi.yaml`. The per-route breakdown — including the two
-geometry operations whose specification path differs from the router's — is
-on the [Endpoint catalogue](./endpoints.md) page.
-
-The router actually mounts a 32nd route, `GET /readyz` (Kubernetes
-readiness probe, ADR-0020) — deliberately absent from `apis/openapi.yaml`
-and this count, since it is an orchestration concern, not part of the
-published API contract.
+Every one of the 33 operations the router mounts — including the `/healthz`
+and `/readyz` probes — has a matching operation, at the same path, in
+`apis/openapi.yaml`. The per-route breakdown is on the
+[Endpoint catalogue](./endpoints.md) page.

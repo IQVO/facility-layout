@@ -2,7 +2,7 @@
 id: endpoints
 title: Endpoint catalogue
 sidebar_label: Endpoint catalogue
-description: All 31 operations across 23 OpenAPI paths, grouped by OpenAPI tag and cross-checked against the chi router.
+description: All 33 operations across 26 OpenAPI paths, grouped by OpenAPI tag and cross-checked against the chi router.
 ---
 
 # Endpoint catalogue
@@ -11,9 +11,9 @@ Every route the chi router mounts, grouped by its OpenAPI tag. Click any
 operation to reach the generated, interactive reference for it.
 
 :::tip[Coverage]
-All **31** router operations have a corresponding operation in
-`apis/openapi.yaml` (23 `paths` entries). Two of them — the geometry `PUT`s —
-are documented at a different path than the router mounts; see the
+All **33** router operations — including the `/healthz` and `/readyz`
+probes — have a matching operation, at the same path, in
+`apis/openapi.yaml` (26 `paths` entries); see the
 [coverage cross-check](#coverage-cross-check) at the bottom of this page.
 :::
 
@@ -58,6 +58,7 @@ needs — and a `Direction`.
 | `GET` | `/zones/{zoneId}/aisles/{aisleCode}` | [Get one aisle](./rest/get-aisle.api.mdx) | `200` |
 | `PUT` | `/zones/{zoneId}/aisles/{aisleCode}/geometry` | [Set an aisle's travel centreline](./rest/set-aisle-geometry.api.mdx) | `200` |
 | `POST` | `/zones/{zoneId}/cross-aisles` | [Register a connection between two aisles](./rest/register-cross-aisle.api.mdx) | `201` (no `Location`) |
+| `GET` | `/zones/{zoneId}/cross-aisles` | [List a zone's cross-aisles](./rest/list-cross-aisles.api.mdx) | `200` |
 
 `GET /zones/{zoneId}/aisles` returns aisles ordered by `sequenceHint`, not by
 registration order. That ordering *is* the walk order. The centreline and
@@ -134,24 +135,28 @@ on read, never separately stored state.
 | `POST` | `/sites/{siteCode}/structures` | [Register a fixed structure](./rest/register-fixed-structure.api.mdx) | `201` + `Location` — a wall, column, office, conveyor or other obstacle |
 | `GET` | `/sites/{siteCode}/structures` | [List a site's fixed structures](./rest/list-fixed-structures.api.mdx) | `200` |
 | `GET` | `/zones/{zoneId}/travel-graph` | [Get a zone's travel graph](./rest/get-zone-travel-graph.api.mdx) | Nodes (aisle/bay waypoints) and directed, metre-weighted edges |
-| `GET` | `/distance?from=&to=` | [Estimate travel distance](./rest/estimate-travel-distance.api.mdx) | `{metresM, estimated, route}` between two slots in the same zone |
+| `GET` | `/distance?from=&to=` | [Estimate travel distance](./rest/estimate-travel-distance.api.mdx) | `{metresM, estimated, route}` between two slots |
 
 Real output for the layout and grid is on
 [Drawing the warehouse](./drawing-the-warehouse.md). `/distance` reports map
-topology only — never travel time or congestion — and refuses rather than
-guesses when the two locations are in different zones.
+topology only — never travel time or congestion. Within one zone it routes
+over the zone's travel graph; across zones it returns a straight-line
+estimate (`estimated: true`) only when both slots carry recorded position
+geometry, and otherwise refuses with `422 no-route-between-zones` rather than
+guessing.
 
 ## Health
 
 | Method | Path | Operation | Returns |
 |---|---|---|---|
 | `GET` | `/healthz` | [Liveness probe](./rest/get-healthz.api.mdx) | `200` |
-| `GET` | `/readyz` | Readiness probe (not in `apis/openapi.yaml` — see below) | `200`, `503` once draining |
+| `GET` | `/readyz` | [Readiness probe](./rest/get-readyz.api.mdx) | `200`, `503` once draining (ADR-0020) |
 
 ## Coverage cross-check
 
 The router in `internal/adapters/inbound/http/server.go` mounts exactly these
-routes:
+routes (the resource-creation `POST`s are additionally wrapped by
+`RequireIdempotencyKey` when a database is configured):
 
 ```go
 r.Get("/healthz", s.handleHealthz)
@@ -177,6 +182,7 @@ r.Route("/zones", func(r chi.Router) {
     r.Get("/{zoneId}/aisles/{aisleCode}", s.handleGetAisle)
     r.Put("/{zoneId}/aisles/{aisleCode}/geometry", s.handleSetAisleGeometry)
     r.Post("/{zoneId}/cross-aisles", s.handleRegisterCrossAisle)
+    r.Get("/{zoneId}/cross-aisles", s.handleListCrossAisles)
     r.Get("/{zoneId}/travel-graph", s.handleGetZoneTravelGraph)
 })
 
@@ -204,34 +210,23 @@ r.Route("/locations", func(r chi.Router) {
 })
 ```
 
-That is **31 operations**, every one of which has an operation in
-`apis/openapi.yaml`, grouped under **23 OpenAPI paths**:
+That is **33 operations**, every one of which has an operation at the same
+path in `apis/openapi.yaml`, grouped under **26 OpenAPI paths**:
 
 | Tag | Paths | Operations |
 |---|---:|---:|
 | Sites | 2 | 3 |
 | Zones | 2 | 3 |
-| Aisles | 3 | 5 |
+| Aisles | 4 | 6 |
 | Location Types | 2 | 3 |
 | Placement Rules | 2 | 3 |
-| Locations | 5 | 6 |
+| Locations | 6 | 6 |
 | Layout | 6 | 7 |
-| Health | 1 | 1 |
-| **Total** | **23** | **31** |
+| Health | 2 | 2 |
+| **Total** | **26** | **33** |
 
-:::caution[Known spec-vs-router mismatch]
 The two geometry operations (`setAisleGeometry`, `setLocationGeometry`) are
-declared in `apis/openapi.yaml` as `PUT /zones/{zoneId}/aisles/{aisleCode}`
-and `PUT /locations/{locationCode}`, but the router mounts them with a
-trailing `/geometry` segment, as shown above and in the tables on this page.
-The router — and its handler tests — are authoritative; the generated
-reference pages for those two operations show the specification's path.
-:::
-
-:::info[A 32nd route with no OpenAPI operation]
-`GET /readyz` (the Kubernetes readiness probe, ADR-0020) is mounted by the
-router right next to `/healthz` but has no entry in `apis/openapi.yaml` and
-is not part of the counts above — it is an orchestration concern, not a
-published API operation, so it is intentionally outside the OpenAPI
-contract and the generated reference.
-:::
+declared at the router's `/geometry` paths, and `GET /readyz` (the
+Kubernetes readiness probe, ADR-0020) is part of the specification under the
+Health tag — earlier revisions of this page listed both as spec-vs-router
+mismatches.

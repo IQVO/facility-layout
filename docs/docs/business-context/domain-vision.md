@@ -80,8 +80,9 @@ services that use it are downstream **Conformists** to whatever shape this
 service publishes — they translate its vocabulary into their own models
 rather than negotiating a shared one. See
 [Context map](../ecosystem/context-map.md) for exactly who consumes what today
-(`inventory-storage` over Kafka, `wes-work-planning` and
-`fulfillment-execution` over REST, `warehouse-ops-agent` over MCP).
+(`inventory-storage` and `warehouse-planning` over Kafka,
+`wes-work-planning` and `fulfillment-execution` over REST,
+`warehouse-ops-agent` over MCP).
 
 ## The location code is the product
 

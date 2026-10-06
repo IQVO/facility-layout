@@ -11,6 +11,10 @@ Six core modelling elements make up this context. Four are structural
 aggregates in a strict hierarchy; two describe placement legality. Two more —
 `CrossAisle` and `FixedStructure` — describe physical geometry for the travel
 graph and the floor plan ([ADR 0017](../adr/0017-geometry-and-travel-graph.md)).
+Each of the eight has its own repository port. The per-aggregate
+[Aggregate Design Canvas](./aggregate-design-canvas.md) adds state
+diagrams, handled commands, created events and throughput estimates; the
+[class diagrams](./class-diagram.md) show every type.
 
 ```mermaid
 graph TD
@@ -165,7 +169,7 @@ LocationCode.**
 | | |
 |---|---|
 | **Identity** | `shared.LocationCode` — globally unique |
-| **State** | `code`, `locationType`, `role`, `functional` (`dockFlow` / `activities`), `capacity`, `status`, optional `position`, `dimensions`, `pickSequence` |
+| **State** | `code`, `locationType`, `role`, `functional` (`dockFlow` / `activities`), `capacity`, `status`, optional `position`, `dimensions`, `pickSequence`, and `version` (optimistic-concurrency token, [ADR 0025](../adr/0025-optimistic-concurrency-version-column.md)) |
 | **Constructor** | `NewLocationSlot(code, locationType, capacityOverride, functional, attrs, rules) (*LocationSlot, error)` |
 | **Behaviour** | `Decommission() error`, `SetGeometry(position, dimensions) error`, `SetPickSequence(int) error` |
 | **Errors** | `ErrMissingLocationCode`, `ErrMissingLocationType`, `ErrZoneMismatch`, `ErrAlreadyDecommissioned`, `ErrSlotDecommissioned`, `ErrNegativePickSequence`, `placement.ErrPlacementRuleViolated` |

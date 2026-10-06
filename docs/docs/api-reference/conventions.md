@@ -194,6 +194,14 @@ with `errors.Is`. The domain never knows an HTTP status code exists.
 | `empty-import` | 400 | Facility layout import must contain at least one row |
 | `idempotency-key-required` | 400 | A resource-creation POST was missing its required `Idempotency-Key` header |
 | `idempotency-key-reused` | 422 | The same `Idempotency-Key` was reused with a different request body |
+| `concurrent-modification` | 409 | The resource was modified by another writer; re-fetch and retry ([ADR 0025](../adr/0025-optimistic-concurrency-version-column.md)) |
+| `segment-endpoints-not-real` | 422 | Centreline endpoints must both be real points |
+| `segment-start-end-equal` | 422 | Centreline start and end must differ |
+| `missing-geometry-field` | 400 | Geometry coordinates and dimensions must be numbers, not null |
+| `missing-sequence-hint` | 400 | Aisle sequenceHint is required |
+| `invalid-layout-format` | 400 | Layout format must be json or svg (`GET /sites/{siteCode}/layout?format=`) |
+| `invalid-report-query` | 400 | The report query is malformed or missing a required parameter (`cmd/facility-reports` only) |
+| `report-store-error` | 500 | The report could not be served (`cmd/facility-reports` only) |
 | `internal-error` | 500 | An unexpected internal error occurred |
 
 All `type` values are prefixed with
