@@ -44,7 +44,7 @@ language everywhere. Module `github.com/claudioed/facility-layout`, Go 1.26.
   part of the Go module or its quality gate.
 - Every package has a doc comment; gofmt/go vet clean. Table-driven tests
   (domain + application with in-memory adapter), one httptest per endpoint,
-  build-tagged Postgres integration test (skipped without `DATABASE_URL`).
+  build-tagged Postgres integration tests (testcontainers; need Docker, never skip).
 - Config via env: `DATABASE_URL`, `HTTP_ADDR` (default `:8080`),
   `ANALYTICS_DATABASE_URL`, `EVENT_PUBLISHER` (`kafka` or unset).
 
@@ -72,7 +72,7 @@ Run from the repo root, not the docs site:
 make check-fast  # quick gate — run before saying "done"
 make check       # fmt-check + vet + build + lint + test — before every commit
 make check-all   # check + coverage(90%) + arch-test + bdd — before every push
-make integration # Postgres integration tests — needs DATABASE_URL
+make integration # Postgres/Kafka integration tests — needs Docker (testcontainers)
 make vuln        # govulncheck — after touching go.mod/go.sum
 make mutation    # gremlins on internal/domain — after changing domain behaviour
 ```
