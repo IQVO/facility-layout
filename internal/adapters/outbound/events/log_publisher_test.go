@@ -85,23 +85,29 @@ func TestLogPublisher_PayloadByteIdenticalToGolden(t *testing.T) {
 			if err := json.Unmarshal(buf.Bytes(), &line); err != nil {
 				t.Fatalf("log line is not JSON: %v", err)
 			}
-			path := filepath.Join("testdata", tc.label+".json")
-			if *update {
-				if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-					t.Fatalf("mkdir: %v", err)
-				}
-				if err := os.WriteFile(path, line.Payload, 0o600); err != nil {
-					t.Fatalf("write golden: %v", err)
-				}
-				return
-			}
-			want, err := os.ReadFile(path)
-			if err != nil {
-				t.Fatalf("read golden (run with -update to capture a baseline): %v", err)
-			}
-			if !bytes.Equal(line.Payload, want) {
-				t.Errorf("log payload changed\n got: %s\nwant: %s", line.Payload, want)
-			}
+			assertPayloadGolden(t, filepath.Join("testdata", tc.label+".json"), line.Payload)
 		})
+	}
+}
+
+// assertPayloadGolden compares got with the golden file at path
+// byte-for-byte, or rewrites the file when -update is set.
+func assertPayloadGolden(t *testing.T, path string, got []byte) {
+	t.Helper()
+	if *update {
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(path, got, 0o600); err != nil {
+			t.Fatalf("write golden: %v", err)
+		}
+		return
+	}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read golden (run with -update to capture a baseline): %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("log payload changed\n got: %s\nwant: %s", got, want)
 	}
 }

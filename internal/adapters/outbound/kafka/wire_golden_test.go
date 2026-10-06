@@ -66,24 +66,30 @@ func TestWireFormat_ByteIdenticalToGolden(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Encode: %v", err)
 				}
-				path := filepath.Join("testdata", "wire", s.dir, tc.label+".json")
-				if *update {
-					if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-						t.Fatalf("mkdir: %v", err)
-					}
-					if err := os.WriteFile(path, enc.Value, 0o600); err != nil {
-						t.Fatalf("write golden: %v", err)
-					}
-					return
-				}
-				want, err := os.ReadFile(path)
-				if err != nil {
-					t.Fatalf("read golden (run with -update to capture a baseline): %v", err)
-				}
-				if !bytes.Equal(enc.Value, want) {
-					t.Errorf("wire bytes changed\n got: %s\nwant: %s", enc.Value, want)
-				}
+				assertWireGolden(t, filepath.Join("testdata", "wire", s.dir, tc.label+".json"), enc.Value)
 			})
 		}
+	}
+}
+
+// assertWireGolden compares got with the golden file at path byte-for-byte,
+// or rewrites the file when -update is set.
+func assertWireGolden(t *testing.T, path string, got []byte) {
+	t.Helper()
+	if *update {
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(path, got, 0o600); err != nil {
+			t.Fatalf("write golden: %v", err)
+		}
+		return
+	}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read golden (run with -update to capture a baseline): %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("wire bytes changed\n got: %s\nwant: %s", got, want)
 	}
 }
