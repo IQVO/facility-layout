@@ -184,32 +184,14 @@ jobs:
   integration:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: facility
-          POSTGRES_PASSWORD: facility
-          POSTGRES_DB: facility
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
+    # No Postgres service container: every integration test boots its own
+    # Postgres (and Kafka) via testcontainers on the runner's Docker daemon.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
-      - name: Create isolated analytics database
-        env:
-          PGPASSWORD: facility
-        run: psql -h localhost -U facility -d postgres -c 'CREATE DATABASE facility_analytics;'
-      - name: Integration tests
-        env:
-          DATABASE_URL: "postgres://facility:facility@localhost:5432/facility?sslmode=disable"
-          ANALYTICS_DATABASE_URL: "postgres://facility:facility@localhost:5432/facility_analytics?sslmode=disable"
+      - name: Integration tests (testcontainers; each test boots its own Postgres/Kafka)
         run: |
           set -euo pipefail
           go build -tags=integration ./...

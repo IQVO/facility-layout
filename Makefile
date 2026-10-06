@@ -24,7 +24,7 @@ help: ## Print the available targets
 	@echo "  lint          golangci-lint run ./... (pin: $(GOLANGCI_LINT_VERSION))"
 	@echo "  test          go test ./... -race (unit + httptest + bdd; no DB needed)"
 	@echo "  coverage      coverage run + $(COVERAGE_THRESHOLD)% gate over domain+application"
-	@echo "  integration   go test -tags=integration ./... -race (NEEDS DATABASE_URL + Postgres)"
+	@echo "  integration   go test -tags=integration ./... -race (testcontainers; needs only Docker)"
 	@echo "  bdd           go test ./... -run TestFeatures -v (godog acceptance suite)"
 	@echo "  contract      scripts/contract-test.sh (Schemathesis vs apis/openapi.yaml;"
 	@echo "                boots the service in-memory; needs st: pip install"
@@ -34,10 +34,6 @@ help: ## Print the available targets
 	@echo "  vuln          govulncheck ./... (supply-chain sensor)"
 	@echo "  check         FAST pre-commit bundle: fmt-check vet build lint test"
 	@echo "  check-all     check + coverage arch-test bdd (pre-push gate)"
-	@echo ""
-	@echo "  integration needs a running Postgres, e.g.:"
-	@echo "    docker compose up -d postgres"
-	@echo "    DATABASE_URL='postgres://facility:facility@localhost:5432/facility?sslmode=disable' make integration"
 
 build: ## go build ./...
 	go build ./...
@@ -79,7 +75,7 @@ coverage: ## coverage run + gate, identical to the CI test job
 		exit 1; \
 	fi
 
-integration: ## build-tagged Postgres integration tests — needs DATABASE_URL + a running Postgres
+integration: ## build-tagged integration tests — testcontainers boots its own Postgres/Kafka (needs only Docker)
 	go test -tags=integration ./... -race -count=1
 
 bdd: ## godog/Gherkin acceptance suite
