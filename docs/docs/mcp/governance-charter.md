@@ -205,8 +205,8 @@ Jaeger and Grafana alongside HTTP.
   it returns a straight-line estimate flagged `estimated: true` only when
   both slots carry recorded position geometry, and otherwise refuses
   (`ErrNoRouteBetweenZones`) — this context's travel graph does not connect
-  zones. (The tool's own description string still says it always refuses;
-  see the use case `EstimateTravelDistance` for the current behaviour.)
+  zones. The tool's description string states both outcomes (pinned by
+  `TestEval_EstimateTravelDistanceDescribesCrossZoneEstimate`).
 - With no real aisle geometry registered, a within-aisle distance is the
   bay gap at the zone's default bay pitch (1.2 m per bay) and is always
   flagged `estimated: true` — the map's distances are explicitly
