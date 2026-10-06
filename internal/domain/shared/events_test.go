@@ -1,7 +1,6 @@
 package shared_test
 
 import (
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -87,7 +86,9 @@ func TestDomainEventsCarryNameTypeAndTime(t *testing.T) {
 }
 
 // assertDomainEventIdentity exercises one table row: the event's name,
-// CloudEvents type, occurredAt, and its JSON-serialized envelope.
+// CloudEvents type and occurredAt. The JSON wire shape is an adapter
+// concern and is pinned in internal/adapters/kafka/cloudevents (wire_test.go)
+// and the outbound/kafka golden files.
 func assertDomainEventIdentity(t *testing.T, tc domainEventCase, at time.Time) {
 	t.Helper()
 	if got := tc.event.EventName(); got != tc.wantName {
@@ -98,17 +99,6 @@ func assertDomainEventIdentity(t *testing.T, tc domainEventCase, at time.Time) {
 	}
 	if !tc.event.OccurredAt().Equal(at) {
 		t.Fatalf("expected occurredAt %v, got %v", at, tc.event.OccurredAt())
-	}
-	payload, err := json.Marshal(tc.event)
-	if err != nil {
-		t.Fatalf("event must be JSON-serializable: %v", err)
-	}
-	var decoded map[string]any
-	if err := json.Unmarshal(payload, &decoded); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if decoded["eventName"] != tc.wantName || decoded["eventType"] != tc.wantType {
-		t.Fatalf("serialized envelope lost its identity: %s", payload)
 	}
 }
 
@@ -124,23 +114,6 @@ func TestSiteCapabilityChangedCarriesFullLWWState(t *testing.T) {
 	}
 	if event.SiteCode != "WH1" || !event.TransferOriginEnabled || event.TransferDestinationEnabled || event.CapabilityRevision != 42 {
 		t.Fatalf("event did not preserve the full capability state: %+v", event)
-	}
-
-	payload, err := json.Marshal(event)
-	if err != nil {
-		t.Fatalf("marshal event: %v", err)
-	}
-	var data map[string]any
-	if err := json.Unmarshal(payload, &data); err != nil {
-		t.Fatalf("unmarshal event: %v", err)
-	}
-	for _, field := range []string{"site_code", "transfer_origin_enabled", "transfer_destination_enabled", "capability_revision"} {
-		if _, ok := data[field]; !ok {
-			t.Errorf("payload missing %q: %s", field, payload)
-		}
-	}
-	if _, leaksPII := data["site_name"]; leaksPII {
-		t.Errorf("capability event must not contain site_name: %s", payload)
 	}
 }
 
