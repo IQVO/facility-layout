@@ -53,6 +53,29 @@ func NewSiteRegistered(occurredAt time.Time, siteCode, siteName string) SiteRegi
 	return SiteRegistered{base: newBase("site", "SiteRegistered", occurredAt), SiteCode: siteCode, SiteName: siteName}
 }
 
+// SiteCapabilityChanged: a site's transfer capability state changed. The
+// payload is a complete, PII-free last-write-wins snapshot; consumers use
+// CapabilityRevision to retain the newest state and never infer it from
+// physical layout topology.
+type SiteCapabilityChanged struct {
+	base
+	SiteCode                   string `json:"site_code"`
+	TransferOriginEnabled      bool   `json:"transfer_origin_enabled"`
+	TransferDestinationEnabled bool   `json:"transfer_destination_enabled"`
+	CapabilityRevision         int64  `json:"capability_revision"`
+}
+
+// NewSiteCapabilityChanged builds a full last-write-wins capability snapshot.
+func NewSiteCapabilityChanged(occurredAt time.Time, siteCode string, transferOriginEnabled, transferDestinationEnabled bool, capabilityRevision int64) SiteCapabilityChanged {
+	return SiteCapabilityChanged{
+		base:                       newBase("site", "SiteCapabilityChanged", occurredAt),
+		SiteCode:                   siteCode,
+		TransferOriginEnabled:      transferOriginEnabled,
+		TransferDestinationEnabled: transferDestinationEnabled,
+		CapabilityRevision:         capabilityRevision,
+	}
+}
+
 // ZoneRegistered: a behavioral zone was added inside a Site's area.
 type ZoneRegistered struct {
 	base
