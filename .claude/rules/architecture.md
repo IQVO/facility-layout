@@ -24,7 +24,9 @@ internal/
     usecases/                     one struct per use case
   adapters/
     inbound/http/                 chi handlers, DTOs, error mapping
-    inbound/mcp/                  MCP tools/resources/prompts
+    inbound/mcp/                  MCP tools/resources/prompts; every tool error is
+                                  `<slug>: detail` (REST problem slug, unmapped =
+                                  `internal-error`; errors.go, ADR-0033)
     inbound/kafka/                analytics projector's consumer (FirstOffset replay)
     outbound/postgres/            pgxpool repos + migrations
     outbound/memory/              in-memory repos for tests/local
