@@ -342,13 +342,23 @@ sequenceDiagram
         end
         G-->>UC: Route metres, estimated, nodes
     end
-    UC-->>IN: TravelDistance
-    IN-->>C: metresM, estimated, route
+    UC-->>IN: TravelDistance or an error
+    alt typed domain error
+        IN-->>C: REST problem+json with type slug and status, MCP isError text slug then detail
+    else untyped error
+        IN-->>C: REST 500 internal-error, MCP internal-error with the detail withheld
+    else success
+        IN-->>C: metresM, estimated, route
+    end
 ```
 
 Source: `internal/application/usecases/estimate_travel_distance.go`,
 `travel_graph_builder.go`, `internal/domain/travel/graph.go`,
-`internal/adapters/inbound/mcp/tools.go`. The other read models
+`internal/adapters/inbound/mcp/tools.go`, `errors.go`. Both adapters use the
+same slug for the same error (`site-not-found`, `no-route-between-zones`, …);
+the MCP text is `<slug>: detail`, and a blank `from` or `to` is rejected as
+`missing-location-code` before the use case runs
+([ADR 0033](../adr/0033-slug-prefixed-mcp-tool-errors.md)). The other read models
 (`GetSiteLayout`, `GetZoneGrid`, `GetZoneTravelGraph`, `ListLocationsByRole`,
 `GetLocationClassification` and the single-resource reads) follow the same
 "load through repositories, assemble, return" shape with no transaction and
