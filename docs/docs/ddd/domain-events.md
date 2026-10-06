@@ -267,6 +267,9 @@ aggregate's identity (so all events about one aggregate share a partition and
 stay ordered); the only exception is `FacilityLayoutImported`, a batch outcome
 with no aggregate, which is keyed by its CloudEvents `id`
 ([ADR 0032](../adr/0032-aggregate-partition-keys-for-geometry-events.md)).
+*Decided 2026-10-06: kept — no consumer needs import ordering, and keying by
+site would need an additive `siteCode` (a contract change) for no benefit
+([ADR 0034](../adr/0034-facility-layout-imported-stays-keyed-by-cloudevents-id.md)).*
 
 | CloudEvents `type` | Kafka key (partition) | `subject` | Producer use case(s) | Known consumers |
 |---|---|---|---|---|
