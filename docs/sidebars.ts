@@ -135,6 +135,8 @@ const sidebars: SidebarsConfig = {
         'adr/0030-dlq-bounded-retry-and-slog-otel-bridge',
         'adr/0031-kafka-writer-durability',
         'adr/0032-aggregate-partition-keys-for-geometry-events',
+        'adr/0033-slug-prefixed-mcp-tool-errors',
+        'adr/0034-facility-layout-imported-stays-keyed-by-cloudevents-id',
       ],
     },
   ],
