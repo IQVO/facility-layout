@@ -78,7 +78,7 @@ Each arrives as a **CloudEvents 1.0** event in structured content mode
 (aggregate id), `time`, `datacontenttype=application/json` and
 `dataschema=urn:warehouse:facility-layout:analytics:<EventName>:v1`, with the
 Kafka header `content-type: application/cloudevents+json; charset=UTF-8`. The
-`data` field carries the domain event's own JSON verbatim. The projector
+`data` field carries the event's JSON wire DTO (built by the cloudevents adapter; the domain events carry no struct tags). The projector
 **dispatches on the full `type` and ignores unknown types**, **dedupes on the
 CloudEvents `id`**, and dead-letters anything that is not a valid CloudEvent.
 

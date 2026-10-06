@@ -216,7 +216,7 @@ func (d Deps) registerTools(server *mcp.Server) {
 
 	addTool(server, &mcp.Tool{
 		Name:        "estimate_travel_distance",
-		Description: "Compute the shortest travel distance, in metres, between two coded locations within the same zone over the pure-domain travel graph (ADR-0017). Honours one-way aisles and cross-aisle connections; the result is flagged estimated when any leg used a zone's bay pitch fallback instead of real geometry. Refuses (does not guess) when the two locations are in different zones — this context's map does not yet connect zones on the travel graph. This reports MAP TOPOLOGY only, never travel time or congestion.",
+		Description: "Compute the shortest travel distance, in metres, between two coded locations (ADR-0017). Within one zone it routes over the pure-domain travel graph, honouring one-way aisles and cross-aisle connections; the result is flagged estimated when any leg used a zone's bay pitch fallback instead of real geometry. Across zones there is no routed path (the travel graph is per zone): when BOTH locations have recorded position geometry it returns the straight-line distance between them, always flagged estimated; otherwise it refuses (does not guess). This reports MAP TOPOLOGY only, never travel time or congestion.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: readOnly},
 	}, d.estimateTravelDistance)
 

@@ -78,7 +78,9 @@ flat envelope, no dual-write, no dual-read and no envelope toggle.
 
 `data` is the domain event's own JSON, byte-for-byte the payload shape that was
 published before this change (including its `eventName`/`eventType`/
-`occurredAt` fields). No extension attributes. The analytics `schema_version`
+`occurredAt` fields). *(Amended 2026-10: the payload is now produced by adapter
+DTOs in `cloudevents.WireData` rather than the domain events' struct tags; the
+bytes are identical and pinned by golden files.)* No extension attributes. The analytics `schema_version`
 field is removed; `dataschema` replaces it.
 
 ### 4. Published types and subjects
@@ -86,6 +88,7 @@ field is removed; `dataschema` replaces it.
 | `type` | `subject` | Kafka key |
 |---|---|---|
 | `com.warehouse.wms.facility-layout.site.SiteRegistered` | `siteCode` | `siteCode` |
+| `com.warehouse.wms.facility-layout.site.SiteCapabilityChanged` | `site_code` | `site_code` |
 | `com.warehouse.wms.facility-layout.zone.ZoneRegistered` | `zoneId` | `zoneId` |
 | `com.warehouse.wms.facility-layout.aisle.AisleRegistered` | `aisleId` | `aisleId` |
 | `com.warehouse.wms.facility-layout.aisle.AisleGeometryUpdated` | `aisleId` | event type (unchanged) |

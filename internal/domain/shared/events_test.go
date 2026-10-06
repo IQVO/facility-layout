@@ -1,7 +1,6 @@
 package shared_test
 
 import (
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -87,7 +86,9 @@ func TestDomainEventsCarryNameTypeAndTime(t *testing.T) {
 }
 
 // assertDomainEventIdentity exercises one table row: the event's name,
-// CloudEvents type, occurredAt, and its JSON-serialized envelope.
+// CloudEvents type and occurredAt. The JSON wire shape is an adapter
+// concern and is pinned in internal/adapters/kafka/cloudevents (wire_test.go)
+// and the outbound/kafka golden files.
 func assertDomainEventIdentity(t *testing.T, tc domainEventCase, at time.Time) {
 	t.Helper()
 	if got := tc.event.EventName(); got != tc.wantName {
@@ -99,16 +100,20 @@ func assertDomainEventIdentity(t *testing.T, tc domainEventCase, at time.Time) {
 	if !tc.event.OccurredAt().Equal(at) {
 		t.Fatalf("expected occurredAt %v, got %v", at, tc.event.OccurredAt())
 	}
-	payload, err := json.Marshal(tc.event)
-	if err != nil {
-		t.Fatalf("event must be JSON-serializable: %v", err)
+}
+
+func TestSiteCapabilityChangedCarriesFullLWWState(t *testing.T) {
+	at := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+	event := shared.NewSiteCapabilityChanged(at, "WH1", true, false, 42)
+
+	if event.EventName() != "SiteCapabilityChanged" {
+		t.Fatalf("event name = %q", event.EventName())
 	}
-	var decoded map[string]any
-	if err := json.Unmarshal(payload, &decoded); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if event.EventType() != "com.warehouse.wms.facility-layout.site.SiteCapabilityChanged" {
+		t.Fatalf("event type = %q", event.EventType())
 	}
-	if decoded["eventName"] != tc.wantName || decoded["eventType"] != tc.wantType {
-		t.Fatalf("serialized envelope lost its identity: %s", payload)
+	if event.SiteCode != "WH1" || !event.TransferOriginEnabled || event.TransferDestinationEnabled || event.CapabilityRevision != 42 {
+		t.Fatalf("event did not preserve the full capability state: %+v", event)
 	}
 }
 

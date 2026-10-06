@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"log/slog"
 
+	"github.com/claudioed/facility-layout/internal/adapters/kafka/cloudevents"
 	"github.com/claudioed/facility-layout/internal/domain/shared"
 )
 
@@ -30,7 +31,11 @@ func NewLogPublisher(logger *slog.Logger) *LogPublisher {
 // logs with ctx so the line is correlated with the span the use case that
 // raised the event is running in.
 func (p *LogPublisher) Publish(ctx context.Context, event shared.DomainEvent) error {
-	payload, err := json.Marshal(event)
+	data, err := cloudevents.WireData(event)
+	if err != nil {
+		return err
+	}
+	payload, err := json.Marshal(data)
 	if err != nil {
 		return err
 	}

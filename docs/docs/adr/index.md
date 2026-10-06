@@ -81,6 +81,7 @@ updated. The history of what was believed and when is the point.
 | [0029](./0029-gateway-api-httproute.md) | Gateway API HTTPRoute exposure template | Accepted |
 | [0030](./0030-dlq-bounded-retry-and-slog-otel-bridge.md) | DLQ topic-not-ready bounded retry and the slog-to-OTel bridge | Accepted |
 | [0031](./0031-kafka-writer-durability.md) | Kafka writer durability: RequireAll acks with a 10ms batch timeout | Accepted |
+| [0032](./0032-aggregate-partition-keys-for-geometry-events.md) | Key geometry, structure and cross-aisle events by aggregate identity (extends ADR-0021) | Accepted |
 
 ## The Kafka record that was deferred until the adapter existed
 
