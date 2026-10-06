@@ -23,7 +23,9 @@ duplicated. It is an **Open Host Service** with a **Published Language** (its
 domain events on the `warehouse.facility.events` Kafka topic, plus its REST
 API). It depends on no other service. Its downstream **Conformists** today:
 `inventory-storage` (consumes the Kafka topic to validate stows),
-`wes-work-planning` (`GET /distance`), `fulfillment-execution`
+`warehouse-planning` (consumes slot registrations/decommissions for its
+storage-capacity tally), `wes-work-planning` (`GET /distance`),
+`fulfillment-execution`
 (`GET /locations/{code}` for a location's role), and `warehouse-ops-agent`
 (the MCP tools and the catalog-growth report).
 
@@ -34,7 +36,10 @@ API). It depends on no other service. Its downstream **Conformists** today:
 Full documentation is published at
 **<https://iqvo.github.io/facility-layout/>** — business context and
 ubiquitous language, the DDD model (subdomain classification, aggregates,
-invariants, domain events), an interactive API reference generated from
+invariants, domain events) plus a ddd-crew DDD artifact pack (Core Domain
+Chart, Bounded Context Canvas, Aggregate Design Canvas, EventStorming, domain
+message flow, UML class/sequence and ER diagrams — source in
+[`docs/docs/ddd/`](docs/docs/ddd/ddd-artifacts.md)), an interactive API reference generated from
 `apis/openapi.yaml`, the ecosystem context map, and the Architecture Decision
 Records. The site source lives in [`docs/`](docs/) and deploys to GitHub Pages
 via `.github/workflows/docs.yml`.
@@ -87,7 +92,7 @@ internal/
     inbound/http/             chi handlers, DTOs, RFC 7807 error mapping, SVG rendering
     inbound/mcp/              MCP tools, resource template and prompt
     inbound/kafka/            analytics topic consumer (projector)
-    outbound/postgres/        pgxpool repos + golang-migrate migrations + events outbox
+    outbound/postgres/        pgxpool repos, golang-migrate runner, UnitOfWork, transactional outbox + relay, sweeper
     outbound/memory/          thread-safe in-memory repos for tests and local runs
     outbound/events/          log + buffered publishers
     outbound/kafka/           integration + analytics topic publishers
@@ -156,7 +161,8 @@ With `EVENT_PUBLISHER=kafka` all twelve are published to
 `warehouse.facility.events` (specified in `apis/asyncapi.yaml`) and to
 `warehouse.facility.analytics`. `inventory-storage` consumes
 `ZoneRegistered`, `LocationSlotRegistered` and `LocationSlotDecommissioned`
-from the integration topic.
+from the integration topic; `warehouse-planning` consumes
+`LocationSlotRegistered` and `LocationSlotDecommissioned`.
 
 Every Kafka message (integration and analytics topics) is a **CloudEvents 1.0**
 event in structured content mode — mandatory, no other envelope
@@ -436,6 +442,7 @@ are deliberately excluded. See
 | `PUT` | `/locations/{locationCode}/geometry` | SetLocationGeometry (position, dimensions, pick sequence) | `200` |
 | `PUT` | `/zones/{zoneId}/aisles/{aisleCode}/geometry` | SetAisleGeometry (travel centreline) | `200` |
 | `POST` | `/zones/{zoneId}/cross-aisles` | RegisterCrossAisle | `201` |
+| `GET` | `/zones/{zoneId}/cross-aisles` | List a zone's cross-aisles | `200` |
 | `POST` | `/sites/{siteCode}/structures` | RegisterFixedStructure | `201` + `Location` |
 | `GET` | `/sites/{siteCode}/structures` | List a site's fixed structures | `200` |
 
@@ -455,12 +462,12 @@ points at something that actually has a representation — a `Location` with no
 | `GET` | `/sites/{siteCode}/locations?role=` | Every slot at a site with one `LocationRole` (e.g. all `Dock` doors) |
 | `GET` | `/locations/{locationCode}/classification` | The slot's resolved `hazmat` / `temperatureClass` (ADR-0008) |
 | `GET` | `/zones/{zoneId}/travel-graph` | The zone's travel graph: aisle/bay waypoints and metre-weighted edges |
-| `GET` | `/distance?from=&to=` | Shortest travel distance between two slots in the same zone: `{metresM, estimated, route}` |
+| `GET` | `/distance?from=&to=` | Shortest travel distance between two slots: `{metresM, estimated, route}` — routed over the zone's travel graph within a zone; across zones a straight-line estimate (`estimated: true`) only when both slots have position geometry, else `422 no-route-between-zones` |
 | `GET` | `/healthz` | Liveness |
 | `GET` | `/readyz` | Readiness (flips not-ready at the start of graceful shutdown, ADR-0020) |
 
-`apis/openapi.yaml` declares the two geometry `PUT`s without the trailing
-`/geometry` segment; the router (above) is authoritative.
+Every route above, including `/healthz` and `/readyz`, is declared at the
+same path in `apis/openapi.yaml` (33 operations over 26 paths).
 
 ### Status codes
 
@@ -831,6 +838,7 @@ Every CI sensor is also a `make` target, so the same feedback is available
 before a commit leaves the machine. `make help` lists them all.
 
 ```sh
+make check-fast # quickest gate: fmt-check, vet, arch-test
 make check      # fast pre-commit loop: fmt-check, vet, build, lint, test
 make check-all  # pre-push gate: check + coverage (90% gate) + arch-test + bdd
 make vuln       # govulncheck ./... (supply-chain sensor)
@@ -838,7 +846,7 @@ make mutation   # gremlins over ./internal/domain, thresholds from .gremlins.yam
 ```
 
 `make check` needs no database and runs in well under a minute; `make
-integration` (Postgres) and the exhaustive scheduled mutation run are
+integration` (testcontainers Postgres/Kafka — needs only Docker) and the exhaustive scheduled mutation run are
 deliberately outside both bundles.
 
 Git hooks are managed by [lefthook](https://github.com/evilmartians/lefthook)

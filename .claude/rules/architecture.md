@@ -18,7 +18,7 @@ cmd/facility-reports/             read-only analytics reports API
 cmd/mcp/                          MCP server composition root
 internal/
   domain/
-    site/ zone/ aisle/ slot/ placement/ shared/
+    site/ zone/ aisle/ slot/ placement/ structure/ travel/ shared/
   application/
     ports/                        OUT interfaces (repos, EventPublisher, Clock, LocationMetrics)
     usecases/                     one struct per use case
@@ -58,7 +58,9 @@ docs/                              Docusaurus site (ADRs, ecosystem, API referen
   API). It has NO inbound dependency on any other fleet service and never
   will. Its live downstream **Conformists**: `inventory-storage` (consumes
   `ZoneRegistered`/`LocationSlotRegistered`/`LocationSlotDecommissioned`
-  from `warehouse.facility.events`), `wes-work-planning` (`GET /distance`),
+  from `warehouse.facility.events`), `warehouse-planning` (consumes
+  `LocationSlotRegistered`/`LocationSlotDecommissioned` from the same topic
+  for its storage-capacity tally), `wes-work-planning` (`GET /distance`),
   `fulfillment-execution` (`GET /locations/{code}` for the slot's `role`),
   and `warehouse-ops-agent` (MCP tools + the catalog-growth report). This
   service never reaches into their aggregates, and none of them get write

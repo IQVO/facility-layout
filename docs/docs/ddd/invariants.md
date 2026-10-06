@@ -9,7 +9,9 @@ description: Every rule this context enforces, where it is enforced, and the fai
 
 Every rule below is enforced in the domain or the application layer — never
 in the HTTP adapter — and every one has a **failing-path** test, not just a
-happy-path one.
+happy-path one. The [Aggregate Design Canvas](./aggregate-design-canvas.md)
+lists the same invariants grouped per aggregate, with the commands and
+events around them.
 
 ## The core invariant: no orphan slots, ever
 
@@ -191,6 +193,10 @@ case that sets it, and a slot in it can still be decommissioned.
 independently. A row that fails is reported with its index, its location
 code and the exact error; the other rows still commit. A 500-row export with
 3 bad rows creates the other 497 and tells you precisely which 3 and why.
+Within a row, each step (create a missing site, zone or aisle, register the
+slot, set its geometry) commits in its own unit of work, so a row rejected at
+the slot step keeps any parent it already created
+(`internal/application/usecases/import_facility_layout.go`).
 See [Bulk import](../api-reference/bulk-import.md) and
 [ADR 0006](../adr/0006-partial-success-bulk-import.md).
 
