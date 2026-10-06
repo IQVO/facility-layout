@@ -22,8 +22,13 @@ its CloudEvents 1.0 envelope
 [`apis/asyncapi.yaml`](https://github.com/IQVO/facility-layout/blob/main/apis/asyncapi.yaml)
 (AsyncAPI 2.6.0).
 
-Without `EVENT_PUBLISHER=kafka`, events go to a Postgres `events` outbox table
-(when `DATABASE_URL` is set) or to the service log (in-memory mode). See
+With `DATABASE_URL` **and** `EVENT_PUBLISHER=kafka` set, publishing goes
+through the transactional outbox (`outbox_events`,
+[ADR 0018](../adr/0018-transactional-outbox.md)): the use case writes the
+aggregate row and one outbox row per topic in one transaction, and the
+in-process relay drains them onto Kafka. Without `EVENT_PUBLISHER=kafka`,
+events go to the service log only — whether or not `DATABASE_URL` is set
+(the old `events` table was dropped by migration `0005_outbox`). See
 [Publishers](#publishers) and the [Context map](../ecosystem/context-map.md)
 for who consumes what.
 :::
@@ -249,6 +254,38 @@ A walkable connection between two aisles of the same zone was declared.
 | `toAisle` | string |
 | `atBay` | string |
 
+## Catalogue at a glance
+
+Every event is published to **both** topics when `EVENT_PUBLISHER=kafka`:
+`warehouse.facility.events` (integration, `dataschema`
+`urn:warehouse:facility-layout:events:<EventName>:v1`) and
+`warehouse.facility.analytics` (analytics, `dataschema`
+`urn:warehouse:facility-layout:analytics:<EventName>:v1`), under the **same**
+CloudEvents `id`. The Kafka key is the partition key; the CloudEvents
+`subject` names the aggregate instance. For the five events in the lower
+half of the table the publisher's `aggregateKey` falls back to the event
+`type` string, so all occurrences of that event share one partition — the
+`subject` still identifies the aggregate.
+
+| CloudEvents `type` | Kafka key (partition) | `subject` | Producer use case(s) | Known consumers |
+|---|---|---|---|---|
+| `com.warehouse.wms.facility-layout.site.SiteRegistered` | `siteCode` | `siteCode` | `RegisterSite`, `ImportFacilityLayout` | own projector |
+| `com.warehouse.wms.facility-layout.zone.ZoneRegistered` | `zoneId` | `zoneId` | `RegisterZone`, `ImportFacilityLayout` | `inventory-storage`, own projector |
+| `com.warehouse.wms.facility-layout.aisle.AisleRegistered` | `aisleId` | `aisleId` | `RegisterAisle`, `ImportFacilityLayout` | own projector |
+| `com.warehouse.wms.facility-layout.locationtype.LocationTypeRegistered` | `locationType` | `locationType` | `RegisterLocationType` | own projector |
+| `com.warehouse.wms.facility-layout.placementrule.PlacementRuleDefined` | `ruleId` | `ruleId` | `DefinePlacementRule` | own projector |
+| `com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered` | `locationCode` | `locationCode` | `RegisterLocationSlot`, `ImportFacilityLayout` | `inventory-storage`, `warehouse-planning`, own projector |
+| `com.warehouse.wms.facility-layout.locationslot.LocationSlotDecommissioned` | `locationCode` | `locationCode` | `DecommissionLocationSlot` | `inventory-storage`, `warehouse-planning`, own projector |
+| `com.warehouse.wms.facility-layout.locationslot.FacilityLayoutImported` | event `type` | `layout-import` | `ImportFacilityLayout` | own projector |
+| `com.warehouse.wms.facility-layout.locationslot.LocationGeometryUpdated` | event `type` | `locationCode` | `SetLocationGeometry`, `ImportFacilityLayout` | none |
+| `com.warehouse.wms.facility-layout.aisle.AisleGeometryUpdated` | event `type` | `aisleId` | `SetAisleGeometry` | none |
+| `com.warehouse.wms.facility-layout.structure.FixedStructureRegistered` | event `type` | `structureId` | `RegisterFixedStructure` | none |
+| `com.warehouse.wms.facility-layout.crossaisle.CrossAisleRegistered` | event `type` | `zoneId/fromAisle-toAisle@atBay` | `RegisterCrossAisle` | none |
+
+Source: `internal/domain/shared/events.go`,
+`internal/adapters/outbound/kafka/publisher.go` (`aggregateKey`,
+`SubjectOf`), `internal/adapters/inbound/kafka/analytics_consumer.go`.
+
 ## Which use case emits what
 
 | Use case | Events emitted |
@@ -260,7 +297,7 @@ A walkable connection between two aisles of the same zone was declared.
 | `DefinePlacementRule` | `PlacementRuleDefined` |
 | `RegisterLocationSlot` | `LocationSlotRegistered` |
 | `DecommissionLocationSlot` | `LocationSlotDecommissioned` |
-| `ImportFacilityLayout` | `LocationSlotRegistered` per successful row, plus one `FacilityLayoutImported` |
+| `ImportFacilityLayout` | per row: `SiteRegistered` / `ZoneRegistered` / `AisleRegistered` for each parent it creates on first sight, `LocationSlotRegistered` for each successful slot, `LocationGeometryUpdated` when the row carries geometry; then exactly one `FacilityLayoutImported` for the whole call |
 | `SetLocationGeometry` | `LocationGeometryUpdated` |
 | `SetAisleGeometry` | `AisleGeometryUpdated` |
 | `RegisterFixedStructure` | `FixedStructureRegistered` |
@@ -269,12 +306,23 @@ A walkable connection between two aisles of the same zone was declared.
 
 ## Publishers
 
+Which publisher the composition root (`cmd/facility/main.go`,
+`buildAdapters`) wires depends on two switches:
+
+| `DATABASE_URL` | `EVENT_PUBLISHER` | Publisher wired | Outbox relay |
+|---|---|---|---|
+| unset | unset | `outbound/events` log publisher | no |
+| unset | `kafka` | `outbound/kafka` `FanOut` — direct publish to both topics, no outbox | no |
+| set | unset | `outbound/events` log publisher | no |
+| set | `kafka` | `outbound/postgres` `OutboxPublisher` — one `outbox_events` row per topic, in the use case's transaction | yes |
+
 | Adapter | Use |
 |---|---|
-| `outbound/kafka` — `Publisher` | `EVENT_PUBLISHER=kafka`. Encodes each event as a CloudEvents 1.0 event (structured mode, `source=/warehouse/facility-layout`, `type` = the event type, `subject` = aggregate id, `dataschema=urn:warehouse:facility-layout:events:<EventName>:v1`, `data` = the event's own JSON; [ADR-0024](../adr/0024-cloudevents-mandatory-envelope.md)) and writes it to `warehouse.facility.events`, keyed by the raising aggregate's identity. |
-| `outbound/kafka` — `AnalyticsPublisher` | `EVENT_PUBLISHER=kafka`, alongside the one above (the composition root fans out to both). Writes the same occurrence (same `type` and `id`) as a CloudEvent with `dataschema=urn:warehouse:facility-layout:analytics:<EventName>:v1` to `warehouse.facility.analytics`. |
-| `outbound/postgres` — outbox publisher | Default with `DATABASE_URL` set. Writes each event to the `outbox_events` table inside the same transaction as the state change; the relay ([ADR-0018](../adr/0018-transactional-outbox.md)) later fans the encoded messages out to Kafka when `EVENT_PUBLISHER=kafka`. |
-| `outbound/events` — log publisher | Default in-memory mode. Writes each event to the service log. |
+| `outbound/kafka` — `Publisher` | Encodes each event as a CloudEvents 1.0 event (structured mode, `source=/warehouse/facility-layout`, `type` = the event type, `subject` = aggregate id, `dataschema=urn:warehouse:facility-layout:events:<EventName>:v1`, `data` = the event's own JSON; [ADR-0024](../adr/0024-cloudevents-mandatory-envelope.md)) for `warehouse.facility.events`. Writer: `kafkago.Hash` balancer ([ADR 0021](../adr/0021-kafka-writer-balancer-hash.md)), `RequireAll` acks with a 10 ms batch timeout ([ADR 0031](../adr/0031-kafka-writer-durability.md)); the W3C trace context of the publishing request is injected into the message headers. |
+| `outbound/kafka` — `AnalyticsPublisher` | The same occurrence (same `type` and `id`) with `dataschema=urn:warehouse:facility-layout:analytics:<EventName>:v1`, for `warehouse.facility.analytics`. |
+| `outbound/kafka` — `FanOut` | No-database + `kafka` mode: mints one id and sends the event through both publishers above. |
+| `outbound/postgres` — `OutboxPublisher` + `OutboxRelay` | Database + `kafka` mode: enqueues both encodings into `outbox_events` inside the use case's `UnitOfWork`; the relay (`OUTBOX_RELAY_INTERVAL`, default 1s, batches of 100, `FOR UPDATE SKIP LOCKED`) sends them through `RelaySink` ([ADR-0018](../adr/0018-transactional-outbox.md)). Published rows are deleted after `OUTBOX_RETENTION` by the housekeeping sweeper ([ADR 0026](../adr/0026-housekeeping-sweeper.md)). |
+| `outbound/events` — log publisher | Default whenever `EVENT_PUBLISHER` is not `kafka`. Writes each event to the service log. |
 | `outbound/events` — buffered publisher | Tests. Collects events in memory for assertion. |
 
 The `EventPublisher` port is one method —
@@ -283,11 +331,11 @@ the Kafka adapters were a purely additive change.
 
 ## Who consumes them
 
-| Consumer | Topic | Events used |
-|---|---|---|
-| `inventory-storage` (`facilitycache`, with `LOCATION_LOOKUP_MODE=kafka`) | `warehouse.facility.events` | `ZoneRegistered`, `LocationSlotRegistered`, `LocationSlotDecommissioned` — the rest are read and ignored ([ADR 0013](../adr/0013-first-published-language-consumer.md)) |
-| this repository's `cmd/facility-projector` | `warehouse.facility.analytics` | The original eight events (`SiteRegistered` … `FacilityLayoutImported`) |
+| Consumer | Topic | Group | Events used |
+|---|---|---|---|
+| `inventory-storage` (`internal/adapters/outbound/facilitycache`, with `LOCATION_LOOKUP_MODE=kafka`) | `warehouse.facility.events` | process-unique group, replays from the first offset | `ZoneRegistered`, `LocationSlotRegistered`, `LocationSlotDecommissioned` — the rest are ignored ([ADR 0013](../adr/0013-first-published-language-consumer.md)) |
+| `warehouse-planning` (`internal/adapters/inbound/kafka/storage_capacity_consumer.go`, started when `KAFKA_BROKERS` is set) | `warehouse.facility.events` | `STORAGE_CAPACITY_CONSUMER_GROUP` (default `warehouse-planning-storage-capacity`) | `LocationSlotRegistered` (Storage and WorkCenter roles), `LocationSlotDecommissioned` — folded into a storage-position / station tally |
+| this repository's `cmd/facility-projector` | `warehouse.facility.analytics` | `facility-analytics` (DLQ `warehouse.facility.analytics.dlq`) | The original eight events (`SiteRegistered` … `FacilityLayoutImported`); the four geometry events are ignored |
 
 No other service consumes either topic today. The geometry, fixed-structure
-and cross-aisle events are published Published Language with no consumer
-yet.
+and cross-aisle events are Published Language with no consumer yet.

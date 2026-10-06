@@ -92,6 +92,15 @@ across clients and **SHOULD** be used rather than leaving procedure implicit.
 
 ## 7. Security & authorization (current posture: no IdP)
 
+:::caution[Not in force — REST and MCP are unauthenticated]
+The static-bearer auth layer this section describes was rolled out and then
+reverted fleet-wide ([ADR 0015](../adr/0015-remove-rest-mcp-auth.md),
+superseding the auth portion of ADR 0007). `cmd/mcp` today accepts every
+request without a key, and `TestNoAuthMiddlewareReintroduced` fails the
+build if auth middleware reappears. Rules 1–4 below are kept as the
+historical standard; re-adopting them needs a new ADR first.
+:::
+
 Per the MCP inbound-adapter ADR, the current posture for these internal,
 non-user-facing servers:
 
@@ -192,9 +201,12 @@ Jaeger and Grafana alongside HTTP.
   SDK default): stray model-generated argument keys are rejected with a
   validation error, not silently ignored — even for `list_sites`, which
   declares no parameters at all.
-- `estimate_travel_distance` **refuses** cross-zone travel
-  (`ErrNoRouteBetweenZones`) rather than guessing a route — this
-  context's travel graph does not yet connect zones.
+- `estimate_travel_distance` never guesses a cross-zone route: across zones
+  it returns a straight-line estimate flagged `estimated: true` only when
+  both slots carry recorded position geometry, and otherwise refuses
+  (`ErrNoRouteBetweenZones`) — this context's travel graph does not connect
+  zones. (The tool's own description string still says it always refuses;
+  see the use case `EstimateTravelDistance` for the current behaviour.)
 - With no real aisle geometry registered, a within-aisle distance is the
   bay gap at the zone's default bay pitch (1.2 m per bay) and is always
   flagged `estimated: true` — the map's distances are explicitly

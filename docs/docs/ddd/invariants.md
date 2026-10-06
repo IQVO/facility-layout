@@ -24,7 +24,9 @@ the registration if any link is missing or not `Active`:
 flowchart TD
     A["POST /locations<br/>WH1-STOR-AMB-A07-03-02-B"] --> B{"parses as 7 valid<br/>[A-Z0-9] segments?"}
     B -->|no| E1["400 malformed-location-code"]
-    B -->|yes| C{"site WH1 exists?"}
+    B -->|yes| J{"code already registered?<br/>(even if Decommissioned)"}
+    J -->|yes| E8["409 duplicate-location-code"]
+    J -->|no| C{"site WH1 exists?"}
     C -->|no| E2["404 site-not-found"]
     C -->|yes| D{"site Active?"}
     D -->|no| E3["409 site-not-active"]
@@ -36,16 +38,25 @@ flowchart TD
     H -->|no| E6["404 aisle-not-found"]
     H -->|yes| I{"aisle Active?"}
     I -->|no| E7["409 aisle-not-active"]
-    I -->|yes| J{"code already registered?"}
-    J -->|yes| E8["409 duplicate-location-code"]
-    J -->|no| K{"LocationType exists?"}
+    I -->|yes| K{"LocationType exists?"}
     K -->|no| E9["404 location-type-not-found"]
-    K -->|yes| L{"PlacementRules satisfied?"}
+    K -->|yes| N{"dockFlow / activities fit<br/>the type's role?"}
+    N -->|no| E11["422 dock-flow-required /<br/>work-center-activities-required /<br/>functional-attributes-not-allowed"]
+    N -->|yes| O{"capacity resolves when<br/>the role requires it?"}
+    O -->|no| E12["422 invalid-max-weight"]
+    O -->|yes| L{"PlacementRules satisfied?"}
     L -->|no| E10["422 placement-rule-violated<br/>naming the exact rule"]
     L -->|yes| M["201 Created<br/>LocationSlotRegistered"]
 ```
 
-Every one of those ten rejection branches is a real test.
+Source: `internal/application/usecases/register_location_slot.go`
+(`register`, `resolveChain`), `internal/domain/slot/location_slot.go`,
+`internal/adapters/inbound/http/errors.go`. The order of the checks is the
+order of the code: the duplicate-code lookup runs **before** the chain walk.
+
+The rejection branches are exercised by the domain and use-case tests
+(`internal/domain/slot/*_test.go`, `internal/application/usecases/slot_test.go`)
+and the Gherkin scenarios in `features/`.
 
 ## Per-aggregate invariants
 
@@ -129,7 +140,8 @@ is rejected rather than accepted as a facility-wide rule.
 | One cross-aisle per `(zone, from, to, bay)` | `RegisterCrossAisle` use case | `ErrDuplicateCrossAisle` → 409 |
 | A fixed structure has an id, site, known kind, real footprint and label; id unique | `structure.NewFixedStructure` + use case | `ErrEmptyID` / `ErrEmptyLabel` → 400, `ErrUnknownKind` / `ErrEmptyFootprint` → 422, `ErrDuplicateFixedStructure` → 409 |
 | A zone's bay and level pitch are both positive | `Zone.SetPitch` | `ErrInvalidPitch` → 422 |
-| Travel distance is only computed within one zone, and never guessed | `EstimateTravelDistance` use case, `travel.Graph` | `ErrNoRouteBetweenZones` / `ErrNoRoute` / `ErrUnknownNode` → 422 |
+| Travel distance is never guessed: same-zone requests route over the zone graph; cross-zone requests return a straight-line estimate only when both slots carry recorded positions | `EstimateTravelDistance` use case (`crossZoneBeeline`), `travel.Graph` | `ErrNoRouteBetweenZones` / `ErrNoRoute` / `ErrUnknownNode` → 422 |
+| A slot write built from a stale read is rejected | `SlotRepo.Save` (Postgres, `version` column, [ADR 0025](../adr/0025-optimistic-concurrency-version-column.md)) | `ports.ErrConcurrentModification` → 409 `concurrent-modification` |
 
 ## Placement-rule evaluation
 
