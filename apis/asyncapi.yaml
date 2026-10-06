@@ -45,12 +45,16 @@ info:
 
     **Partitioning and ordering.** The Kafka message key is the identity of
     the aggregate that raised the event (site code, zone id, aisle id,
-    location code, rule id, location type name), so all events for one
+    location code, rule id, location type name, structure id, or a
+    cross-aisle's composite identity), so all events for one
     aggregate land on the same partition and per-aggregate order is
-    preserved. `FacilityLayoutImported` and the four ADR-0017 geometry /
-    travel-graph events key on their event type (the publisher's
-    `aggregateKey` fallback, unchanged by ADR-0024); their CloudEvents
-    `subject` still names the aggregate instance.
+    preserved (ADR-0032 extended this to the ADR-0017 geometry /
+    structure / cross-aisle events, which were previously keyed by their
+    event type and so shared one partition per type). The single exception
+    is `FacilityLayoutImported`, a batch outcome with no aggregate: it is
+    keyed by its CloudEvents `id` and carries no ordering guarantee. The
+    CloudEvents `subject` is the aggregate instance (`layout-import` for
+    `FacilityLayoutImported`).
 
 
     **Live consumer.** `inventory-storage` maintains a local read model of
@@ -61,15 +65,18 @@ info:
     **ZoneRegistered**, **LocationSlotRegistered** and
     **LocationSlotDecommissioned**, replaying the topic from the first
     offset on every process start under a per-instance-unique consumer
-    group, and gates its readiness on that replay completing. The remaining
-    five messages are published but have no wired consumer today — they are
+    group, and gates its readiness on that replay completing. `warehouse-planning`
+    also consumes this topic (own fixed consumer group, at-least-once):
+    **LocationSlotRegistered** and **LocationSlotDecommissioned** feed its
+    storage-position / work-center-station tally. Every other event is
+    published but has no wired consumer today — they are
     Published Language available for future Conformists, stated so a
     downstream team cannot mistake an available event for a consumed one.
     See facility-layout ADR-0009 (integration publishing) and
     inventory-storage ADR-0013 (the location-classification cache).
   contact:
     name: Warehouse Systems Platform Team
-    url: https://github.com/claudioed/facility-layout
+    url: https://github.com/IQVO/facility-layout
     email: claudioed.oliveira@gmail.com
   license:
     name: Apache 2.0
@@ -616,7 +623,9 @@ components:
         Raised once per `ImportFacilityLayout` call, summarising rows
         submitted/imported/rejected — in addition to, not instead of, the
         per-slot `LocationSlotRegistered` events for each successful row.
-        Kafka key: the event type (no single aggregate identity);
+        Kafka key: the event's CloudEvents `id` (no single aggregate
+        identity — a batch outcome — so batches spread across partitions;
+        ordering against other events is not guaranteed);
         CloudEvents `subject`: the fixed batch identity `layout-import`. No
         consumer wired today.
       payload:
@@ -649,8 +658,8 @@ components:
       summary: A coded slot's physical position/footprint was set or changed.
       description: >
         Raised by `SetLocationGeometry` (ADR-0017). CloudEvents `subject`:
-        `locationCode`. Kafka key: the event type (`aggregateKey` fallback).
-        No consumer wired today.
+        `locationCode`. Kafka key: `locationCode` (same partition as that
+        location's `LocationSlotRegistered`). No consumer wired today.
       payload:
         allOf:
           - $ref: '#/components/schemas/cloudEvent'
@@ -701,8 +710,8 @@ components:
       description: >
         Raised by `SetAisleGeometry` (ADR-0017): the straight-line path the
         travel graph uses as this aisle's walkable route. CloudEvents
-        `subject`: `aisleId`. Kafka key: the event type (`aggregateKey`
-        fallback). No consumer wired today.
+        `subject`: `aisleId`. Kafka key: `aisleId` (same partition as that
+        aisle's `AisleRegistered`). No consumer wired today.
       payload:
         allOf:
           - $ref: '#/components/schemas/cloudEvent'
@@ -747,8 +756,7 @@ components:
         Raised by `RegisterFixedStructure` (ADR-0017): a wall, column,
         office, conveyor, or other fixed object. Not a location — nothing
         can be stowed at it. CloudEvents `subject`: `structureId`. Kafka
-        key: the event type (`aggregateKey` fallback). No consumer wired
-        today.
+        key: `structureId`. No consumer wired today.
       payload:
         allOf:
           - $ref: '#/components/schemas/cloudEvent'
@@ -801,8 +809,8 @@ components:
         between two of its aisles at a bay ordinal, letting the travel
         graph route between aisles without walking to either end.
         CloudEvents `subject`: `<zoneId>/<fromAisle>-<toAisle>@<atBay>` (the
-        cross-aisle's composite identity). Kafka key: the event type
-        (`aggregateKey` fallback). No consumer wired today.
+        cross-aisle's composite identity), which is also its Kafka key. No
+        consumer wired today.
       payload:
         allOf:
           - $ref: '#/components/schemas/cloudEvent'

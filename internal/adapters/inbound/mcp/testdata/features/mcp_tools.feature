@@ -12,7 +12,7 @@
 # Derived from the tool contracts documented in:
 #   - internal/adapters/inbound/mcp/tools.go (tool descriptions and
 #     semantics: walk order, seven-segment location codes, cross-zone
-#     refusal) and report_tool.go (conditionally-registered report tool,
+#     estimate-or-refusal) and report_tool.go (conditionally-registered report tool,
 #     outside this suite's default surface)
 #   - docs/docs/mcp/governance-charter.md (§2 tool curation: intent-level
 #     tools; §4 read-only context, no write tool)
@@ -124,9 +124,12 @@ Feature: MCP tool behavioral evals
     And the structured result field "estimated" is true
     And the structured result field "route" is a list with 2 entries
 
-  Scenario: Travel between zones is refused, not guessed
-    This context's travel graph does not yet connect zones: the tool
-    refuses rather than inventing a cross-zone route.
+  Scenario: Travel between zones without position geometry is refused, not guessed
+    The canonical eval state records no slot position geometry. With the
+    travel graph per-zone, the tool refuses rather than inventing a
+    cross-zone route; when BOTH slots carry geometry it instead returns a
+    flagged straight-line estimate (ADR-0017, covered by the
+    EstimateTravelDistance use case tests).
     When I call the tool "estimate_travel_distance" with arguments
       | from | WH1-STOR-AMB-A07-01-01-A |
       | to   | WH1-RCV-AMB-D01-01-01-A  |

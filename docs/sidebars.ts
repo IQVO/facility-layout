@@ -134,6 +134,7 @@ const sidebars: SidebarsConfig = {
         'adr/0029-gateway-api-httproute',
         'adr/0030-dlq-bounded-retry-and-slog-otel-bridge',
         'adr/0031-kafka-writer-durability',
+        'adr/0032-aggregate-partition-keys-for-geometry-events',
       ],
     },
   ],

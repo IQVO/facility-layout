@@ -3,10 +3,13 @@
 //
 // facility-layout is an Open Host Service with a Published Language: its
 // domain events ARE its integration contract, and every downstream service
-// (inventory-storage, wes-work-planning, workforce-management,
-// fulfillment-execution) is a Conformist to them. Unlike a service that
-// forwards a single enriched event, this publisher therefore emits EVERY
-// domain event to the integration topic — the whole Published Language.
+// (inventory-storage, which consumes the zone and location-slot events into
+// its location-classification cache, and warehouse-planning, which consumes
+// the location-slot events into its storage/station tally) is a Conformist
+// to them; the remaining events are published for future Conformists.
+// Unlike a service that forwards a single enriched event, this publisher
+// therefore emits EVERY domain event to the integration topic — the whole
+// Published Language.
 //
 // Every message is a CloudEvents 1.0 event in structured content mode
 // (ADR-0024), built by internal/adapters/kafka/cloudevents. The events
@@ -126,7 +129,22 @@ func encodeCloudEvent(topic, stream string, event shared.DomainEvent, eventId st
 	if err != nil {
 		return Encoded{}, fmt.Errorf("kafka: encode %s for %s: %w", event.EventName(), topic, err)
 	}
-	return Encoded{Topic: topic, EventType: event.EventType(), Key: []byte(aggregateKey(event)), Value: value}, nil
+	return Encoded{Topic: topic, EventType: event.EventType(), Key: []byte(partitionKey(event, eventId)), Value: value}, nil
+}
+
+// partitionKey is the Kafka message key: the identity of the aggregate the
+// event is about, so every event for one aggregate lands on one partition
+// and keeps its order (the Hash balancer routes on it, ADR-0021).
+// FacilityLayoutImported is the one exception: it summarises a whole bulk
+// import and has no aggregate (its payload carries no site or zone), so no
+// consumer can rely on its order against anything. It is keyed by its
+// CloudEvents id instead, which spreads import batches over the partitions
+// and stays stable across outbox redelivery of the same event (ADR-0032).
+func partitionKey(event shared.DomainEvent, eventId string) string {
+	if _, ok := event.(shared.FacilityLayoutImported); ok {
+		return eventId
+	}
+	return aggregateKey(event)
 }
 
 // entityOf extracts the `<entity>` segment from the event's own Published
@@ -172,37 +190,29 @@ func (p *Publisher) Send(ctx context.Context, enc Encoded) error {
 }
 
 // SubjectOf returns the CloudEvents `subject`: the id of the aggregate
-// instance the event is about. It differs from aggregateKey only where the
-// partition key historically falls back to the event type (kept unchanged
-// for partition affinity): there the subject still names the real
-// aggregate (location code, aisle id, structure id, or the cross-aisle's
-// composite identity). FacilityLayoutImported is a batch outcome with no
-// single aggregate instance, so its subject is the fixed batch identity
-// ImportSubject.
+// instance the event is about. It equals the partition key (aggregateKey)
+// for every event except FacilityLayoutImported, which is a batch outcome
+// with no single aggregate instance: its subject is the fixed batch
+// identity ImportSubject, and its partition key is its CloudEvents id
+// (partitionKey).
 func SubjectOf(event shared.DomainEvent) string {
-	switch e := event.(type) {
-	case shared.LocationGeometryUpdated:
-		return e.LocationCode
-	case shared.AisleGeometryUpdated:
-		return e.AisleID
-	case shared.FixedStructureRegistered:
-		return e.StructureID
-	case shared.CrossAisleRegistered:
-		return e.ZoneID + "/" + e.FromAisle + "-" + e.ToAisle + "@" + e.AtBay
-	case shared.FacilityLayoutImported:
+	if _, ok := event.(shared.FacilityLayoutImported); ok {
 		return ImportSubject
-	default:
-		return aggregateKey(event)
 	}
+	return aggregateKey(event)
 }
 
 // ImportSubject is the CloudEvents `subject` of FacilityLayoutImported,
 // which summarises a whole bulk-import call rather than one aggregate.
 const ImportSubject = "layout-import"
 
-// aggregateKey returns the partition/ordering key for an event: the identity
-// of the aggregate that raised it. Falls back to the event type when an event
-// has no obvious aggregate id, which still gives a stable, non-empty key.
+// aggregateKey returns the identity of the aggregate that raised the event,
+// used as the partition/ordering key (and as the CloudEvents `subject`).
+// Every event has an aggregate identity except FacilityLayoutImported
+// (see partitionKey/SubjectOf). The final fallback to the event type only
+// guards a future event added without a case here: it still gives a
+// non-empty key, and TestPublisher_KeysAreAggregateIdentityNotEventType
+// rejects an event-type key for every golden case, so add one with the event.
 func aggregateKey(event shared.DomainEvent) string {
 	switch e := event.(type) {
 	case shared.SiteRegistered:
@@ -221,8 +231,15 @@ func aggregateKey(event shared.DomainEvent) string {
 		return e.LocationCode
 	case shared.LocationSlotDecommissioned:
 		return e.LocationCode
-	case shared.FacilityLayoutImported:
-		return event.EventType()
+	case shared.LocationGeometryUpdated:
+		return e.LocationCode
+	case shared.AisleGeometryUpdated:
+		return e.AisleID
+	case shared.FixedStructureRegistered:
+		return e.StructureID
+	case shared.CrossAisleRegistered:
+		// A cross-aisle's identity is its (zone, from, to, bay) composite.
+		return e.ZoneID + "/" + e.FromAisle + "-" + e.ToAisle + "@" + e.AtBay
 	default:
 		return event.EventType()
 	}

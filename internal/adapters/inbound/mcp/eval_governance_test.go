@@ -188,6 +188,31 @@ func TestEval_ToolRegistryMatchesGolden(t *testing.T) {
 	}
 }
 
+// TestEval_EstimateTravelDistanceDescribesCrossZoneEstimate pins the tool
+// description to the use case's real cross-zone behaviour (ADR-0017): a
+// straight-line estimate when both slots have geometry, a refusal
+// otherwise. The description is what a model reads, so it must not claim
+// the tool "always refuses" across zones.
+func TestEval_EstimateTravelDistanceDescribesCrossZoneEstimate(t *testing.T) {
+	var desc string
+	for _, tool := range wireTools(t) {
+		if tool.Name == "estimate_travel_distance" {
+			desc = tool.Description
+		}
+	}
+	if desc == "" {
+		t.Fatal("estimate_travel_distance is not advertised")
+	}
+	for _, want := range []string{"straight-line", "BOTH locations have recorded position geometry", "estimated", "refuses"} {
+		if !strings.Contains(desc, want) {
+			t.Errorf("description does not mention %q: %s", want, desc)
+		}
+	}
+	if strings.Contains(desc, "does not yet connect zones") {
+		t.Errorf("description still claims cross-zone travel is always refused: %s", desc)
+	}
+}
+
 // fleetRepos is the fixed set of warehouse-systems MCP servers the fleet
 // snapshot may name. Anything else in the snapshot is a typo or a stale
 // entry and fails the eval.

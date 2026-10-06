@@ -170,6 +170,112 @@ func TestPublisherKeysMessagesForSameAggregateOntoTheSamePartition(t *testing.T)
 	}
 }
 
+// TestPublisherKeysGeometryEventsByAggregateOntoTheirLifecyclePartition proves,
+// against a real 8-partition broker, that the geometry / structure /
+// cross-aisle / import events are no longer keyed by their event-type string
+// (ADR-0032): each LocationGeometryUpdated lands on the SAME partition as its
+// location's LocationSlotRegistered, the geometry events of many locations
+// spread over several partitions (under the old type key they all shared one),
+// and FacilityLayoutImported batches spread too.
+func TestPublisherKeysGeometryEventsByAggregateOntoTheirLifecyclePartition(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	defer cancel()
+
+	container, err := tckafka.Run(ctx, "confluentinc/confluent-local:7.6.1",
+		tckafka.WithClusterID(fmt.Sprintf("facility-layout-kafka-itest-geokeys-%d", time.Now().UnixNano())),
+	)
+	if err != nil {
+		t.Fatalf("start Kafka container: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := testcontainers.TerminateContainer(container); err != nil {
+			t.Logf("terminate Kafka container: %v", err)
+		}
+	})
+	brokers, err := container.Brokers(ctx)
+	if err != nil {
+		t.Fatalf("resolve Kafka brokers: %v", err)
+	}
+	const numPartitions = 8
+	topic := fmt.Sprintf("warehouse.facility.events.itest-geokeys-%d", time.Now().UnixNano())
+	createTopicWithPartitions(t, ctx, brokers, topic, numPartitions)
+
+	var n int
+	publisher := &adapter.Publisher{
+		Writer: &kafkago.Writer{Addr: kafkago.TCP(brokers...), Topic: topic, Balancer: &kafkago.Hash{}},
+		NewId:  func() string { n++; return fmt.Sprintf("evt-%d", n) },
+	}
+	t.Cleanup(func() { _ = publisher.Close() })
+
+	at := time.Now().UTC().Truncate(time.Second)
+	capacity := mustCapacity(t, 500, 1)
+	const locations = 16
+	for i := 1; i <= locations; i++ {
+		code, err := shared.ParseLocationCode(fmt.Sprintf("WH1-STOR-AMB-A07-%02d-02-B", i))
+		if err != nil {
+			t.Fatalf("ParseLocationCode: %v", err)
+		}
+		for _, ev := range []shared.DomainEvent{
+			shared.NewLocationSlotRegistered(at, code, "PalletRack", "Storage", "", nil, capacity),
+			shared.NewLocationGeometryUpdated(at, code, mustPoint(t, float64(i), 0, 0), mustDims(t, 1, 1, 1), nil),
+			shared.NewFacilityLayoutImported(at, 1, 1, 0),
+		} {
+			if err := publisher.Publish(ctx, ev); err != nil {
+				t.Fatalf("publish %s: %v", ev.EventName(), err)
+			}
+		}
+	}
+
+	slotPartition := map[string]int{} // locationCode -> partition of its LocationSlotRegistered
+	geoPartitions := map[int]int{}    // partition -> LocationGeometryUpdated count
+	importPartitions := map[int]int{} // partition -> FacilityLayoutImported count
+	geoByCode := map[string][]int{}   // locationCode -> partitions of its geometry events
+	for p := 0; p < numPartitions; p++ {
+		reader := kafkago.NewReader(kafkago.ReaderConfig{Brokers: brokers, Topic: topic, Partition: p, MaxWait: 2 * time.Second})
+		func() {
+			defer func() { _ = reader.Close() }()
+			readCtx, readCancel := context.WithTimeout(ctx, 5*time.Second)
+			defer readCancel()
+			for {
+				msg, err := reader.ReadMessage(readCtx)
+				if err != nil {
+					return
+				}
+				evt, err := cloudevents.Decode(msg.Value)
+				if err != nil {
+					t.Errorf("not a CloudEvent: %v", err)
+					continue
+				}
+				switch evt.Type() {
+				case "com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered":
+					slotPartition[evt.Subject()] = p
+				case "com.warehouse.wms.facility-layout.locationslot.LocationGeometryUpdated":
+					geoPartitions[p]++
+					geoByCode[evt.Subject()] = append(geoByCode[evt.Subject()], p)
+				case "com.warehouse.wms.facility-layout.locationslot.FacilityLayoutImported":
+					importPartitions[p]++
+				}
+			}
+		}()
+	}
+
+	if len(slotPartition) != locations {
+		t.Fatalf("read back %d slot registrations, want %d", len(slotPartition), locations)
+	}
+	for code, sp := range slotPartition {
+		got := geoByCode[code]
+		if len(got) != 1 || got[0] != sp {
+			t.Errorf("%s: LocationGeometryUpdated on partitions %v, want exactly its LocationSlotRegistered partition %d", code, got, sp)
+		}
+	}
+	if len(geoPartitions) < 2 {
+		t.Errorf("all %d LocationGeometryUpdated events share partitions %v: they must be keyed by location, not event type", locations, geoPartitions)
+	}
+	if len(importPartitions) < 2 {
+		t.Errorf("all %d FacilityLayoutImported events share partitions %v: they must spread", locations, importPartitions)
+	}
+}
+
 // assertCloudEventOnWire checks a message read back from a real broker is a
 // structured-mode CloudEvents 1.0 event (ADR-0024) with the content-type
 // header and the aggregate id as subject.
