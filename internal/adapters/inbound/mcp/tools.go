@@ -2,7 +2,7 @@ package mcp
 
 import (
 	"context"
-	"fmt"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.opentelemetry.io/otel"
@@ -14,6 +14,10 @@ import (
 	"github.com/claudioed/facility-layout/internal/domain/placement"
 	"github.com/claudioed/facility-layout/internal/domain/shared"
 )
+
+// toolErrorShape is the one sentence every tool description carries to
+// document its error text (ADR-0033).
+const toolErrorShape = "Errors read '<slug>: detail', where slug is the stable problem slug the REST API uses for the same condition (for example site-not-found or malformed-location-code); an unexpected failure is reported as internal-error."
 
 // tracerName is the OTel instrumentation scope for MCP tool spans.
 const tracerName = "github.com/claudioed/facility-layout/internal/adapters/inbound/mcp"
@@ -52,7 +56,7 @@ type siteLayoutInput struct {
 
 func (d Deps) getSiteLayout(ctx context.Context, in siteLayoutInput) (siteLayoutDTO, error) {
 	if in.SiteCode == "" {
-		return siteLayoutDTO{}, fmt.Errorf("siteCode is required")
+		return siteLayoutDTO{}, toolError(slugInvalidSiteCode, "siteCode is required")
 	}
 	layout, err := d.GetSiteLayout.Execute(ctx, in.SiteCode)
 	if err != nil {
@@ -69,7 +73,7 @@ type zoneGridInput struct {
 
 func (d Deps) getZoneGrid(ctx context.Context, in zoneGridInput) (zoneGridDTO, error) {
 	if in.ZoneID == "" {
-		return zoneGridDTO{}, fmt.Errorf("zoneId is required")
+		return zoneGridDTO{}, toolError(slugInvalidZoneCode, "zoneId is required")
 	}
 	grid, err := d.GetZoneGrid.Execute(ctx, in.ZoneID)
 	if err != nil {
@@ -111,7 +115,7 @@ type listFunctionalLocationsOutput struct {
 
 func (d Deps) listFunctionalLocations(ctx context.Context, in listFunctionalLocationsInput) (listFunctionalLocationsOutput, error) {
 	if in.SiteCode == "" {
-		return listFunctionalLocationsOutput{}, fmt.Errorf("siteCode is required")
+		return listFunctionalLocationsOutput{}, toolError(slugInvalidSiteCode, "siteCode is required")
 	}
 	role, err := placement.ParseLocationRole(in.Role)
 	if err != nil {
@@ -136,7 +140,7 @@ type zoneTravelGraphInput struct {
 
 func (d Deps) getZoneTravelGraph(ctx context.Context, in zoneTravelGraphInput) (travelGraphDTO, error) {
 	if in.ZoneID == "" {
-		return travelGraphDTO{}, fmt.Errorf("zoneId is required")
+		return travelGraphDTO{}, toolError(slugInvalidZoneCode, "zoneId is required")
 	}
 	view, err := d.GetZoneTravelGraph.Execute(ctx, in.ZoneID)
 	if err != nil {
@@ -153,11 +157,11 @@ type estimateTravelDistanceInput struct {
 }
 
 func (d Deps) estimateTravelDistance(ctx context.Context, in estimateTravelDistanceInput) (travelDistanceDTO, error) {
-	if in.From == "" {
-		return travelDistanceDTO{}, fmt.Errorf("from is required")
+	if strings.TrimSpace(in.From) == "" {
+		return travelDistanceDTO{}, toolError(slugMissingLocationCode, "from is required")
 	}
-	if in.To == "" {
-		return travelDistanceDTO{}, fmt.Errorf("to is required")
+	if strings.TrimSpace(in.To) == "" {
+		return travelDistanceDTO{}, toolError(slugMissingLocationCode, "to is required")
 	}
 	from, err := shared.ParseLocationCode(in.From)
 	if err != nil {
@@ -186,37 +190,37 @@ func (d Deps) registerTools(server *mcp.Server) {
 
 	addTool(server, &mcp.Tool{
 		Name:        "list_sites",
-		Description: "List every registered site on the warehouse map as {code, name}. Start here to discover which sites exist before drilling into a layout.",
+		Description: "List every registered site on the warehouse map as {code, name}. Start here to discover which sites exist before drilling into a layout. " + toolErrorShape,
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: readOnly},
 	}, d.listSites)
 
 	addTool(server, &mcp.Tool{
 		Name:        "get_site_layout",
-		Description: "Return one site's full drawable structure as a compact nested map: zones -> aisles -> slot codes, with each zone's temperature class and hazmat flag and each aisle's walk-order sequence hint. Use it to answer placement and travel questions for a site.",
+		Description: "Return one site's full drawable structure as a compact nested map: zones -> aisles -> slot codes, with each zone's temperature class and hazmat flag and each aisle's walk-order sequence hint. Use it to answer placement and travel questions for a site. " + toolErrorShape,
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: readOnly},
 	}, d.getSiteLayout)
 
 	addTool(server, &mcp.Tool{
 		Name:        "get_zone_grid",
-		Description: "Return one zone's slots as a 2D grid: rows are levels, columns are (aisle, bay) pairs in walk order, each cell holds the location codes at that coordinate. Use it to reason about a single zone's rack layout in detail.",
+		Description: "Return one zone's slots as a 2D grid: rows are levels, columns are (aisle, bay) pairs in walk order, each cell holds the location codes at that coordinate. Use it to reason about a single zone's rack layout in detail. " + toolErrorShape,
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: readOnly},
 	}, d.getZoneGrid)
 
 	addTool(server, &mcp.Tool{
 		Name:        "list_functional_locations",
-		Description: "List a site's non-storage functional locations by role: dock doors, yard spots, work centers (pack/sort/QC/VAS stations), drop points, staging, consolidation, or shipping locations (ADR-0016). Use it to answer 'where are this site's dock doors' without walking the full site layout.",
+		Description: "List a site's non-storage functional locations by role: dock doors, yard spots, work centers (pack/sort/QC/VAS stations), drop points, staging, consolidation, or shipping locations (ADR-0016). Use it to answer 'where are this site's dock doors' without walking the full site layout. " + toolErrorShape,
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: readOnly},
 	}, d.listFunctionalLocations)
 
 	addTool(server, &mcp.Tool{
 		Name:        "get_zone_travel_graph",
-		Description: "Return one zone's travel graph as nodes (aisle/bay waypoints) and directed edges (weighted in metres, flagged estimated when derived from a zone's bay pitch rather than real aisle centreline geometry) (ADR-0017). Use it to inspect or render a zone's walkable topology.",
+		Description: "Return one zone's travel graph as nodes (aisle/bay waypoints) and directed edges (weighted in metres, flagged estimated when derived from a zone's bay pitch rather than real aisle centreline geometry) (ADR-0017). Use it to inspect or render a zone's walkable topology. " + toolErrorShape,
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: readOnly},
 	}, d.getZoneTravelGraph)
 
 	addTool(server, &mcp.Tool{
 		Name:        "estimate_travel_distance",
-		Description: "Compute the shortest travel distance, in metres, between two coded locations (ADR-0017). Within one zone it routes over the pure-domain travel graph, honouring one-way aisles and cross-aisle connections; the result is flagged estimated when any leg used a zone's bay pitch fallback instead of real geometry. Across zones there is no routed path (the travel graph is per zone): when BOTH locations have recorded position geometry it returns the straight-line distance between them, always flagged estimated; otherwise it refuses (does not guess). This reports MAP TOPOLOGY only, never travel time or congestion.",
+		Description: "Compute the shortest travel distance, in metres, between two coded locations (ADR-0017). Within one zone it routes over the pure-domain travel graph, honouring one-way aisles and cross-aisle connections; the result is flagged estimated when any leg used a zone's bay pitch fallback instead of real geometry. Across zones there is no routed path (the travel graph is per zone): when BOTH locations have recorded position geometry it returns the straight-line distance between them, always flagged estimated; otherwise it refuses (does not guess). This reports MAP TOPOLOGY only, never travel time or congestion. " + toolErrorShape,
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: readOnly},
 	}, d.estimateTravelDistance)
 
@@ -244,6 +248,10 @@ func addTool[In, Out any](
 
 		out, err := handle(ctx, in)
 		if err != nil {
+			// Every handler error leaves here as "<slug>: detail" (ADR-0033).
+			// The span records the mapped text, so unexpected internals are
+			// not exported through tracing either; mapError logs them.
+			err = mapError(err)
 			span.SetStatus(codes.Error, err.Error())
 			return nil, zero, err
 		}
