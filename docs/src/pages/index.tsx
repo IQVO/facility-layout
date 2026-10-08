@@ -116,6 +116,10 @@ function WhatItOwns() {
                 <code>inventory-storage</code>
               </li>
               <li>
+                SKU master data (handling classification, unit dimensions
+                and weight) — that is <code>product-master</code>
+              </li>
+              <li>
                 Tasks, assignments and dispatch — that is{' '}
                 <code>fulfillment-execution</code>
               </li>

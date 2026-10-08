@@ -23,6 +23,7 @@ plots that position on business differentiation against model complexity.
 | Task lifecycle: Pick/Pack/SLAM (`fulfillment-execution`) | **Core** | Directly drives throughput and accuracy at scale. |
 | Labor & Workforce Management (`workforce-management`) | **Supporting** | Allocates workforce to workload; important, industry-common. |
 | **Physical facility layout (`facility-layout`)** | **Generic** | Well-understood, standardised coded-location structure. Not a differentiator; needed identically by contexts on both sides of the WMS/WES line. |
+| Product master data (`product-master`) | **Supporting** | SKU handling classification and physical profile (declared vs measured dimensions and weight): needed by every warehouse flow and specific to this warehouse's handling rules, but not where the business differentiates (product-master ADR 0001). Unrelated to this context: it classifies *products*, this one classifies *space*. |
 | Cartonization | **Generic** | Modelled separately, referenced by both WMS and WES rather than duplicated in either. |
 | WCS / equipment control | **Generic** | Buy, don't build — device orchestration is rarely a competitive advantage. |
 
@@ -107,6 +108,10 @@ multi-consumer version of that same concern — which is why its CloudEvents
 ```
 com.warehouse.wms.facility-layout.<entity>.<EventName>
 ```
+
+The `wms` segment is shared by three contexts: `facility-layout`,
+`inventory-storage` and `product-master`. Every other fleet context publishes
+under `wes`.
 
 The layer label is inherited from where the concern originates; the bounded
 context is its own. That is the reference's own advice applied literally:

@@ -178,7 +178,8 @@ CloudEvents `type` convention, identical to the other warehouse-systems services
 com.warehouse.<subdomain>.facility-layout.<entity>.<EventName>
 ```
 
-This service's subdomain segment is `wms`. Examples:
+This service's subdomain segment is `wms` (shared with `inventory-storage`
+and `product-master`; every other fleet context uses `wes`). Examples:
 
 ```
 com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered

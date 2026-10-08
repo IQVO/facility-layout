@@ -46,7 +46,9 @@ com.warehouse.<subdomain>.<bounded-context>.<entity>.<EventName>
 This service's **subdomain segment is `wms`**. "Bin-accurate location" is
 classified WMS-tier in the e-commerce-fulfillment reference — the "Inventory &
 Slotting" Core subdomain references it as WMS's Open Host Service — and this
-service is the generalized, multi-consumer version of that same concern.
+service is the generalized, multi-consumer version of that same concern. The
+`wms` segment is shared with `inventory-storage` and `product-master`; every
+other fleet context uses `wes`.
 
 ```
 com.warehouse.wms.facility-layout.site.SiteRegistered

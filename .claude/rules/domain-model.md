@@ -84,9 +84,12 @@ empty or contains characters other than `[A-Z0-9]`.
   Zone and returns the Zone's `Hazmat`/`TemperatureClass` attributes as a
   cheap, denormalized read. This is the concrete Published Language
   realization of this context's Open Host Service role: `inventory-storage`
-  consumes it synchronously at stow time to enforce hazmat/temperature
-  placement rules on classified SKUs, without duplicating Zone data
-  (ADR-0008).
+  reads it at stow time (synchronously only on its `LOCATION_LOOKUP_MODE=http`
+  rollback path; normally from its Kafka-fed cache of this context's events)
+  to enforce hazmat/temperature placement rules on classified SKUs, without
+  duplicating Zone data (ADR-0008). The SKU classification itself is owned by
+  `product-master`, not by `inventory-storage` (which keeps a local copy fed by
+  `ProductClassified`); this context has no relationship with `product-master`.
 
 ## Aggregates & invariants (enforce in domain, unit-tested)
 
@@ -134,7 +137,7 @@ e.g. workforce-management's `shiftplan`):
 com.warehouse.<subdomain>.facility-layout.<entity>.<EventName>
 ```
 
-This service's **subdomain segment is `wms`** — "bin-accurate location" is
+This service's **subdomain segment is `wms`** (shared with inventory-storage and product-master) — "bin-accurate location" is
 already classified WMS-tier in `amazon-fulfillment-ddd.md` ("Inventory &
 Slotting" Core subdomain references bin-accurate location as WMS's Open
 Host Service), and this service is the generalized, multi-consumer version
