@@ -26,6 +26,7 @@ deliberately narrow, and the boundary is the interesting part.
 | Which aisle comes next in walk order? | **facility-layout** |
 | How many units of SKU X are in that location? | `inventory-storage` |
 | Is that stock reserved, usable, or unlocated? | `inventory-storage` |
+| Is SKU X hazmat or temperature-sensitive, and how big and heavy is one unit? | `product-master` |
 | Who is picking from it right now? | `fulfillment-execution` |
 | Should we release more work into that zone? | `wes-work-planning` |
 
