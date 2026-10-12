@@ -32,40 +32,45 @@ func mcpOptionalInputViolations(t *testing.T, path string) []string {
 	}
 	var out []string
 	ast.Inspect(f, func(n ast.Node) bool {
-		st, ok := n.(*ast.StructType)
-		if !ok {
-			return true
-		}
-		for _, field := range st.Fields.List {
-			if field.Tag == nil {
-				continue
+		if st, ok := n.(*ast.StructType); ok {
+			for _, field := range st.Fields.List {
+				if v := optionalFieldViolation(fset, field); v != "" {
+					out = append(out, v)
+				}
 			}
-			raw, err := strconv.Unquote(field.Tag.Value)
-			if err != nil {
-				continue
-			}
-			tag := reflect.StructTag(raw)
-			schema, hasSchema := tag.Lookup("jsonschema")
-			if !hasSchema || !optionalWordRE.MatchString(schema) {
-				continue
-			}
-			jsonTag, _ := tag.Lookup("json")
-			if slicesContains(strings.Split(jsonTag, ",")[1:], "omitempty") {
-				continue
-			}
-			name := "<embedded>"
-			if len(field.Names) > 0 {
-				name = field.Names[0].Name
-			}
-			out = append(out, fmt.Sprintf(
-				"%s: MCP input field %s is described as optional (jsonschema %q) but its json tag %q has no omitempty, "+
-					"so the SDK marks it REQUIRED and calls without it fail. FIX: add `,omitempty` to the json tag "+
-					"(or stop calling it optional if the handler really requires it).",
-				fset.Position(field.Pos()), name, schema, jsonTag))
 		}
 		return true
 	})
 	return out
+}
+
+// optionalFieldViolation reports one field, or "" when it complies.
+func optionalFieldViolation(fset *token.FileSet, field *ast.Field) string {
+	if field.Tag == nil {
+		return ""
+	}
+	raw, err := strconv.Unquote(field.Tag.Value)
+	if err != nil {
+		return ""
+	}
+	tag := reflect.StructTag(raw)
+	schema, hasSchema := tag.Lookup("jsonschema")
+	if !hasSchema || !optionalWordRE.MatchString(schema) {
+		return ""
+	}
+	jsonTag, _ := tag.Lookup("json")
+	if slicesContains(strings.Split(jsonTag, ",")[1:], "omitempty") {
+		return ""
+	}
+	name := "<embedded>"
+	if len(field.Names) > 0 {
+		name = field.Names[0].Name
+	}
+	return fmt.Sprintf(
+		"%s: MCP input field %s is described as optional (jsonschema %q) but its json tag %q has no omitempty, "+
+			"so the SDK marks it REQUIRED and calls without it fail. FIX: add `,omitempty` to the json tag "+
+			"(or stop calling it optional if the handler really requires it).",
+		fset.Position(field.Pos()), name, schema, jsonTag)
 }
 
 func slicesContains(items []string, want string) bool {

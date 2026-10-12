@@ -94,35 +94,9 @@ func (s oaSpec) assertConforms(t *testing.T, where string, sc oaSchema, body any
 	sc = s.resolve(t, sc)
 	switch sc.Type {
 	case "object":
-		obj, ok := body.(map[string]any)
-		if !ok {
-			t.Errorf("%s: want object, got %T", where, body)
-			return
-		}
-		for _, req := range sc.Required {
-			if _, ok := obj[req]; !ok {
-				t.Errorf("%s: required property %q missing", where, req)
-			}
-		}
-		for key, val := range obj {
-			prop, ok := sc.Properties[key]
-			if !ok {
-				t.Errorf("%s: undocumented property %q", where, key)
-				continue
-			}
-			s.assertConforms(t, where+"."+key, prop, val)
-		}
+		s.assertObject(t, where, sc, body)
 	case "array":
-		arr, ok := body.([]any)
-		if !ok {
-			t.Errorf("%s: want array, got %T", where, body)
-			return
-		}
-		if sc.Items != nil {
-			for _, item := range arr {
-				s.assertConforms(t, where+"[]", *sc.Items, item)
-			}
-		}
+		s.assertArray(t, where, sc, body)
 	case "string":
 		if _, ok := body.(string); !ok {
 			t.Errorf("%s: want string, got %T", where, body)
@@ -131,6 +105,43 @@ func (s oaSpec) assertConforms(t *testing.T, where string, sc oaSchema, body any
 		if _, ok := body.(float64); !ok {
 			t.Errorf("%s: want number, got %T", where, body)
 		}
+	}
+}
+
+func (s oaSpec) assertObject(t *testing.T, where string, sc oaSchema, body any) {
+	t.Helper()
+	obj, ok := body.(map[string]any)
+	if !ok {
+		t.Errorf("%s: want object, got %T", where, body)
+		return
+	}
+	for _, req := range sc.Required {
+		if _, ok := obj[req]; !ok {
+			t.Errorf("%s: required property %q missing", where, req)
+		}
+	}
+	for key, val := range obj {
+		prop, ok := sc.Properties[key]
+		if !ok {
+			t.Errorf("%s: undocumented property %q", where, key)
+			continue
+		}
+		s.assertConforms(t, where+"."+key, prop, val)
+	}
+}
+
+func (s oaSpec) assertArray(t *testing.T, where string, sc oaSchema, body any) {
+	t.Helper()
+	arr, ok := body.([]any)
+	if !ok {
+		t.Errorf("%s: want array, got %T", where, body)
+		return
+	}
+	if sc.Items == nil {
+		return
+	}
+	for _, item := range arr {
+		s.assertConforms(t, where+"[]", *sc.Items, item)
 	}
 }
 
