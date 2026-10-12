@@ -99,8 +99,8 @@ func (h *fanoutHandler) WithGroup(name string) slog.Handler {
 }
 
 // NewLogger builds the process-wide structured logger: JSON to w at the
-// level named by level (debug|info|warn|error, case-insensitive, default
-// info), fanned out to the OTel log bridge, and trace-correlated so any
+// level named by level (debug|info|warn|warning|error, case-insensitive,
+// default info), fanned out to the OTel log bridge, and trace-correlated so any
 // record emitted inside a span carries trace_id/span_id.
 //
 // The OTLP side resolves its LoggerProvider lazily through the OTel log

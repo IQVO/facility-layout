@@ -125,6 +125,7 @@ exactly the schema's properties. Spectral (`api-lint`) lints both specs.
 | `TestMCPAdapterDependencyRule` | `internal/adapters/inbound/mcp` may depend only on the application and domain layers, never on outbound adapters or `cmd`. Nothing else may import it. |
 | `TestNoAuthMiddlewareReintroduced` | No bearer or JWT middleware returns to `internal/adapters/inbound`: REST and MCP stay unauthenticated (ADR-0015) |
 | `TestKafkaConsumerGroupNeverHardcodedInline` | A kafka-go `GroupID` must come from a named symbol, never an inline string literal |
+| `TestMCPOptionalToolInputsCarryOmitempty` | An MCP tool input field whose `jsonschema` description says "optional" must carry `omitempty`, or the SDK marks it required (gap fix D16; has a sensor-fails-on-bad-fixture twin) |
 | `TestKafkaIntegrationTestsUseTestcontainers`, `TestPostgresIntegrationTestsUseTestcontainers` (+ sensor self-test) | No env-gated skips. Real containers are required. |
 | `TestCloudEventsOnly` | No envelope-mode toggle anywhere, and a module that talks to Kafka imports the CloudEvents SDK (ADR-0024) |
 | `TestReplayConsumersSetCommitInterval` | A reader with a process-unique group must set `CommitInterval`. Nothing in this repo matches, because the projector's group is fixed and shared. |

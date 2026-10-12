@@ -76,9 +76,9 @@ backoff, 15s of waiting in total). The process exits non-zero if they still
 fail. So "the pod never becomes Ready" almost always means "the process is
 crash-looping on boot". Read the logs, not the probe.
 
-The startup probe allows 60s (2s × 30) before liveness takes over. The
-chart's `values.yaml` comment justifies this against a "~31s" retry budget.
-The real backoff is 15s plus the duration of each attempt.
+The startup probe allows 60s (2s × 30) before liveness takes over, well past
+the boot retry budget: 15s of backoff (1+2+4+8) plus the duration of each of
+the 5 attempts.
 
 ### Graceful shutdown order (ADR-0020)
 
