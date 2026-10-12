@@ -21,6 +21,10 @@ var (
 	ErrEmptyFootprint = errors.New("fixed structure requires a real footprint")
 	// ErrEmptyLabel is returned when a structure is built without a label.
 	ErrEmptyLabel = errors.New("fixed structure requires a label")
+	// ErrEmptyKind is returned when a structure is built without a kind: the
+	// member is required, so its absence is a malformed request rather than an
+	// unrecognised value.
+	ErrEmptyKind = errors.New("fixed structure requires a kind")
 	// ErrUnknownKind is returned when Kind does not name one of the known
 	// structure kinds.
 	ErrUnknownKind = errors.New("unknown fixed structure kind")
@@ -44,6 +48,9 @@ const (
 
 // ParseKind validates a raw string against the known Kind values.
 func ParseKind(raw string) (Kind, error) {
+	if raw == "" {
+		return "", ErrEmptyKind
+	}
 	switch Kind(raw) {
 	case Wall, Column, Office, Conveyor, Other:
 		return Kind(raw), nil
