@@ -47,6 +47,16 @@ spec:
             - name: http
               containerPort: {{ .Values.service.targetPort }}
               protocol: TCP
+          # D14 (2026-10-12): every config.* value (OUTBOX_RELAY_INTERVAL,
+          # HOUSEKEEPING_INTERVAL, IDEMPOTENCY_KEY_TTL, OUTBOX_RETENTION, ...)
+          # reaches this process through the chart ConfigMap. The explicit
+          # `env` entries below win over envFrom for the same key and carry
+          # the same values, so nothing changes for the variables already set
+          # here; the checksum/config annotation above rolls the pods when the
+          # ConfigMap changes.
+          envFrom:
+            - configMapRef:
+                name: {{ include "facility-layout.fullname" . }}
           env:
             - name: HTTP_ADDR
               value: {{ .Values.config.httpAddr | quote }}

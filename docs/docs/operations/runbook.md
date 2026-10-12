@@ -193,12 +193,17 @@ The sweeper is safe to run in several replicas at once. It logs
 `outbox_events_deleted` when it removed rows, and `housekeeping sweep failed`
 on error. It never crashes the process.
 
-> **Chart gap:** `templates/configmap.yaml` renders `OUTBOX_RELAY_INTERVAL`,
-> `HOUSEKEEPING_INTERVAL`, `IDEMPOTENCY_KEY_TTL` and `OUTBOX_RETENTION`, but
-> no Deployment mounts that ConfigMap (there is no `envFrom`). Changing
+> **Chart wiring:** `templates/configmap.yaml` renders `HTTP_ADDR`,
+> `MIGRATIONS_PATH`, `EVENT_PUBLISHER`, `OUTBOX_RELAY_INTERVAL`,
+> `HOUSEKEEPING_INTERVAL`, `IDEMPOTENCY_KEY_TTL`, `OUTBOX_RETENTION` and (with
+> `kafka.enabled`) `KAFKA_BROKERS` from `config.*`, and the api Deployment
+> mounts it with `envFrom` (gap fix D14, 2026-10-12). Changing
 > `config.outboxRelayInterval` or the housekeeping values in `values.yaml`
-> therefore has no effect, and the binaries run on their built-in defaults
-> (which match the values defaults). To tune them, use `extraEnv`.
+> takes effect on the next rollout (the `checksum/config` annotation rolls the
+> pods). Explicit `env`/`extraEnv` entries win over the ConfigMap for the same
+> key. The projector, reports and MCP Deployments do not mount it: they set
+> their own variables explicitly. `charts/facility-layout/tests/render_test.sh`
+> (CI job `chart-tests`) fails if the mount disappears.
 
 ## Analytics reports API (`facility-reports`)
 

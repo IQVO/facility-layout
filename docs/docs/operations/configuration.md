@@ -117,3 +117,17 @@ Publisher mode matrix (`buildAdapters` in `cmd/facility/main.go`):
 See also: [Runbook](./runbook.md) for how the Helm chart sets these
 variables, and [Observability](./observability.md) for the telemetry they
 control.
+
+## How the Helm chart delivers `facility`'s variables
+
+`charts/facility-layout/templates/configmap.yaml` renders `config.*` (plus
+`kafka.brokers` when `kafka.enabled`) into a ConfigMap named after the
+release: `HTTP_ADDR`, `MIGRATIONS_PATH`, `EVENT_PUBLISHER`,
+`OUTBOX_RELAY_INTERVAL`, `HOUSEKEEPING_INTERVAL`, `IDEMPOTENCY_KEY_TTL`,
+`OUTBOX_RETENTION`, `KAFKA_BROKERS`. The api Deployment mounts it with
+`envFrom: configMapRef` (gap fix D14, 2026-10-12), so every `config.*` value
+reaches `cmd/facility`. Explicit `env` entries (the same values, plus the
+Secret-backed DSNs and the OTel variables) and `extraEnv` win over the
+ConfigMap for the same key. The projector, reports and MCP Deployments do not
+mount the ConfigMap; their variables are set explicitly in their own
+templates.

@@ -146,6 +146,10 @@ autoscaling:
 # database.url is left empty, same as running the binary locally with no env
 # vars set. migrationsPath is resolved inside the image, where the Dockerfile
 # copies /migrations next to the binary.
+#
+# Every key below is rendered into templates/configmap.yaml and reaches
+# cmd/facility through the api Deployment's `envFrom: configMapRef` (gap fix
+# D14); explicit env/extraEnv entries win for the same key.
 config:
   httpAddr: ":8080"
   migrationsPath: "migrations"
