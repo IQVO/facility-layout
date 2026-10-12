@@ -106,6 +106,7 @@ The events a consumer is most likely to care about:
 | `AisleRegistered` | Learn a corridor, its `sequenceHint` walk-order position and its `direction`. This is the travel-path input. |
 | `AisleGeometryUpdated`, `CrossAisleRegistered`, `LocationGeometryUpdated` | Keep a local copy of the travel geometry. |
 | `FacilityLayoutImported` | Recognise a bulk load — useful for distinguishing a building bootstrap from ordinary drift. |
+| `SiteCapabilityChanged` (`com.warehouse.wms.facility-layout.site.SiteCapabilityChanged`) | Declared in the contract as a full last-write-wins snapshot (wire fields `site_code`, `transfer_origin_enabled`, `transfer_destination_enabled`, `capability_revision`, in **snake_case**, unlike every other event's camelCase payload; keep the highest revision, keyed by site code). **No command raises it on `develop`** (see [Use cases](../ddd/use-cases.md#sitecapabilitychanged-defined-but-no-use-case-raises-it)), so a consumer coding against it receives nothing today. |
 
 `inventory-storage` is the reference consumer: it replays the topic from the
 first offset on every start under a per-instance consumer group, uses
