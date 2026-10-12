@@ -105,9 +105,17 @@ Six operations are excluded because their cross-field rules cannot be
 expressed in OpenAPI 3.0.3. The script names the test that covers each one:
 `registerLocationType`, `registerLocationSlot`, `importFacilityLayout`,
 `registerCrossAisle`, `setAisleGeometry` and `registerZone`. The
-`allow_header_conformance` check is also excluded. The reports API
-(`/reports/...`) and MCP are not in the spec, so this job does not cover
-them.
+`allow_header_conformance` check is also excluded. MCP is not in the spec,
+so this job does not cover it.
+
+The reports API (`cmd/facility-reports`) has its own spec,
+`apis/openapi-reports.yaml` (gap fix D18). `facility-reports` needs an
+analytical Postgres to boot, so Schemathesis does not run against it.
+`internal/adapters/inbound/http/reports_contract_test.go` is its contract
+test instead: every route of `NewReportsRouter` is documented and every
+documented operation is routed, and each documented status the handlers can
+produce (200/400/500, `/readyz` 503) returns the documented content type with
+exactly the schema's properties. Spectral (`api-lint`) lints both specs.
 
 ## Architecture fitness tests (`internal/architecture`)
 

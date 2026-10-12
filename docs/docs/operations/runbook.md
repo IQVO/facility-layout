@@ -207,8 +207,11 @@ on error. It never crashes the process.
 
 ## Analytics reports API (`facility-reports`)
 
-These routes are served by `cmd/facility-reports` and are **not** in
-`apis/openapi.yaml` (`internal/adapters/inbound/http/reports_handler.go`).
+These routes are served by `cmd/facility-reports`
+(`internal/adapters/inbound/http/reports_handler.go`) and specified in
+`apis/openapi-reports.yaml`, a separate spec from the OLTP `apis/openapi.yaml`
+(gap fix D18). Errors are RFC 7807: `400 invalid-report-query`,
+`500 report-store-error`.
 
 | Route | Query parameters | 200 response |
 |---|---|---|

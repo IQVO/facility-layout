@@ -84,7 +84,11 @@ CloudEvents `id`**, and dead-letters anything that is not a valid CloudEvent.
 
 ## REST contract
 
-Served by `cmd/facility-reports` (read-only):
+Served by `cmd/facility-reports` (read-only). The machine-readable contract
+is [`apis/openapi-reports.yaml`](https://github.com/IQVO/facility-layout/blob/main/apis/openapi-reports.yaml),
+rendered under **API Reference → Reports API**;
+`internal/adapters/inbound/http/reports_contract_test.go` keeps it and the
+router in step.
 
 ### `GET /reports/catalog-growth`
 
