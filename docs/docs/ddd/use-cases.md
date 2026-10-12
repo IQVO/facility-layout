@@ -41,11 +41,12 @@ published to **both** `warehouse.facility.events` and
 ### `SiteCapabilityChanged`: defined, but no use case raises it
 
 `com.warehouse.wms.facility-layout.site.SiteCapabilityChanged` is defined in
-`internal/domain/shared/events.go`. It is a full last-write-wins snapshot
-with `siteCode`, `transferOriginEnabled`, `transferDestinationEnabled` and
-`capabilityRevision`, and consumers keep the highest revision. It has a wire
-DTO (`internal/adapters/kafka/cloudevents/wire.go`), a partition key (the
-site code), an AsyncAPI message and a contract fitness test. **No use case,
+`internal/domain/shared/events.go`. It is a full last-write-wins snapshot. Its wire `data` fields are
+`site_code`, `transfer_origin_enabled`, `transfer_destination_enabled` and
+`capability_revision`. They are snake_case, while every other event payload
+is camelCase. Consumers keep the highest `capability_revision`. It has a
+wire DTO (`internal/adapters/kafka/cloudevents/wire.go`), a partition key
+(the site code), an AsyncAPI message and a contract fitness test. **No use case,
 REST route or MCP tool produces it on `develop`**, so nothing publishes it
 today. Consumers can code against the contract, but they will not receive
 messages until a capability-changing command exists.

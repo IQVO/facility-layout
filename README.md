@@ -44,6 +44,18 @@ message flow, UML class/sequence and ER diagrams — source in
 Records. The site source lives in [`docs/`](docs/) and deploys to GitHub Pages
 via `.github/workflows/docs.yml`.
 
+Page map (source under `docs/docs/`):
+
+| Area | Pages |
+|---|---|
+| Overview | [Introduction](docs/docs/overview/index.md), [Getting started / quickstart](docs/docs/overview/getting-started.md), [Hexagonal architecture](docs/docs/ddd/hexagonal-architecture.md) |
+| Operations | [Configuration (env vars per binary)](docs/docs/operations/configuration.md), [Runbook](docs/docs/operations/runbook.md), [Observability](docs/docs/operations/observability.md), [Troubleshooting](docs/docs/operations/troubleshooting.md) |
+| Development | [Testing](docs/docs/development/testing.md) |
+| Ecosystem | [Context map](docs/docs/ecosystem/context-map.md), [Consuming this service (integration)](docs/docs/ecosystem/consuming-this-service.md) |
+| DDD | [Use cases](docs/docs/ddd/use-cases.md), [Subdomain classification](docs/docs/ddd/subdomain-classification.md), [Aggregates](docs/docs/ddd/aggregates.md), [Domain events](docs/docs/ddd/domain-events.md), [DDD artifact pack](docs/docs/ddd/ddd-artifacts.md) |
+| MCP & analytics | [MCP governance charter](docs/docs/mcp/governance-charter.md), [Catalog growth report](docs/docs/analytics/catalog-growth-report.md) |
+| Decisions | [ADR index](docs/docs/adr/index.md) |
+
 ---
 
 ## The location code
