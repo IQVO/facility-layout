@@ -73,6 +73,20 @@ const config: Config = {
               categoryLinkSource: 'tag',
             },
           } satisfies OpenApiPlugin.Options,
+          // The facility-reports analytical read API (gap fix D18) -- a
+          // SEPARATE spec from the OLTP API above, served by a separate
+          // binary against the analytical database, generated into its own
+          // output dir so the two never collide.
+          reports: {
+            specPath: '../apis/openapi-reports.yaml',
+            outputDir: 'docs/api-reference/rest-reports',
+            downloadUrl:
+              'https://raw.githubusercontent.com/IQVO/facility-layout/main/apis/openapi-reports.yaml',
+            sidebarOptions: {
+              groupPathsBy: 'tag',
+              categoryLinkSource: 'tag',
+            },
+          } satisfies OpenApiPlugin.Options,
         },
       },
     ],

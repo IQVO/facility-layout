@@ -74,7 +74,7 @@ updated. The history of what was believed and when is the point.
 | [0022](./0022-horizontal-autoscaling-and-pgxpool-tuning.md) | Per-workload HorizontalPodAutoscaler and pgxpool MaxConns/statement_timeout tuning | Accepted |
 | [0023](./0023-migrations-direct-postgres-connection.md) | Run golang-migrate against a direct Postgres connection, not PgBouncer | Accepted |
 | [0024](./0024-cloudevents-mandatory-envelope.md) | CloudEvents 1.0 as the mandatory event envelope | Accepted |
-| [0025](./0025-optimistic-concurrency-version-column.md) | Optimistic concurrency (version column) on LocationSlot | Accepted |
+| [0025](./0025-optimistic-concurrency-version-column.md) | Optimistic concurrency (version column) on LocationSlot | Accepted (extended to Site by ADR-0035) |
 | [0026](./0026-housekeeping-sweeper.md) | Housekeeping sweeper for idempotency_keys and published outbox rows | Accepted |
 | [0027](./0027-console-write-screens.md) | Write-capable console screens (extends ADR-0011's read-only adoption) | Accepted |
 | [0028](./0028-boot-retry-and-startup-probe.md) | Boot retry for Istio sidecar resets and a matching startupProbe | Accepted |
@@ -84,6 +84,7 @@ updated. The history of what was believed and when is the point.
 | [0032](./0032-aggregate-partition-keys-for-geometry-events.md) | Key geometry, structure and cross-aisle events by aggregate identity (extends ADR-0021) | Accepted (import-event key confirmed by ADR-0034) |
 | [0033](./0033-slug-prefixed-mcp-tool-errors.md) | MCP tool errors follow the fleet convention: `<slug>: detail` (refines ADR-0007, reuses ADR-0004 slugs) | Accepted |
 | [0034](./0034-facility-layout-imported-stays-keyed-by-cloudevents-id.md) | FacilityLayoutImported stays keyed by its CloudEvents id (confirms ADR-0032) | Accepted |
+| [0035](./0035-site-transfer-capability-command.md) | Site transfer-capability command raises SiteCapabilityChanged (extends ADR-0025 to Site; payload casing kept) | Accepted |
 
 ## The Kafka record that was deferred until the adapter existed
 

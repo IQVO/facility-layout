@@ -10,7 +10,8 @@ description: "ADR 0025 — a version column on location_slots closes the blind-o
 
 ## Status
 
-**Accepted.** Implemented in the same change that introduced this record.
+**Accepted.** Extended to the `Site` aggregate by
+[ADR-0035](./0035-site-transfer-capability-command.md). Implemented in the same change that introduced this record.
 Mirrors the fleet's reference implementations — workforce-management
 ADR-0021 (`associate_shift`, `labor_assignment`) and order-management
 ADR-0024 — adapted to this service's aggregates, with the same honest

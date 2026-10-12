@@ -336,6 +336,12 @@ components:
         capability. Kafka key and CloudEvents subject: `site_code`. Consumers
         compare `capability_revision` and retain the latest complete snapshot;
         they must not infer either capability from facility topology.
+        Raised by `PUT /sites/{siteCode}/transfer-capability` through the
+        transactional outbox, once per real change; `capability_revision`
+        starts at 1 and increases by exactly one per change of the same
+        site (ADR-0035). The payload stays snake_case although every other
+        facility-layout payload is camelCase: recasing it would be a
+        breaking `.v2` for network-inventory-planning (ADR-0035, decision D2).
       payload:
         allOf:
           - $ref: '#/components/schemas/cloudEvent'

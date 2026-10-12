@@ -63,6 +63,7 @@ var errorCategories = []errorCategory{
 
 	// 409 Conflict: a parent that exists but is no longer Active.
 	{usecases.ErrSiteNotActive, http.StatusConflict, problemInfo{"site-not-active", "Site is not active"}},
+	{site.ErrSiteDecommissioned, http.StatusConflict, problemInfo{"site-not-active", "Site is not active"}},
 	{usecases.ErrZoneNotActive, http.StatusConflict, problemInfo{"zone-not-active", "Zone is not active"}},
 	{usecases.ErrAisleNotActive, http.StatusConflict, problemInfo{"aisle-not-active", "Aisle is not active"}},
 
@@ -143,6 +144,7 @@ var errorCategories = []errorCategory{
 	{usecases.ErrEmptyImport, http.StatusBadRequest, problemInfo{"empty-import", "Facility layout import must contain at least one row"}},
 	{errMissingGeometryField, http.StatusBadRequest, problemInfo{"missing-geometry-field", "Geometry coordinates and dimensions must be numbers, not null"}},
 	{errMissingSequenceHint, http.StatusBadRequest, problemInfo{"missing-sequence-hint", "Aisle sequenceHint is required"}},
+	{errMissingTransferCapabilityField, http.StatusBadRequest, problemInfo{"missing-transfer-capability-field", "transferOriginEnabled and transferDestinationEnabled are both required booleans"}},
 }
 
 // categoryFor returns the first category whose sentinel matches err via

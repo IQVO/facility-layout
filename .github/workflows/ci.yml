@@ -330,6 +330,10 @@ jobs:
         run: npm ci
       - name: Lint OpenAPI spec
         run: .github/tooling/spectral/node_modules/.bin/spectral lint apis/openapi.yaml --ruleset .spectral.yaml --fail-severity=warn
+      - name: Lint OpenAPI spec (reports API)
+        # The facility-reports read API is a SEPARATE spec: a separate
+        # binary on a separate port against the analytical database (D18).
+        run: .github/tooling/spectral/node_modules/.bin/spectral lint apis/openapi-reports.yaml --ruleset .spectral.yaml --fail-severity=warn
 
   # ============================================================
   # CLASSIFICATION: PACKAGING VALIDATION (Helm chart)
@@ -369,14 +373,19 @@ jobs:
           cache: npm
           cache-dependency-path: docs/package-lock.json
       - run: npm ci
-      - name: Regenerate REST API docs from apis/openapi.yaml
+      - name: Regenerate REST API docs from apis/openapi.yaml and apis/openapi-reports.yaml
         run: npm run clean-api-docs && npm run gen-api-docs
       - name: Fail if generated docs differ from what's committed
         run: |
           set -euo pipefail
-          if ! git diff --exit-code -- docs/api-reference/rest; then
-            echo "::error::docs/api-reference/rest is out of sync with apis/openapi.yaml." \
+          if ! git diff --exit-code -- docs/api-reference/rest docs/api-reference/rest-reports; then
+            echo "::error::docs/api-reference/rest{,-reports} is out of sync with apis/openapi{,-reports}.yaml." \
                  "Run 'npm run gen-api-docs' inside docs/ and commit the result."
+            exit 1
+          fi
+          untracked="$(git ls-files --others --exclude-standard -- docs/api-reference/rest docs/api-reference/rest-reports)"
+          if [ -n "$untracked" ]; then
+            echo "::error::generated API docs not committed:" $untracked
             exit 1
           fi
 
@@ -398,6 +407,28 @@ jobs:
       - uses: helm/chart-testing-action@6ec842c01de15ebb84c8627d2744a0c2f2755c9f # v2.8.0
       - name: Run chart-testing (lint)
         run: ct lint --charts charts/facility-layout --validate-maintainers=false --check-version-increment=false
+
+  # ============================================================
+  # CLASSIFICATION: PACKAGING VALIDATION (Helm chart render tests)
+  # Runs on EVERY push and PR (unlike helm-lint above): the render
+  # assertions guard behaviour, not packaging -- e.g. the api Deployment
+  # mounting the chart ConfigMap via envFrom (gap fix D14), the frontend
+  # gating, and every Service selecting exactly one Deployment. Same
+  # scripts as `bash charts/facility-layout/tests/render_test.sh` and
+  # `python3 charts/facility-layout/tests/test_service_selectors.py`.
+  # ============================================================
+  chart-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5
+        with:
+          version: v3.16.4
+      - name: Chart render assertions
+        run: bash charts/facility-layout/tests/render_test.sh
+      - name: Service selector test
+        run: python3 charts/facility-layout/tests/test_service_selectors.py
 
   # ============================================================
   # CLASSIFICATION: LINTERS & STATIC ANALYSIS (architecture fitness)

@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/claudioed/facility-layout/internal/application/ports"
 	"github.com/claudioed/facility-layout/internal/domain/shared"
 	"github.com/claudioed/facility-layout/internal/domain/site"
 )
@@ -21,36 +22,54 @@ func NewSiteRepo(pool *pgxpool.Pool) *SiteRepo {
 	return &SiteRepo{pool: pool}
 }
 
-// Save upserts the site.
+const siteColumns = `code, name, status, transfer_origin_enabled, transfer_destination_enabled, capability_revision, version`
+
+// Save upserts the site, version-guarded against a concurrent writer
+// (ADR-0025, extended to Site by ADR-0035): on an existing row it only
+// applies when the row's current version still matches s.Version(), and
+// always advances the row by exactly one version. Two concurrent transfer
+// capability changes therefore cannot both commit the same
+// capability_revision: the loser gets ports.ErrConcurrentModification and
+// its SiteCapabilityChanged outbox row rolls back with it.
 func (r *SiteRepo) Save(ctx context.Context, s *site.Site) error {
-	_, err := querierFrom(ctx, r.pool).Exec(ctx, `
-		INSERT INTO sites (code, name, status)
-		VALUES ($1, $2, $3)
-		ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name, status = EXCLUDED.status
-	`, s.Code(), s.Name(), string(s.Status()))
-	return err
+	capability := s.TransferCapability()
+	tag, err := querierFrom(ctx, r.pool).Exec(ctx, `
+		INSERT INTO sites (`+siteColumns+`)
+		VALUES ($1, $2, $3, $4, $5, $6, 1)
+		ON CONFLICT (code) DO UPDATE SET
+			name = EXCLUDED.name,
+			status = EXCLUDED.status,
+			transfer_origin_enabled = EXCLUDED.transfer_origin_enabled,
+			transfer_destination_enabled = EXCLUDED.transfer_destination_enabled,
+			capability_revision = EXCLUDED.capability_revision,
+			version = sites.version + 1
+		WHERE sites.version = $7
+	`, s.Code(), s.Name(), string(s.Status()),
+		capability.OriginEnabled(), capability.DestinationEnabled(), s.CapabilityRevision(), s.Version())
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		// The ON CONFLICT arm matched an existing row whose version no
+		// longer equals the one s was loaded at.
+		return ports.ErrConcurrentModification
+	}
+	return nil
 }
 
 // FindByCode returns the site, or (nil, nil) when it does not exist.
 func (r *SiteRepo) FindByCode(ctx context.Context, code string) (*site.Site, error) {
-	var name, status string
-	err := querierFrom(ctx, r.pool).QueryRow(ctx, `SELECT name, status FROM sites WHERE code = $1`, code).Scan(&name, &status)
+	row := querierFrom(ctx, r.pool).QueryRow(ctx, `SELECT `+siteColumns+` FROM sites WHERE code = $1`, code)
+	s, err := scanSite(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
-	if err != nil {
-		return nil, err
-	}
-	parsed, err := shared.ParseStatus(status)
-	if err != nil {
-		return nil, err
-	}
-	return site.RehydrateSite(code, name, parsed), nil
+	return s, err
 }
 
 // List returns every site, ordered by code.
 func (r *SiteRepo) List(ctx context.Context) ([]*site.Site, error) {
-	rows, err := querierFrom(ctx, r.pool).Query(ctx, `SELECT code, name, status FROM sites ORDER BY code`)
+	rows, err := querierFrom(ctx, r.pool).Query(ctx, `SELECT `+siteColumns+` FROM sites ORDER BY code`)
 	if err != nil {
 		return nil, err
 	}
@@ -58,15 +77,29 @@ func (r *SiteRepo) List(ctx context.Context) ([]*site.Site, error) {
 
 	out := make([]*site.Site, 0)
 	for rows.Next() {
-		var code, name, status string
-		if err := rows.Scan(&code, &name, &status); err != nil {
-			return nil, err
-		}
-		parsed, err := shared.ParseStatus(status)
+		s, err := scanSite(rows)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, site.RehydrateSite(code, name, parsed))
+		out = append(out, s)
 	}
 	return out, rows.Err()
+}
+
+// scanSite rehydrates one sites row selected with siteColumns.
+func scanSite(row pgx.Row) (*site.Site, error) {
+	var (
+		code, name, status         string
+		originEnabled, destEnabled bool
+		capabilityRevision         int64
+		version                    int
+	)
+	if err := row.Scan(&code, &name, &status, &originEnabled, &destEnabled, &capabilityRevision, &version); err != nil {
+		return nil, err
+	}
+	parsed, err := shared.ParseStatus(status)
+	if err != nil {
+		return nil, err
+	}
+	return site.RehydrateSite(code, name, parsed, site.NewTransferCapability(originEnabled, destEnabled), capabilityRevision, version), nil
 }

@@ -10,6 +10,15 @@ type registerSiteRequest struct {
 	Name     string `json:"name"`
 }
 
+// setTransferCapabilityRequest is the full snapshot PUT
+// /sites/{siteCode}/transfer-capability replaces (ADR-0035). Both fields
+// are required booleans; pointers turn an omitted or null field into a 400
+// instead of encoding/json's silent false.
+type setTransferCapabilityRequest struct {
+	TransferOriginEnabled      *bool `json:"transferOriginEnabled"`
+	TransferDestinationEnabled *bool `json:"transferDestinationEnabled"`
+}
+
 type registerZoneRequest struct {
 	AreaCode         string `json:"areaCode"`
 	ZoneCode         string `json:"zoneCode"`
@@ -155,6 +164,15 @@ type siteResponse struct {
 	SiteCode string `json:"siteCode"`
 	Name     string `json:"name"`
 	Status   string `json:"status"`
+}
+
+// transferCapabilityResponse is a site's current transfer capability and
+// the revision of its last published SiteCapabilityChanged (0 = never).
+type transferCapabilityResponse struct {
+	SiteCode                   string `json:"siteCode"`
+	TransferOriginEnabled      bool   `json:"transferOriginEnabled"`
+	TransferDestinationEnabled bool   `json:"transferDestinationEnabled"`
+	CapabilityRevision         int64  `json:"capabilityRevision"`
 }
 
 type zoneResponse struct {

@@ -76,9 +76,9 @@ backoff, 15s of waiting in total). The process exits non-zero if they still
 fail. So "the pod never becomes Ready" almost always means "the process is
 crash-looping on boot". Read the logs, not the probe.
 
-The startup probe allows 60s (2s × 30) before liveness takes over. The
-chart's `values.yaml` comment justifies this against a "~31s" retry budget.
-The real backoff is 15s plus the duration of each attempt.
+The startup probe allows 60s (2s × 30) before liveness takes over, well past
+the boot retry budget: 15s of backoff (1+2+4+8) plus the duration of each of
+the 5 attempts.
 
 ### Graceful shutdown order (ADR-0020)
 
@@ -99,7 +99,7 @@ HTTP. MCP drains HTTP with a 10s budget.
 
 | Schema | Files | Run by | DSN |
 |---|---|---|---|
-| OLTP | `migrations/0001_init` … `0007_slot_version` (tables `sites`, `zones`, `aisles`, `location_types`, `placement_rules`, `location_slots`, `fixed_structures`, `cross_aisles`, `outbox_events`, `idempotency_keys`; `0005` drops the legacy `events` table) | **both** `facility` and `mcp`, at every boot, before the pool opens | `MIGRATIONS_DATABASE_URL`, falling back to `DATABASE_URL` |
+| OLTP | `migrations/0001_init` … `0008_site_transfer_capability` (tables `sites`, `zones`, `aisles`, `location_types`, `placement_rules`, `location_slots`, `fixed_structures`, `cross_aisles`, `outbox_events`, `idempotency_keys`; `0005` drops the legacy `events` table; `0008` adds the additive `sites` columns `transfer_origin_enabled`, `transfer_destination_enabled`, `capability_revision` and `version`, ADR-0035) | **both** `facility` and `mcp`, at every boot, before the pool opens | `MIGRATIONS_DATABASE_URL`, falling back to `DATABASE_URL` |
 | Analytical | `migrations/analytics/0001_report` (tables `analytics_processed_events`, `analytics_consumed_events`, `catalog_growth_rollup`) | `facility-projector` only, at every boot | `ANALYTICS_DATABASE_URL` |
 
 Migrations use golang-migrate (`internal/adapters/outbound/postgres/migrate.go`).
@@ -193,17 +193,25 @@ The sweeper is safe to run in several replicas at once. It logs
 `outbox_events_deleted` when it removed rows, and `housekeeping sweep failed`
 on error. It never crashes the process.
 
-> **Chart gap:** `templates/configmap.yaml` renders `OUTBOX_RELAY_INTERVAL`,
-> `HOUSEKEEPING_INTERVAL`, `IDEMPOTENCY_KEY_TTL` and `OUTBOX_RETENTION`, but
-> no Deployment mounts that ConfigMap (there is no `envFrom`). Changing
+> **Chart wiring:** `templates/configmap.yaml` renders `HTTP_ADDR`,
+> `MIGRATIONS_PATH`, `EVENT_PUBLISHER`, `OUTBOX_RELAY_INTERVAL`,
+> `HOUSEKEEPING_INTERVAL`, `IDEMPOTENCY_KEY_TTL`, `OUTBOX_RETENTION` and (with
+> `kafka.enabled`) `KAFKA_BROKERS` from `config.*`, and the api Deployment
+> mounts it with `envFrom` (gap fix D14, 2026-10-12). Changing
 > `config.outboxRelayInterval` or the housekeeping values in `values.yaml`
-> therefore has no effect, and the binaries run on their built-in defaults
-> (which match the values defaults). To tune them, use `extraEnv`.
+> takes effect on the next rollout (the `checksum/config` annotation rolls the
+> pods). Explicit `env`/`extraEnv` entries win over the ConfigMap for the same
+> key. The projector, reports and MCP Deployments do not mount it: they set
+> their own variables explicitly. `charts/facility-layout/tests/render_test.sh`
+> (CI job `chart-tests`) fails if the mount disappears.
 
 ## Analytics reports API (`facility-reports`)
 
-These routes are served by `cmd/facility-reports` and are **not** in
-`apis/openapi.yaml` (`internal/adapters/inbound/http/reports_handler.go`).
+These routes are served by `cmd/facility-reports`
+(`internal/adapters/inbound/http/reports_handler.go`) and specified in
+`apis/openapi-reports.yaml`, a separate spec from the OLTP `apis/openapi.yaml`
+(gap fix D18). Errors are RFC 7807: `400 invalid-report-query`,
+`500 report-store-error`.
 
 | Route | Query parameters | 200 response |
 |---|---|---|
@@ -243,3 +251,4 @@ the numbers mean.
 | Replay a dead-lettered message | Inspect it on `warehouse.facility.analytics.dlq` (the body is byte-identical to the original; the headers say why it failed), fix the cause, then produce the same value and key back onto `warehouse.facility.analytics`. Idempotency on the CloudEvents id makes a double replay harmless. |
 | Rotate database credentials | Update the Secret keys `DATABASE_URL` and `MIGRATIONS_DATABASE_URL` (or the analytics Secret's `ANALYTICS_DATABASE_URL` and `ANALYTICS_READER_DATABASE_URL`), then `kubectl rollout restart` the affected Deployments. DSNs are only read at boot. |
 | Purge idempotency keys right away | Restart the api pod: the sweeper runs once at start. You can also run the sweeper's `DELETE` by hand. |
+| Enable a site for inter-warehouse transfers | `PUT /sites/{siteCode}/transfer-capability` with `{"transferOriginEnabled": true, "transferDestinationEnabled": true}` (either flag may be false). The response's `capabilityRevision` is the revision published in `SiteCapabilityChanged`; network-inventory-planning applies it once the outbox relay has sent it (ADR-0035). A repeat publishes nothing; a `409 concurrent-modification` means another change won the race: re-read and PUT again. Existing sites start capable of nothing at revision 0. |
