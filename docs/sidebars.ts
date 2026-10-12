@@ -36,6 +36,7 @@ const sidebars: SidebarsConfig = {
       collapsed: false,
       items: [
         'ddd/subdomain-classification',
+        'ddd/use-cases',
         'ddd/aggregates',
         'ddd/invariants',
         'ddd/domain-events',
@@ -96,6 +97,23 @@ const sidebars: SidebarsConfig = {
       label: 'Analytics (Data Product)',
       collapsed: false,
       items: ['analytics/catalog-growth-report'],
+    },
+    {
+      type: 'category',
+      label: 'Operations',
+      collapsed: false,
+      items: [
+        'operations/configuration',
+        'operations/runbook',
+        'operations/observability',
+        'operations/troubleshooting',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Development',
+      collapsed: false,
+      items: ['development/testing'],
     },
     {
       type: 'category',
