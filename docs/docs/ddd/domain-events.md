@@ -52,6 +52,7 @@ other fleet context uses `wes`.
 
 ```
 com.warehouse.wms.facility-layout.site.SiteRegistered
+com.warehouse.wms.facility-layout.site.SiteCapabilityChanged
 com.warehouse.wms.facility-layout.zone.ZoneRegistered
 com.warehouse.wms.facility-layout.aisle.AisleRegistered
 com.warehouse.wms.facility-layout.locationtype.LocationTypeRegistered
@@ -96,7 +97,7 @@ Every event embeds the same base, serialized as:
 `time.Now()` inside the domain — which is what makes event timestamps
 deterministic in tests.
 
-## The twelve events
+## The thirteen events
 
 ### SiteRegistered
 
@@ -106,6 +107,22 @@ A physical facility was added to the warehouse map.
 |---|---|
 | `siteCode` | string |
 | `siteName` | string |
+
+### SiteCapabilityChanged
+
+A site's transfer capability changed
+([ADR 0035](../adr/0035-site-transfer-capability-command.md)). A full
+last-write-wins snapshot raised by `PUT /sites/{siteCode}/transfer-capability`
+(use case `ChangeSiteTransferCapability`) once per real change. Its fields are
+**snake_case**, unlike every other payload here: recasing them would be a
+breaking `.v2` for network-inventory-planning, so ADR 0035 keeps them.
+
+| Field | Type |
+|---|---|
+| `site_code` | string |
+| `transfer_origin_enabled` | boolean — the site may donate stock |
+| `transfer_destination_enabled` | boolean — the site may receive stock |
+| `capability_revision` | integer — 1 on the first change, +1 per later change of the same site; keep the highest |
 
 ### ZoneRegistered
 
@@ -276,6 +293,7 @@ site would need an additive `siteCode` (a contract change) for no benefit
 | CloudEvents `type` | Kafka key (partition) | `subject` | Producer use case(s) | Known consumers |
 |---|---|---|---|---|
 | `com.warehouse.wms.facility-layout.site.SiteRegistered` | `siteCode` | `siteCode` | `RegisterSite`, `ImportFacilityLayout` | own projector |
+| `com.warehouse.wms.facility-layout.site.SiteCapabilityChanged` | `site_code` | `site_code` | `ChangeSiteTransferCapability` | `network-inventory-planning` (`site_capability` read model); own projector ignores it |
 | `com.warehouse.wms.facility-layout.zone.ZoneRegistered` | `zoneId` | `zoneId` | `RegisterZone`, `ImportFacilityLayout` | `inventory-storage`, own projector |
 | `com.warehouse.wms.facility-layout.aisle.AisleRegistered` | `aisleId` | `aisleId` | `RegisterAisle`, `ImportFacilityLayout` | own projector |
 | `com.warehouse.wms.facility-layout.locationtype.LocationTypeRegistered` | `locationType` | `locationType` | `RegisterLocationType` | own projector |
@@ -297,6 +315,7 @@ Source: `internal/domain/shared/events.go`,
 | Use case | Events emitted |
 |---|---|
 | `RegisterSite` | `SiteRegistered` |
+| `ChangeSiteTransferCapability` | `SiteCapabilityChanged` (only when the snapshot changed or was never published) |
 | `RegisterZone` | `ZoneRegistered` |
 | `RegisterAisle` | `AisleRegistered` |
 | `RegisterLocationType` | `LocationTypeRegistered` |
@@ -341,7 +360,8 @@ the Kafka adapters were a purely additive change.
 |---|---|---|---|
 | `inventory-storage` (`internal/adapters/outbound/facilitycache`, with `LOCATION_LOOKUP_MODE=kafka`) | `warehouse.facility.events` | process-unique group, replays from the first offset | `ZoneRegistered`, `LocationSlotRegistered`, `LocationSlotDecommissioned` — the rest are ignored ([ADR 0013](../adr/0013-first-published-language-consumer.md)) |
 | `warehouse-planning` (`internal/adapters/inbound/kafka/storage_capacity_consumer.go`, started when `KAFKA_BROKERS` is set) | `warehouse.facility.events` | `STORAGE_CAPACITY_CONSUMER_GROUP` (default `warehouse-planning-storage-capacity`) | `LocationSlotRegistered` (Storage and WorkCenter roles), `LocationSlotDecommissioned` — folded into a storage-position / station tally |
-| this repository's `cmd/facility-projector` | `warehouse.facility.analytics` | `facility-analytics` (DLQ `warehouse.facility.analytics.dlq`) | The original eight events (`SiteRegistered` … `FacilityLayoutImported`); the four geometry events are ignored |
+| `network-inventory-planning` (`internal/adapters/inbound/kafka/consumers.go`, `SiteCapabilityConsumer`) | `warehouse.facility.events` | env-configured | `SiteCapabilityChanged` — upserted into its `site_capability` read model, last-write-wins on `capability_revision` |
+| this repository's `cmd/facility-projector` | `warehouse.facility.analytics` | `facility-analytics` (DLQ `warehouse.facility.analytics.dlq`) | The original eight events (`SiteRegistered` … `FacilityLayoutImported`); the geometry events and `SiteCapabilityChanged` are ignored |
 
 No other service consumes either topic today. The geometry, fixed-structure
 and cross-aisle events are Published Language with no consumer yet.

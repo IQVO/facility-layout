@@ -29,11 +29,16 @@ import (
 // package: they are mapped into the compact, bounded DTOs below, sized for an
 // agent to reason over rather than for completeness.
 
-// siteRef is the compact identity of a Site: its code and human name. It is
-// the entry in list_sites and the header of a site layout.
+// siteRef is the compact identity of a Site: its code and human name, plus
+// its transfer capability and the revision of the last published
+// SiteCapabilityChanged (ADR-0035; revision 0 = never set, capable of
+// nothing). It is the entry in list_sites and the header of a site layout.
 type siteRef struct {
-	Code string `json:"code"`
-	Name string `json:"name"`
+	Code                       string `json:"code"`
+	Name                       string `json:"name"`
+	TransferOriginEnabled      bool   `json:"transferOriginEnabled"`
+	TransferDestinationEnabled bool   `json:"transferDestinationEnabled"`
+	CapabilityRevision         int64  `json:"capabilityRevision"`
 }
 
 // siteLayoutDTO is the compact, nested projection of one Site's structure —
@@ -161,7 +166,14 @@ func activityStringsMCP(activities []slot.Activity) []string {
 
 // toSiteRef maps a domain Site to its compact reference DTO.
 func toSiteRef(s *site.Site) siteRef {
-	return siteRef{Code: s.Code(), Name: s.Name()}
+	c := s.TransferCapability()
+	return siteRef{
+		Code:                       s.Code(),
+		Name:                       s.Name(),
+		TransferOriginEnabled:      c.OriginEnabled(),
+		TransferDestinationEnabled: c.DestinationEnabled(),
+		CapabilityRevision:         s.CapabilityRevision(),
+	}
 }
 
 // toSiteLayoutDTO maps the GetSiteLayout read model into the bounded,

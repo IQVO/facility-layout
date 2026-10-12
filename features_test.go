@@ -83,9 +83,12 @@ func (w *world) start() {
 	clock := memory.NewFixedClock(time.Date(2026, 8, 22, 9, 0, 0, 0, time.UTC))
 
 	s := &inboundhttp.Server{
-		RegisterSite:         &usecases.RegisterSite{Sites: sites, Events: publisher, Clock: clock},
-		GetSite:              &usecases.GetSite{Sites: sites},
-		ListSites:            &usecases.ListSites{Sites: sites},
+		RegisterSite: &usecases.RegisterSite{Sites: sites, Events: publisher, Clock: clock},
+		GetSite:      &usecases.GetSite{Sites: sites},
+		ListSites:    &usecases.ListSites{Sites: sites},
+		ChangeSiteTransferCapability: &usecases.ChangeSiteTransferCapability{
+			Sites: sites, Events: publisher, Clock: clock,
+		},
 		RegisterZone:         &usecases.RegisterZone{Sites: sites, Zones: zones, Events: publisher, Clock: clock},
 		GetZone:              &usecases.GetZone{Zones: zones},
 		ListZones:            &usecases.ListZones{Sites: sites, Zones: zones},
@@ -961,5 +964,6 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^the listed location types are "([^"]*)"$`, w.theListedLocationTypesAre)
 	sc.Step(`^the listed placement rules are "([^"]*)"$`, w.theListedPlacementRulesAre)
 	w.registerWave2Steps(sc)
+	w.registerCapabilitySteps(sc)
 	sc.Step(`^the classification reports hazmat (true|false) and temperature class "([^"]*)"$`, w.theClassificationReports)
 }

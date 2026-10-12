@@ -37,26 +37,30 @@ published to **both** `warehouse.facility.events` and
 | `SetAisleGeometry` | `PUT /zones/{zoneId}/aisles/{aisleCode}/geometry` | centreline segment | aisle exists; both endpoints real (`segment-endpoints-not-real`); start ≠ end (`segment-start-end-equal`) | `AisleGeometryUpdated` |
 | `RegisterFixedStructure` | `POST /sites/{siteCode}/structures` (Idempotency-Key) | id, site code, kind, footprint, label | site exists; known kind (`unknown-fixed-structure-kind`); real footprint (`empty-fixed-structure-footprint`); unique id | `FixedStructureRegistered` |
 | `RegisterCrossAisle` | `POST /zones/{zoneId}/cross-aisles` (Idempotency-Key) | zone id, from aisle, to aisle, at bay | zone exists; both aisles belong to the zone (`cross-aisle-aisle-mismatch`); distinct aisles (`cross-aisle-same-aisle`); unique (`duplicate-cross-aisle`) | `CrossAisleRegistered` |
+| `ChangeSiteTransferCapability` | `PUT /sites/{siteCode}/transfer-capability` (no Idempotency-Key: a repeat is a no-op) | site code, `transferOriginEnabled`, `transferDestinationEnabled` (both required, `missing-transfer-capability-field`) | site exists (`site-not-found`); site active (`site-not-active`); site version check (`concurrent-modification`, ADR-0025 extended by ADR-0035). An identical snapshot after revision 1 saves and publishes nothing. | `SiteCapabilityChanged` with the new per-site `capability_revision` (1, 2, 3, …) |
 
-### `SiteCapabilityChanged`: defined, but no use case raises it
+### `SiteCapabilityChanged`: raised by `ChangeSiteTransferCapability`
 
-`com.warehouse.wms.facility-layout.site.SiteCapabilityChanged` is defined in
-`internal/domain/shared/events.go`. It is a full last-write-wins snapshot. Its wire `data` fields are
-`site_code`, `transfer_origin_enabled`, `transfer_destination_enabled` and
-`capability_revision`. They are snake_case, while every other event payload
-is camelCase. Consumers keep the highest `capability_revision`. It has a
-wire DTO (`internal/adapters/kafka/cloudevents/wire.go`), a partition key
-(the site code), an AsyncAPI message and a contract fitness test. **No use case,
-REST route or MCP tool produces it on `develop`**, so nothing publishes it
-today. Consumers can code against the contract, but they will not receive
-messages until a capability-changing command exists.
+`com.warehouse.wms.facility-layout.site.SiteCapabilityChanged` is a full
+last-write-wins snapshot of a site's transfer capability
+([ADR-0035](../adr/0035-site-transfer-capability-command.md)). Its wire
+`data` fields are `site_code`, `transfer_origin_enabled`,
+`transfer_destination_enabled` and `capability_revision`. They stay
+snake_case, while every other event payload is camelCase: recasing them would
+be a breaking `.v2` for network-inventory-planning (ADR-0035, decision D2).
+The site aggregate owns the revision: the first change publishes revision 1
+and every later real change adds exactly one. The `sites.version` guard makes
+two concurrent changes of one site serialise, so two published snapshots
+never share a revision. Consumers keep the highest `capability_revision`.
+The event is keyed and subjected by the site code and travels through the
+outbox like every other event; the analytics projector ignores it.
 
 ## Queries (read use cases)
 
 | Use case | REST trigger | MCP tool | Inputs | Not-found → |
 |---|---|---|---|---|
-| `ListSites` | `GET /sites` | `list_sites` | none | n/a |
-| `GetSite` | `GET /sites/{siteCode}` | n/a | site code | `site-not-found` |
+| `ListSites` | `GET /sites` | `list_sites` (each entry also carries `transferOriginEnabled`, `transferDestinationEnabled`, `capabilityRevision`) | none | n/a |
+| `GetSite` | `GET /sites/{siteCode}`, `GET /sites/{siteCode}/transfer-capability` | n/a | site code | `site-not-found` |
 | `GetSiteLayout` | `GET /sites/{siteCode}/layout` (`format=json` or `svg`, otherwise `invalid-layout-format`) | `get_site_layout` | site code | `site-not-found` |
 | `ListLocationsByRole` | `GET /sites/{siteCode}/locations?role=` | `list_functional_locations` | site code, role | `site-not-found` |
 | `ListZones` | `GET /sites/{siteCode}/zones` | n/a | site code | `site-not-found` |

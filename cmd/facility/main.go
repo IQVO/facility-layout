@@ -239,6 +239,9 @@ func newServer(a adapterSet, clock ports.Clock, locationMetrics ports.LocationMe
 		RegisterSite: &usecases.RegisterSite{Sites: a.sites, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork},
 		GetSite:      &usecases.GetSite{Sites: a.sites},
 		ListSites:    &usecases.ListSites{Sites: a.sites},
+		ChangeSiteTransferCapability: &usecases.ChangeSiteTransferCapability{
+			Sites: a.sites, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork,
+		},
 
 		RegisterZone: &usecases.RegisterZone{Sites: a.sites, Zones: a.zones, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork},
 		GetZone:      &usecases.GetZone{Zones: a.zones},

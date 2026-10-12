@@ -18,6 +18,30 @@ func toSiteResponse(s *site.Site) siteResponse {
 	return siteResponse{SiteCode: s.Code(), Name: s.Name(), Status: string(s.Status())}
 }
 
+func toTransferCapabilityResponse(s *site.Site) transferCapabilityResponse {
+	c := s.TransferCapability()
+	return transferCapabilityResponse{
+		SiteCode:                   s.Code(),
+		TransferOriginEnabled:      c.OriginEnabled(),
+		TransferDestinationEnabled: c.DestinationEnabled(),
+		CapabilityRevision:         s.CapabilityRevision(),
+	}
+}
+
+// errMissingTransferCapabilityField reports an omitted or null
+// transferOriginEnabled/transferDestinationEnabled: the PUT body is a full
+// snapshot (ADR-0035), and encoding/json would otherwise coerce the absence
+// to false and silently switch a capability off.
+var errMissingTransferCapabilityField = errors.New("transferOriginEnabled and transferDestinationEnabled are both required booleans")
+
+// fromTransferCapabilityRequest maps the PUT body to the domain value object.
+func fromTransferCapabilityRequest(req setTransferCapabilityRequest) (site.TransferCapability, error) {
+	if req.TransferOriginEnabled == nil || req.TransferDestinationEnabled == nil {
+		return site.TransferCapability{}, errMissingTransferCapabilityField
+	}
+	return site.NewTransferCapability(*req.TransferOriginEnabled, *req.TransferDestinationEnabled), nil
+}
+
 func toZoneResponse(z *zone.Zone) zoneResponse {
 	return zoneResponse{
 		ZoneID:           z.ID(),

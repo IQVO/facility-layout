@@ -1,0 +1,72 @@
+---
+id: get-catalog-growth-report
+title: "Layout Catalog Growth report, keyed by scope and UTC day"
+description: "Returns the catalog-growth rows whose day bucket falls in the half-open window [from, to), ordered by day bucket then scope."
+sidebar_label: "Layout Catalog Growth report, keyed by scope and UTC day"
+hide_title: true
+hide_table_of_contents: true
+api: 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
+sidebar_class_name: "get api-method"
+info_path: docs/api-reference/rest-reports/facility-layout-reports-api
+custom_edit_url: null
+---
+
+import MethodEndpoint from "@theme/ApiExplorer/MethodEndpoint";
+import ParamsDetails from "@theme/ParamsDetails";
+import RequestSchema from "@theme/RequestSchema";
+import StatusCodes from "@theme/StatusCodes";
+import OperationTabs from "@theme/OperationTabs";
+import TabItem from "@theme/TabItem";
+import Heading from "@theme/Heading";
+import Translate from "@docusaurus/Translate";
+
+<Heading
+  as={"h1"}
+  className={"openapi__heading"}
+  children={"Layout Catalog Growth report, keyed by scope and UTC day"}
+>
+</Heading>
+
+<MethodEndpoint
+  method={"get"}
+  path={"/reports/catalog-growth"}
+  context={"endpoint"}
+>
+  
+</MethodEndpoint>
+
+
+
+Returns the catalog-growth rows whose day bucket falls in the half-open window [from, to), ordered by day bucket then scope.
+Rows are bucketed by the BUSINESS time of the underlying event (its CloudEvents `time`), never by ingestion time, so a replayed or late-projected event lands on the day the change actually happened.
+`scope` is the part of the map a change belongs to: a site code for site- and zone-level changes, a zone id for aisle- and slot-level changes, and the empty string for catalog-wide definitions (location types, placement rules, bulk imports).
+
+
+<Heading
+  id={"request"}
+  as={"h2"}
+  className={"openapi-tabs__heading"}
+>
+  <Translate id="theme.openapi.request.title">Request</Translate>
+</Heading>
+
+<ParamsDetails
+  {...require("./get-catalog-growth-report.ParamsDetails.json")}
+>
+  
+</ParamsDetails>
+
+<RequestSchema
+  {...require("./get-catalog-growth-report.RequestSchema.json")}
+>
+  
+</RequestSchema>
+
+<StatusCodes
+  {...require("./get-catalog-growth-report.StatusCodes.json")}
+>
+  
+</StatusCodes>
+
+
+      

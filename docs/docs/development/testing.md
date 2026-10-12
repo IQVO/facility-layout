@@ -15,8 +15,8 @@ command its CI job runs.
 flowchart BT
   unit["Unit + httptest<br/>81 non-integration _test.go files<br/>make test / coverage (90% gate)"]
   arch["Architecture fitness<br/>internal/architecture<br/>make arch-test"]
-  bdd["BDD (godog)<br/>10 features, 101 scenarios + MCP feature (24)<br/>make bdd"]
-  integ["Integration (testcontainers)<br/>16 files in 7 packages<br/>make integration"]
+  bdd["BDD (godog)<br/>11 features, 107 scenarios + MCP feature (24)<br/>make bdd"]
+  integ["Integration (testcontainers)<br/>17 files in 7 packages<br/>make integration"]
   contract["Contract (Schemathesis)<br/>apis/openapi.yaml<br/>make contract"]
   evals["MCP evals<br/>E1 schemas, E2 wire, E3 behavioral"]
   mut["Mutation (gremlins)<br/>internal/domain, efficacy 89%"]
@@ -60,11 +60,12 @@ both `make coverage` and the CI `test` job.
   TCP `httptest.Server`, wired with the in-memory adapters, a fixed clock and
   a buffered event publisher. Every scenario is a black-box test of the REST
   API.
-- There are **10 feature files under `features/`** with **101 `Scenario` /
+- There are **11 feature files under `features/`** with **107 `Scenario` /
   `Scenario Outline` headings**: `catalog_reads` 7, `draw_the_warehouse` 4,
   `error_contract` 7, `fixed_structures_and_cross_aisles` 21, `geometry` 18,
   `import` 2, `location_roles_and_reads` 14, `placement_rules` 4,
-  `structure` 6, `travel_graph` 18. Outlines expand to more runtime cases.
+  `site_transfer_capability` 6 (ADR-0035), `structure` 6, `travel_graph` 18.
+  Outlines expand to more runtime cases.
 - Scenarios tagged `@known-bug` describe the correct behaviour for a defect
   that is still open. The default filter `~@known-bug` skips them.
   `BDD_TAGS=@known-bug go test -run TestFeatures` runs only those scenarios.
@@ -82,7 +83,7 @@ both.
 
 | Package | Files |
 |---|---|
-| `internal/adapters/outbound/postgres` | `integration_test.go` (shared container and migrations), `repos_`, `version_` (optimistic concurrency), `travel_`, `geometry_`, `telemetry_` (otelpgx child spans), `pool_limits_` (MaxConns / statement_timeout), `pool_alias_`, `outbox_`, `sweeper_` |
+| `internal/adapters/outbound/postgres` | `integration_test.go` (shared container and migrations), `repos_`, `version_` (optimistic concurrency), `site_capability_` (ADR-0035: the `SiteCapabilityChanged` outbox row is the CloudEvent network-inventory-planning decodes; repeat writes no row; concurrent changes never share a revision), `travel_`, `geometry_`, `telemetry_` (otelpgx child spans), `pool_limits_` (MaxConns / statement_timeout), `pool_alias_`, `outbox_`, `sweeper_` |
 | `internal/adapters/outbound/analyticsstore` | `postgres_integration_test.go` (projection and report) |
 | `internal/adapters/outbound/kafka` | `publisher_partition_integration_test.go` (Hash balancer keeps aggregate order) |
 | `internal/adapters/inbound/kafka` | `analytics_dlq_integration_test.go` (retry then DLQ) |
@@ -104,9 +105,17 @@ Six operations are excluded because their cross-field rules cannot be
 expressed in OpenAPI 3.0.3. The script names the test that covers each one:
 `registerLocationType`, `registerLocationSlot`, `importFacilityLayout`,
 `registerCrossAisle`, `setAisleGeometry` and `registerZone`. The
-`allow_header_conformance` check is also excluded. The reports API
-(`/reports/...`) and MCP are not in the spec, so this job does not cover
-them.
+`allow_header_conformance` check is also excluded. MCP is not in the spec,
+so this job does not cover it.
+
+The reports API (`cmd/facility-reports`) has its own spec,
+`apis/openapi-reports.yaml` (gap fix D18). `facility-reports` needs an
+analytical Postgres to boot, so Schemathesis does not run against it.
+`internal/adapters/inbound/http/reports_contract_test.go` is its contract
+test instead: every route of `NewReportsRouter` is documented and every
+documented operation is routed, and each documented status the handlers can
+produce (200/400/500, `/readyz` 503) returns the documented content type with
+exactly the schema's properties. Spectral (`api-lint`) lints both specs.
 
 ## Architecture fitness tests (`internal/architecture`)
 
@@ -116,6 +125,7 @@ them.
 | `TestMCPAdapterDependencyRule` | `internal/adapters/inbound/mcp` may depend only on the application and domain layers, never on outbound adapters or `cmd`. Nothing else may import it. |
 | `TestNoAuthMiddlewareReintroduced` | No bearer or JWT middleware returns to `internal/adapters/inbound`: REST and MCP stay unauthenticated (ADR-0015) |
 | `TestKafkaConsumerGroupNeverHardcodedInline` | A kafka-go `GroupID` must come from a named symbol, never an inline string literal |
+| `TestMCPOptionalToolInputsCarryOmitempty` | An MCP tool input field whose `jsonschema` description says "optional" must carry `omitempty`, or the SDK marks it required (gap fix D16; has a sensor-fails-on-bad-fixture twin) |
 | `TestKafkaIntegrationTestsUseTestcontainers`, `TestPostgresIntegrationTestsUseTestcontainers` (+ sensor self-test) | No env-gated skips. Real containers are required. |
 | `TestCloudEventsOnly` | No envelope-mode toggle anywhere, and a module that talks to Kafka imports the CloudEvents SDK (ADR-0024) |
 | `TestReplayConsumersSetCommitInterval` | A reader with a process-unique group must set `CommitInterval`. Nothing in this repo matches, because the projector's group is fixed and shared. |

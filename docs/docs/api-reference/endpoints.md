@@ -28,6 +28,8 @@ LocationSlot can exist without one.
 | `POST` | `/sites` | [Register a physical facility](./rest/register-site.api.mdx) | `201` + `Location` |
 | `GET` | `/sites` | [List every registered site](./rest/list-sites.api.mdx) | `200` |
 | `GET` | `/sites/{siteCode}` | [Get one site](./rest/get-site.api.mdx) | `200` |
+| `GET` | `/sites/{siteCode}/transfer-capability` | [Get a site's transfer capability](./rest/get-site-transfer-capability.api.mdx) | `200` — `{siteCode, transferOriginEnabled, transferDestinationEnabled, capabilityRevision}` |
+| `PUT` | `/sites/{siteCode}/transfer-capability` | [Set a site's transfer capability](./rest/set-site-transfer-capability.api.mdx) | `200` — full snapshot; publishes `SiteCapabilityChanged` on a real change, a repeat is a no-op ([ADR 0035](../adr/0035-site-transfer-capability-command.md)); `409 concurrent-modification` on a concurrent change |
 
 ## Zones
 
@@ -168,6 +170,8 @@ r.Route("/sites", func(r chi.Router) {
     r.Get("/{siteCode}", s.handleGetSite)
     r.Get("/{siteCode}/layout", s.handleGetSiteLayout)
     r.Get("/{siteCode}/locations", s.handleListLocationsByRole)
+    r.Get("/{siteCode}/transfer-capability", s.handleGetSiteTransferCapability)
+    r.Put("/{siteCode}/transfer-capability", s.handleChangeSiteTransferCapability)
     r.Post("/{siteCode}/zones", s.handleRegisterZone)
     r.Get("/{siteCode}/zones", s.handleListZones)
     r.Post("/{siteCode}/structures", s.handleRegisterFixedStructure)
