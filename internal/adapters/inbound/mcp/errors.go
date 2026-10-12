@@ -68,6 +68,7 @@ var errorCatalog = []errorEntry{
 
 	// 409 Conflict: a parent that exists but is no longer Active.
 	{usecases.ErrSiteNotActive, "site-not-active"},
+	{site.ErrSiteDecommissioned, "site-not-active"},
 	{usecases.ErrZoneNotActive, "zone-not-active"},
 	{usecases.ErrAisleNotActive, "aisle-not-active"},
 

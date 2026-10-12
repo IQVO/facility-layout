@@ -45,37 +45,41 @@ func WithServiceName(name string) RouterOption {
 
 // Server holds every use case the HTTP adapter depends on.
 type Server struct {
-	RegisterSite              *usecases.RegisterSite
-	GetSite                   *usecases.GetSite
-	ListSites                 *usecases.ListSites
-	RegisterZone              *usecases.RegisterZone
-	GetZone                   *usecases.GetZone
-	ListZones                 *usecases.ListZones
-	RegisterAisle             *usecases.RegisterAisle
-	GetAisle                  *usecases.GetAisle
-	ListAisles                *usecases.ListAisles
-	RegisterLocationType      *usecases.RegisterLocationType
-	GetLocationType           *usecases.GetLocationType
-	ListLocationTypes         *usecases.ListLocationTypes
-	DefinePlacementRule       *usecases.DefinePlacementRule
-	GetPlacementRule          *usecases.GetPlacementRule
-	ListPlacementRules        *usecases.ListPlacementRules
-	RegisterLocationSlot      *usecases.RegisterLocationSlot
-	GetLocationSlot           *usecases.GetLocationSlot
-	GetLocationClassification *usecases.GetLocationClassification
-	ListLocationsByRole       *usecases.ListLocationsByRole
-	DecommissionLocationSlot  *usecases.DecommissionLocationSlot
-	ImportFacilityLayout      *usecases.ImportFacilityLayout
-	GetSiteLayout             *usecases.GetSiteLayout
-	GetZoneGrid               *usecases.GetZoneGrid
-	SetLocationGeometry       *usecases.SetLocationGeometry
-	SetAisleGeometry          *usecases.SetAisleGeometry
-	RegisterFixedStructure    *usecases.RegisterFixedStructure
-	ListFixedStructures       *usecases.ListFixedStructures
-	RegisterCrossAisle        *usecases.RegisterCrossAisle
-	ListCrossAisles           *usecases.ListCrossAisles
-	GetZoneTravelGraph        *usecases.GetZoneTravelGraph
-	EstimateTravelDistance    *usecases.EstimateTravelDistance
+	RegisterSite *usecases.RegisterSite
+	GetSite      *usecases.GetSite
+	ListSites    *usecases.ListSites
+	// ChangeSiteTransferCapability backs PUT
+	// /sites/{siteCode}/transfer-capability (ADR-0035); the GET reads the
+	// same aggregate through GetSite.
+	ChangeSiteTransferCapability *usecases.ChangeSiteTransferCapability
+	RegisterZone                 *usecases.RegisterZone
+	GetZone                      *usecases.GetZone
+	ListZones                    *usecases.ListZones
+	RegisterAisle                *usecases.RegisterAisle
+	GetAisle                     *usecases.GetAisle
+	ListAisles                   *usecases.ListAisles
+	RegisterLocationType         *usecases.RegisterLocationType
+	GetLocationType              *usecases.GetLocationType
+	ListLocationTypes            *usecases.ListLocationTypes
+	DefinePlacementRule          *usecases.DefinePlacementRule
+	GetPlacementRule             *usecases.GetPlacementRule
+	ListPlacementRules           *usecases.ListPlacementRules
+	RegisterLocationSlot         *usecases.RegisterLocationSlot
+	GetLocationSlot              *usecases.GetLocationSlot
+	GetLocationClassification    *usecases.GetLocationClassification
+	ListLocationsByRole          *usecases.ListLocationsByRole
+	DecommissionLocationSlot     *usecases.DecommissionLocationSlot
+	ImportFacilityLayout         *usecases.ImportFacilityLayout
+	GetSiteLayout                *usecases.GetSiteLayout
+	GetZoneGrid                  *usecases.GetZoneGrid
+	SetLocationGeometry          *usecases.SetLocationGeometry
+	SetAisleGeometry             *usecases.SetAisleGeometry
+	RegisterFixedStructure       *usecases.RegisterFixedStructure
+	ListFixedStructures          *usecases.ListFixedStructures
+	RegisterCrossAisle           *usecases.RegisterCrossAisle
+	ListCrossAisles              *usecases.ListCrossAisles
+	GetZoneTravelGraph           *usecases.GetZoneTravelGraph
+	EstimateTravelDistance       *usecases.EstimateTravelDistance
 
 	// IdempotencyPool, when non-nil, wires RequireIdempotencyKey (see
 	// idempotency.go) onto every true resource-creation POST below. A
@@ -169,6 +173,12 @@ func NewRouter(s *Server, logger *slog.Logger, opts ...RouterOption) http.Handle
 		r.Get("/{siteCode}", s.handleGetSite)
 		r.Get("/{siteCode}/layout", s.handleGetSiteLayout)
 		r.Get("/{siteCode}/locations", s.handleListLocationsByRole)
+		// PUT /sites/{siteCode}/transfer-capability replaces a full
+		// snapshot of an EXISTING site's capability: naturally idempotent
+		// (a repeat is a no-op, ADR-0035), so it is not wrapped by the
+		// Idempotency-Key middleware, like the geometry PUTs.
+		r.Get("/{siteCode}/transfer-capability", s.handleGetSiteTransferCapability)
+		r.Put("/{siteCode}/transfer-capability", s.handleChangeSiteTransferCapability)
 		idempotent(r).Post("/{siteCode}/zones", s.handleRegisterZone)
 		r.Get("/{siteCode}/zones", s.handleListZones)
 		idempotent(r).Post("/{siteCode}/structures", s.handleRegisterFixedStructure)
@@ -260,6 +270,39 @@ func (s *Server) handleGetSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, toSiteResponse(found))
+}
+
+// handleGetSiteTransferCapability returns a site's current transfer
+// capability and the revision of its last SiteCapabilityChanged (ADR-0035).
+func (s *Server) handleGetSiteTransferCapability(w http.ResponseWriter, r *http.Request) {
+	found, err := s.GetSite.Execute(r.Context(), chi.URLParam(r, "siteCode"))
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toTransferCapabilityResponse(found))
+}
+
+// handleChangeSiteTransferCapability replaces a site's transfer capability
+// with the full snapshot in the body (ADR-0035). 200 with the resulting
+// state; a repeat of the current snapshot is a 200 no-op. A concurrent
+// change of the same site loses with 409 concurrent-modification.
+func (s *Server) handleChangeSiteTransferCapability(w http.ResponseWriter, r *http.Request) {
+	var req setTransferCapabilityRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	capability, err := fromTransferCapabilityRequest(req)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	updated, err := s.ChangeSiteTransferCapability.Execute(r.Context(), chi.URLParam(r, "siteCode"), capability)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toTransferCapabilityResponse(updated))
 }
 
 // handleListLocationsByRole answers "where are this site's dock doors" (or

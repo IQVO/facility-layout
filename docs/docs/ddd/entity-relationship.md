@@ -26,6 +26,10 @@ erDiagram
         text code PK
         text name
         text status
+        boolean transfer_origin_enabled "ADR-0035, default false"
+        boolean transfer_destination_enabled "ADR-0035, default false"
+        bigint capability_revision "ADR-0035, 0 = never published"
+        integer version "ADR-0025/0035 optimistic concurrency"
     }
     zones {
         text id PK
@@ -220,7 +224,7 @@ Source: `migrations/analytics/0001_report.up.sql`. Omitted: indexes
 
 | Table | Kind | Aggregate / owner | Notes |
 |---|---|---|---|
-| `sites` | aggregate | `Site` | |
+| `sites` | aggregate | `Site` | transfer capability + `capability_revision` (ADR-0035); `version` guard (migration `0008`) |
 | `zones` | aggregate | `Zone` | id = `SITE-AREA-ZONE` |
 | `aisles` | aggregate | `Aisle` | id = `ZoneID-AISLE`; centreline columns are the `Segment` value object flattened |
 | `cross_aisles` | aggregate | `CrossAisle` | composite natural key; status stored as a boolean |

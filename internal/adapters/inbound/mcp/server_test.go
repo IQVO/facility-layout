@@ -15,6 +15,7 @@ import (
 	"github.com/claudioed/facility-layout/internal/application/usecases"
 	"github.com/claudioed/facility-layout/internal/domain/placement"
 	"github.com/claudioed/facility-layout/internal/domain/shared"
+	"github.com/claudioed/facility-layout/internal/domain/site"
 )
 
 // newServer builds a real MCP HTTP server over in-memory repos seeded (through
@@ -59,6 +60,10 @@ func newServer(t *testing.T) string {
 
 	if _, err := registerSite.Execute(ctx, "WH1", "Fulfilment Centre One"); err != nil {
 		t.Fatalf("seed site: %v", err)
+	}
+	changeCapability := &usecases.ChangeSiteTransferCapability{Sites: sites, Events: publisher, Clock: clock}
+	if _, err := changeCapability.Execute(ctx, "WH1", site.NewTransferCapability(true, false)); err != nil {
+		t.Fatalf("seed capability: %v", err)
 	}
 	if _, err := registerType.Execute(ctx, placement.PalletRack, placement.Storage, mustCapacity(1200, 2.4)); err != nil {
 		t.Fatalf("seed type: %v", err)
@@ -176,6 +181,12 @@ func TestServer_ListSitesOverTheWire(t *testing.T) {
 	sites, ok := res.StructuredContent.(map[string]any)["sites"].([]any)
 	if !ok || len(sites) != 1 {
 		t.Fatalf("expected 1 site, got %+v", res.StructuredContent)
+	}
+	// ADR-0035: list_sites carries each site's transfer capability so an
+	// agent can answer "which sites may donate stock" without REST.
+	wh1, _ := sites[0].(map[string]any)
+	if wh1["transferOriginEnabled"] != true || wh1["transferDestinationEnabled"] != false || wh1["capabilityRevision"] != float64(1) {
+		t.Fatalf("list_sites must carry the transfer capability, got %+v", wh1)
 	}
 }
 

@@ -280,6 +280,112 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /sites/{siteCode}/transfer-capability:
+    get:
+      operationId: getSiteTransferCapability
+      summary: Get a site's transfer capability
+      description: >
+        Returns whether the site may act as the origin (donates stock) and/or
+        the destination (receives stock) of an inter-warehouse transfer, and
+        the revision of its last published SiteCapabilityChanged (ADR-0035).
+        A site whose capability was never set is capable of nothing at
+        revision 0 — exactly how network-inventory-planning treats a site it
+        has never heard about.
+      tags: [Sites]
+      parameters:
+        - $ref: "#/components/parameters/SiteCode"
+      responses:
+        "200":
+          description: The site's current transfer capability.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SiteTransferCapability"
+              example:
+                siteCode: WH1
+                transferOriginEnabled: true
+                transferDestinationEnabled: false
+                capabilityRevision: 3
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    put:
+      operationId: setSiteTransferCapability
+      summary: Set a site's transfer capability
+      description: >
+        Replaces the site's transfer capability with the full snapshot in the
+        body (ADR-0035). When the snapshot differs from the current one — or
+        no snapshot was ever published — the site's capabilityRevision
+        advances by exactly one and SiteCapabilityChanged is published
+        through the transactional outbox with that revision. Repeating the
+        current snapshot is an idempotent no-op: 200, same revision, no
+        event, so no Idempotency-Key is needed.
+
+
+        Optimistic concurrency (ADR-0025, extended to Site by ADR-0035): a
+        concurrent change of the same site loses with 409
+        `concurrent-modification`; re-read and retry. A decommissioned
+        site's capability is frozen (409 `site-not-active`).
+      tags: [Sites]
+      parameters:
+        - $ref: "#/components/parameters/SiteCode"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetSiteTransferCapabilityRequest"
+            example:
+              transferOriginEnabled: true
+              transferDestinationEnabled: false
+      responses:
+        "200":
+          description: The site's transfer capability after the change (or unchanged, for a repeat).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SiteTransferCapability"
+              example:
+                siteCode: WH1
+                transferOriginEnabled: true
+                transferDestinationEnabled: false
+                capabilityRevision: 1
+        "400":
+          description: >
+            The body is not JSON, or a field is omitted, null or not a
+            boolean (`missing-transfer-capability-field`): the body is a
+            full snapshot and an absent field is never read as false.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              example:
+                type: https://errors.facility-layout.warehouse-systems.dev/missing-transfer-capability-field
+                title: transferOriginEnabled and transferDestinationEnabled are both required booleans
+                status: 400
+                detail: transferOriginEnabled and transferDestinationEnabled are both required booleans
+                instance: /sites/WH1/transfer-capability
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: >
+            The site is decommissioned (`site-not-active`), or another
+            writer changed it between this request's read and write
+            (`concurrent-modification`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              example:
+                type: https://errors.facility-layout.warehouse-systems.dev/concurrent-modification
+                title: The resource was modified by another writer; re-fetch and retry
+                status: 409
+                detail: aggregate was concurrently modified; reload and retry
+                instance: /sites/WH1/transfer-capability
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   /sites/{siteCode}/zones:
     post:
       operationId: registerZone
@@ -2184,6 +2290,46 @@ components:
           example: Fulfilment Centre One
         status:
           $ref: "#/components/schemas/Status"
+
+    SiteTransferCapability:
+      type: object
+      description: >
+        A site's transfer capability (ADR-0035) and the revision of the last
+        SiteCapabilityChanged published for it. The revision only ever
+        increases per site; 0 means no snapshot was ever published.
+      required: [siteCode, transferOriginEnabled, transferDestinationEnabled, capabilityRevision]
+      properties:
+        siteCode:
+          type: string
+          example: WH1
+        transferOriginEnabled:
+          type: boolean
+          description: The site may donate stock to another site.
+          example: true
+        transferDestinationEnabled:
+          type: boolean
+          description: The site may receive stock from another site.
+          example: false
+        capabilityRevision:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Revision of the last published SiteCapabilityChanged for this site.
+          example: 1
+
+    SetSiteTransferCapabilityRequest:
+      type: object
+      description: The full capability snapshot; both fields are required.
+      required: [transferOriginEnabled, transferDestinationEnabled]
+      properties:
+        transferOriginEnabled:
+          type: boolean
+          description: Whether the site may donate stock to another site.
+          example: true
+        transferDestinationEnabled:
+          type: boolean
+          description: Whether the site may receive stock from another site.
+          example: false
 
     RegisterSiteRequest:
       type: object

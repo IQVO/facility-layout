@@ -190,7 +190,7 @@ func (d Deps) registerTools(server *mcp.Server) {
 
 	addTool(server, &mcp.Tool{
 		Name:        "list_sites",
-		Description: "List every registered site on the warehouse map as {code, name}. Start here to discover which sites exist before drilling into a layout. " + toolErrorShape,
+		Description: "List every registered site on the warehouse map as {code, name, transferOriginEnabled, transferDestinationEnabled, capabilityRevision}: the transfer flags say whether the site may donate (origin) or receive (destination) stock in an inter-warehouse transfer, and capabilityRevision 0 means the capability was never set (capable of nothing) (ADR-0035). Start here to discover which sites exist before drilling into a layout. " + toolErrorShape,
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: readOnly},
 	}, d.listSites)
 

@@ -99,7 +99,7 @@ HTTP. MCP drains HTTP with a 10s budget.
 
 | Schema | Files | Run by | DSN |
 |---|---|---|---|
-| OLTP | `migrations/0001_init` … `0007_slot_version` (tables `sites`, `zones`, `aisles`, `location_types`, `placement_rules`, `location_slots`, `fixed_structures`, `cross_aisles`, `outbox_events`, `idempotency_keys`; `0005` drops the legacy `events` table) | **both** `facility` and `mcp`, at every boot, before the pool opens | `MIGRATIONS_DATABASE_URL`, falling back to `DATABASE_URL` |
+| OLTP | `migrations/0001_init` … `0008_site_transfer_capability` (tables `sites`, `zones`, `aisles`, `location_types`, `placement_rules`, `location_slots`, `fixed_structures`, `cross_aisles`, `outbox_events`, `idempotency_keys`; `0005` drops the legacy `events` table; `0008` adds the additive `sites` columns `transfer_origin_enabled`, `transfer_destination_enabled`, `capability_revision` and `version`, ADR-0035) | **both** `facility` and `mcp`, at every boot, before the pool opens | `MIGRATIONS_DATABASE_URL`, falling back to `DATABASE_URL` |
 | Analytical | `migrations/analytics/0001_report` (tables `analytics_processed_events`, `analytics_consumed_events`, `catalog_growth_rollup`) | `facility-projector` only, at every boot | `ANALYTICS_DATABASE_URL` |
 
 Migrations use golang-migrate (`internal/adapters/outbound/postgres/migrate.go`).
@@ -243,3 +243,4 @@ the numbers mean.
 | Replay a dead-lettered message | Inspect it on `warehouse.facility.analytics.dlq` (the body is byte-identical to the original; the headers say why it failed), fix the cause, then produce the same value and key back onto `warehouse.facility.analytics`. Idempotency on the CloudEvents id makes a double replay harmless. |
 | Rotate database credentials | Update the Secret keys `DATABASE_URL` and `MIGRATIONS_DATABASE_URL` (or the analytics Secret's `ANALYTICS_DATABASE_URL` and `ANALYTICS_READER_DATABASE_URL`), then `kubectl rollout restart` the affected Deployments. DSNs are only read at boot. |
 | Purge idempotency keys right away | Restart the api pod: the sweeper runs once at start. You can also run the sweeper's `DELETE` by hand. |
+| Enable a site for inter-warehouse transfers | `PUT /sites/{siteCode}/transfer-capability` with `{"transferOriginEnabled": true, "transferDestinationEnabled": true}` (either flag may be false). The response's `capabilityRevision` is the revision published in `SiteCapabilityChanged`; network-inventory-planning applies it once the outbox relay has sent it (ADR-0035). A repeat publishes nothing; a `409 concurrent-modification` means another change won the race: re-read and PUT again. Existing sites start capable of nothing at revision 0. |

@@ -155,6 +155,7 @@ const sidebars: SidebarsConfig = {
         'adr/0032-aggregate-partition-keys-for-geometry-events',
         'adr/0033-slug-prefixed-mcp-tool-errors',
         'adr/0034-facility-layout-imported-stays-keyed-by-cloudevents-id',
+        'adr/0035-site-transfer-capability-command',
       ],
     },
   ],
