@@ -135,6 +135,7 @@ var errorCategories = []errorCategory{
 	{structure.ErrEmptyID, http.StatusBadRequest, problemInfo{"empty-fixed-structure-id", "Fixed structure requires an id"}},
 	{structure.ErrEmptySiteCode, http.StatusBadRequest, problemInfo{"empty-fixed-structure-site-code", "Fixed structure must be scoped to a site code"}},
 	{structure.ErrEmptyLabel, http.StatusBadRequest, problemInfo{"empty-fixed-structure-label", "Fixed structure requires a label"}},
+	{structure.ErrEmptyKind, http.StatusBadRequest, problemInfo{"empty-fixed-structure-kind", "Fixed structure requires a kind"}},
 	{aisle.ErrCrossAisleEmptyZoneID, http.StatusBadRequest, problemInfo{"empty-cross-aisle-zone-id", "Cross-aisle must be scoped to a zone id"}},
 	{aisle.ErrCrossAisleEmptyFromAisle, http.StatusBadRequest, problemInfo{"empty-cross-aisle-from-aisle", "Cross-aisle requires a from-aisle code"}},
 	{aisle.ErrCrossAisleEmptyToAisle, http.StatusBadRequest, problemInfo{"empty-cross-aisle-to-aisle", "Cross-aisle requires a to-aisle code"}},

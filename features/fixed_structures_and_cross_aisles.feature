@@ -210,24 +210,27 @@ Feature: Registering fixed structures and cross-aisles
     When a GET request is sent to "/zones/WH9-STOR-AMB/cross-aisles"
     Then the response status is 404
 
-  # Defects found by this suite. Excluded from the run until fixed; they
-  # describe the behaviour apis/openapi.yaml documents.
-  @bdd @known-bug
+  @bdd
   Scenario: A cross-aisle without a from-aisle or a to-aisle is a bad request
-    # The catalogue already has 400 empty-cross-aisle-from-aisle / -to-aisle,
-    # but the aisle-membership check runs first and answers 422
-    # cross-aisle-aisle-mismatch, so those slugs are unreachable.
+    # Validation of the request runs before the aisle-membership check, so a
+    # missing aisle is a 400 and not a 422 cross-aisle-aisle-mismatch.
     When a POST request is sent to "/zones/WH1-STOR-AMB/cross-aisles" with the JSON body {"toAisle":"A08","atBay":"02"}
     Then the response status is 400
     And the problem detail type is "empty-cross-aisle-from-aisle"
     When a POST request is sent to "/zones/WH1-STOR-AMB/cross-aisles" with the JSON body {"fromAisle":"A07","atBay":"02"}
     Then the response status is 400
     And the problem detail type is "empty-cross-aisle-to-aisle"
+    And exactly 0 "CrossAisleRegistered" domain events are published
 
-  @bdd @known-bug
-  Scenario: A structure without a kind is a bad request
-    # kind is a required member of RegisterFixedStructureRequest, and the 400
-    # response is documented for malformed input; the service answers 422
-    # unknown-fixed-structure-kind instead.
+  @bdd
+  Scenario: A structure without a kind is a bad request, an unrecognised kind is unprocessable
     When a POST request is sent to "/sites/WH1/structures" with the JSON body {"footprint":{"origin":{"xM":0,"yM":0,"zM":0},"size":{"widthM":1,"depthM":1,"heightM":1}},"label":"No kind"}
     Then the response status is 400
+    And the problem detail type is "empty-fixed-structure-kind"
+    When a POST request is sent to "/sites/WH1/structures" with the JSON body {"kind":"","footprint":{"origin":{"xM":0,"yM":0,"zM":0},"size":{"widthM":1,"depthM":1,"heightM":1}},"label":"Blank kind"}
+    Then the response status is 400
+    And the problem detail type is "empty-fixed-structure-kind"
+    When a POST request is sent to "/sites/WH1/structures" with the JSON body {"kind":"Moat","footprint":{"origin":{"xM":0,"yM":0,"zM":0},"size":{"widthM":1,"depthM":1,"heightM":1}},"label":"Moat"}
+    Then the response status is 422
+    And the problem detail type is "unknown-fixed-structure-kind"
+    And exactly 0 "FixedStructureRegistered" domain events are published

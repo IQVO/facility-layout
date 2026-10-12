@@ -187,6 +187,7 @@ with `errors.Is`. The domain never knows an HTTP status code exists.
 | `empty-fixed-structure-id` | 400 | Fixed structure requires an id |
 | `empty-fixed-structure-site-code` | 400 | Fixed structure must be scoped to a site code |
 | `empty-fixed-structure-label` | 400 | Fixed structure requires a label |
+| `empty-fixed-structure-kind` | 400 | Fixed structure requires a kind |
 | `empty-cross-aisle-zone-id` | 400 | Cross-aisle must be scoped to a zone id |
 | `empty-cross-aisle-from-aisle` | 400 | Cross-aisle requires a from-aisle code |
 | `empty-cross-aisle-to-aisle` | 400 | Cross-aisle requires a to-aisle code |

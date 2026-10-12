@@ -136,6 +136,7 @@ var errorCatalog = []errorEntry{
 	{structure.ErrEmptyID, "empty-fixed-structure-id"},
 	{structure.ErrEmptySiteCode, "empty-fixed-structure-site-code"},
 	{structure.ErrEmptyLabel, "empty-fixed-structure-label"},
+	{structure.ErrEmptyKind, "empty-fixed-structure-kind"},
 	{aisle.ErrCrossAisleEmptyZoneID, "empty-cross-aisle-zone-id"},
 	{aisle.ErrCrossAisleEmptyFromAisle, "empty-cross-aisle-from-aisle"},
 	{aisle.ErrCrossAisleEmptyToAisle, "empty-cross-aisle-to-aisle"},

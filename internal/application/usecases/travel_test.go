@@ -63,6 +63,19 @@ func TestRegisterCrossAisle(t *testing.T) {
 		assertErrorIs(t, err, aisle.ErrCrossAisleSameAisle)
 	})
 
+	t.Run("a missing aisle or bay is a validation error, not an aisle-membership mismatch", func(t *testing.T) {
+		h := newHarness(t)
+		seedThreeAisleZone(h)
+
+		_, err := h.registerCrossAisle.Execute(h.ctx(), "WH1-STOR-AMB", "", "A08", "02")
+		assertErrorIs(t, err, aisle.ErrCrossAisleEmptyFromAisle)
+		_, err = h.registerCrossAisle.Execute(h.ctx(), "WH1-STOR-AMB", "A07", "", "02")
+		assertErrorIs(t, err, aisle.ErrCrossAisleEmptyToAisle)
+		_, err = h.registerCrossAisle.Execute(h.ctx(), "WH1-STOR-AMB", "A07", "A08", "")
+		assertErrorIs(t, err, aisle.ErrCrossAisleEmptyBay)
+		h.assertNotPublished("CrossAisleRegistered")
+	})
+
 	t.Run("rejects a duplicate regardless of orientation", func(t *testing.T) {
 		h := newHarness(t)
 		seedThreeAisleZone(h)

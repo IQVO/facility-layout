@@ -33,6 +33,14 @@ func (uc *RegisterCrossAisle) Execute(ctx context.Context, zoneID, fromAisleCode
 		return nil, ErrZoneNotFound
 	}
 
+	// Build (and so validate) the connection before consulting the zone's
+	// aisles: a missing from/to aisle or bay is a malformed request (400) and
+	// must not be masked by the aisle-membership check (422).
+	c, err := aisle.NewCrossAisle(zoneID, fromAisleCode, toAisleCode, atBay)
+	if err != nil {
+		return nil, err
+	}
+
 	aisles, err := uc.Aisles.ListByZone(ctx, zoneID)
 	if err != nil {
 		return nil, err
@@ -49,10 +57,6 @@ func (uc *RegisterCrossAisle) Execute(ctx context.Context, zoneID, fromAisleCode
 		return nil, ErrDuplicateCrossAisle
 	}
 
-	c, err := aisle.NewCrossAisle(zoneID, fromAisleCode, toAisleCode, atBay)
-	if err != nil {
-		return nil, err
-	}
 	err = atomically(ctx, uc.UnitOfWork, func(ctx context.Context) error {
 		if err := uc.CrossAisles.Save(ctx, c); err != nil {
 			return err
