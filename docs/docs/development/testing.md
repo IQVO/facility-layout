@@ -133,6 +133,7 @@ exactly the schema's properties. Spectral (`api-lint`) lints both specs.
 | `TestEventCatalogueMatchesContract` (+ detector self-test) | Every CloudEvents type this service declares for itself in `apis/asyncapi.yaml` also appears in a CloudEvents ADR under `docs/docs/adr/` |
 | `TestNoStructTagsInDomain` (+ sensor self-test) | No serialisation tags in `internal/domain` |
 | `TestSiteCapabilityChangedContractPublishesFullLWWState` | The `SiteCapabilityChanged` message in the AsyncAPI carries the full last-write-wins state |
+| `TestKafkaWritersSetRequiredAcks` (+ `TestKafkaWriterAcksSensorBites`) | Every kafka-go `Writer` composite literal in a non-test file under `internal/` or `cmd/` sets `RequiredAcks` (the import alias is resolved per file). kafka-go defaults it to `RequireNone` (acks=0): the broker never confirms the write, so a broker blip silently drops the message while `WriteMessages` returns nil. The twin proves the sensor flags a bad fixture under any alias. |
 
 ## MCP evals
 
