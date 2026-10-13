@@ -48,7 +48,8 @@ spec:
               containerPort: {{ .Values.service.targetPort }}
               protocol: TCP
           # D14 (2026-10-12): every config.* value (OUTBOX_RELAY_INTERVAL,
-          # HOUSEKEEPING_INTERVAL, IDEMPOTENCY_KEY_TTL, OUTBOX_RETENTION, ...)
+          # OUTBOX_MAX_ATTEMPTS, HOUSEKEEPING_INTERVAL, IDEMPOTENCY_KEY_TTL,
+          # OUTBOX_RETENTION, ...)
           # reaches this process through the chart ConfigMap. The explicit
           # `env` entries below win over envFrom for the same key and carry
           # the same values, so nothing changes for the variables already set

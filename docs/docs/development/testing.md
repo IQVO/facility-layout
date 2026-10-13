@@ -83,7 +83,7 @@ both.
 
 | Package | Files |
 |---|---|
-| `internal/adapters/outbound/postgres` | `integration_test.go` (shared container and migrations), `repos_`, `version_` (optimistic concurrency), `site_capability_` (ADR-0035: the `SiteCapabilityChanged` outbox row is the CloudEvent network-inventory-planning decodes; repeat writes no row; concurrent changes never share a revision), `travel_`, `geometry_`, `telemetry_` (otelpgx child spans), `pool_limits_` (MaxConns / statement_timeout), `pool_alias_`, `outbox_`, `sweeper_` |
+| `internal/adapters/outbound/postgres` | `integration_test.go` (shared container and migrations), `repos_`, `version_` (optimistic concurrency), `site_capability_` (ADR-0035: the `SiteCapabilityChanged` outbox row is the CloudEvent network-inventory-planning decodes; repeat writes no row; concurrent changes never share a revision), `travel_`, `geometry_`, `telemetry_` (otelpgx child spans), `pool_limits_` (MaxConns / statement_timeout), `pool_alias_`, `outbox_`, `outbox_relay_cap_` (ADR-0036: a poison row is excluded after `WithMaxAttempts` failures and logged once at ERROR, the good same-key row behind it publishes; re-arm with `attempts = 0`; `0` = unlimited blocks), `sweeper_` |
 | `internal/adapters/outbound/analyticsstore` | `postgres_integration_test.go` (projection and report) |
 | `internal/adapters/outbound/kafka` | `publisher_partition_integration_test.go` (Hash balancer keeps aggregate order) |
 | `internal/adapters/inbound/kafka` | `analytics_dlq_integration_test.go` (retry then DLQ) |
@@ -126,6 +126,7 @@ exactly the schema's properties. Spectral (`api-lint`) lints both specs.
 | `TestNoAuthMiddlewareReintroduced` | No bearer or JWT middleware returns to `internal/adapters/inbound`: REST and MCP stay unauthenticated (ADR-0015) |
 | `TestKafkaConsumerGroupNeverHardcodedInline` | A kafka-go `GroupID` must come from a named symbol, never an inline string literal |
 | `TestMCPOptionalToolInputsCarryOmitempty` | An MCP tool input field whose `jsonschema` description says "optional" must carry `omitempty`, or the SDK marks it required (gap fix D16; has a sensor-fails-on-bad-fixture twin) |
+| `TestOutboxRelaysPassAttemptCap` (+ `TestOutboxRelayCapSensorFailsOnBadFixtures`) | Every non-test `NewOutboxRelay` call under `cmd/` passes `WithMaxAttempts` ([ADR-0036](../adr/0036-outbox-relay-attempt-cap.md)), so one poison row cannot block the relay forever (gap fix D12). |
 | `TestKafkaIntegrationTestsUseTestcontainers`, `TestPostgresIntegrationTestsUseTestcontainers` (+ sensor self-test) | No env-gated skips. Real containers are required. |
 | `TestCloudEventsOnly` | No envelope-mode toggle anywhere, and a module that talks to Kafka imports the CloudEvents SDK (ADR-0024) |
 | `TestReplayConsumersSetCommitInterval` | A reader with a process-unique group must set `CommitInterval`. Nothing in this repo matches, because the projector's group is fixed and shared. |
@@ -174,6 +175,7 @@ mutants with 89 killed, 89.90% efficacy and 100% coverage (see
 | `vuln` | govulncheck v1.8.0 | push / PR |
 | `api-lint` | Spectral over `apis/openapi.yaml` (`--fail-severity=warn`) | push / PR |
 | `docs-api-drift` | `npm run clean-api-docs && npm run gen-api-docs`, then `git diff --exit-code -- docs/api-reference/rest` | push / PR |
+| `chart-tests` | `charts/facility-layout/tests/render_test.sh` (ConfigMap mount, `OUTBOX_MAX_ATTEMPTS` default and override, component selectors) and `test_service_selectors.py` | push / PR |
 | `arch-test` | `go test ./internal/architecture/... -v` | push / PR |
 | `web` | Builds warehouse-ui-kit, then lint, `tsc -b`, vitest and build of `web/` | push / PR |
 | `helm-lint` | `ct lint` on `charts/facility-layout` | PR into `main` only |
@@ -184,3 +186,9 @@ mutants with 89 killed, 89.90% efficacy and 100% coverage (see
 On a PR into `develop`, `helm-lint`, `trivy-scan`, `mutation`, `drift`,
 `docker-publish` and `release` report **skipped** because of their `if:`
 conditions. That is expected.
+
+The docs site has its own workflow, `.github/workflows/docs.yml`: on a pull
+request that touches `docs/**` (or the workflow) it runs `npm ci` and
+`npm run build` in `docs/` and publishes nothing; on a push to `main` it also
+uploads the Pages artifact and deploys (gap fix D25). A broken sidebar id,
+link or MDX expression therefore fails the PR, not the release.

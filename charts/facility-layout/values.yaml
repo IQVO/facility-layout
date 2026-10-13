@@ -63,6 +63,26 @@ gatewayApi:
       pathType: PathPrefix
   stripPath: true
 
+# Kong plugins rendered by THIS chart (kong-plugins.yaml) and attached to
+# every HTTPRoute above via the konghq.com/plugins annotation. Fleet
+# decision 2026-10-13: Kong configuration belongs to the application
+# charts, not warehouse-infra Terraform. Defaults off; warehouse-infra's
+# values switch them on. NO auth plugin here, ever — the fleet's endpoints
+# are unauthenticated and the gateway adds no authentication or
+# authorization.
+kongPlugins:
+  cors:
+    enabled: false
+    # Exact browser origin, never "*" (endpoints are unauthenticated).
+    origin: "http://localhost"
+  prometheus:
+    enabled: false
+  opentelemetry:
+    enabled: false
+    # OTLP/HTTP traces endpoint of the fleet collector; needs Kong started
+    # with KONG_TRACING_INSTRUMENTATIONS or the plugin exports zero spans.
+    tracesEndpoint: "http://otel-collector.observability.svc.cluster.local:4318/v1/traces"
+
 resources:
   limits:
     cpu: 500m
@@ -163,6 +183,13 @@ config:
   # Only read when eventPublisher is "kafka" and a database URL is
   # configured; rendered into the ConfigMap as OUTBOX_RELAY_INTERVAL.
   outboxRelayInterval: "1s"
+  # Outbox relay attempt cap (ADR-0036); rendered as OUTBOX_MAX_ATTEMPTS. A
+  # row that has failed this many sends is excluded from the relay's claims
+  # and logged at ERROR; it stays in outbox_events until an operator re-arms
+  # it (UPDATE outbox_events SET attempts = 0 WHERE id = ...). Later rows,
+  # including rows with the same key, overtake it. 0 = unlimited (one poison
+  # row blocks the relay forever). Same read conditions as above.
+  outboxMaxAttempts: 20
   # Housekeeping sweeper (ADR-0026): bounds the two append-only tables.
   # Rendered as HOUSEKEEPING_INTERVAL / IDEMPOTENCY_KEY_TTL /
   # OUTBOX_RETENTION. "0s" disables the respective knob (the whole
@@ -299,6 +326,16 @@ analytics:
       type: ClusterIP
       port: 80
       targetPort: 8092
+    # Kong exposure of the reports API (reports-route.yaml): host path
+    # /api/facility-layout/reports rewritten to /reports. Off by default;
+    # warehouse-infra turns it on with the real parentRefs and path.
+    route:
+      enabled: false
+      path: "/api/facility-layout/reports"
+      parentRefs:
+        - name: ""
+          namespace: ""
+          sectionName: "http"
     resources:
       limits:
         cpu: 500m
@@ -329,6 +366,16 @@ mcp:
     type: ClusterIP
     port: 8090
     targetPort: 8090
+  # Kong exposure of the MCP server (mcp-route.yaml): host path
+  # /api/facility-layout rewritten to /mcp. Off by default; warehouse-infra
+  # turns it on with the real parentRefs and path.
+  route:
+    enabled: false
+    path: "/api/facility-layout"
+    parentRefs:
+      - name: ""
+        namespace: ""
+        sectionName: "http"
   # Overrides the reports base URL the catalog-growth tool calls. When empty
   # and analytics.enabled=true, defaults to the in-cluster reports Service.
   reportsBaseUrl: ""

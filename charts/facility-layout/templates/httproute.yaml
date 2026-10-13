@@ -5,6 +5,10 @@ metadata:
   name: {{ include "facility-layout.fullname" . }}
   labels:
     {{- include "facility-layout.labels" . | nindent 4 }}
+  {{- with include "facility-layout.kongPluginNames" . }}
+  annotations:
+    konghq.com/plugins: {{ . | quote }}
+  {{- end }}
 spec:
   parentRefs:
     {{- range .Values.gatewayApi.parentRefs }}

@@ -46,6 +46,7 @@ migrate -source file://migrations -database "$DATABASE_URL" up
 | `EVENT_PUBLISHER` | *(unset)* | `kafka` publishes to `warehouse.facility.events` and `warehouse.facility.analytics` (through the outbox when `DATABASE_URL` is set); unset ⇒ log publisher |
 | `KAFKA_BROKERS` | `localhost:9092` | Comma-separated broker list |
 | `OUTBOX_RELAY_INTERVAL` | `1s` | Outbox relay idle sleep |
+| `OUTBOX_MAX_ATTEMPTS` | `20` | Outbox relay attempt cap ([ADR 0036](../adr/0036-outbox-relay-attempt-cap.md)); `0` = unlimited |
 | `HOUSEKEEPING_INTERVAL` / `IDEMPOTENCY_KEY_TTL` / `OUTBOX_RETENTION` | `1h` / `24h` / `168h` | Housekeeping sweeper ([ADR 0026](../adr/0026-housekeeping-sweeper.md)); `0` disables |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:5186` | Browser origins allowed to call the API |
 | `LOG_LEVEL`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME`, `SERVICE_VERSION`, `ENVIRONMENT` | `info`, `localhost:4317`, `facility-layout`, `dev`, `local` | Logging and OpenTelemetry |

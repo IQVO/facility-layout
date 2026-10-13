@@ -1,0 +1,44 @@
+{{- if and .Values.analytics.enabled .Values.analytics.reports.route.enabled -}}
+{{- /*
+Analytics reports exposure through Kong — replaces the Terraform-side
+null_resource reports HTTPRoutes (services.tf), for the same reason as
+kong-plugins.yaml: chart-rendered routes are Helm/ArgoCD-reconciled forever,
+kubectl-applied ones silently vanish on rebuild and nothing notices.
+
+Host contract: /api/facility-layout/reports -> Service
+facility-layout-reports:80, prefix rewritten to /reports (the reports
+binary registers GET /reports/<report-name>, not a bare /<name>).
+*/ -}}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "facility-layout.reportsFullname" . }}
+  labels:
+    {{- include "facility-layout.labels" . | nindent 4 }}
+    app.kubernetes.io/component: reports
+  annotations:
+    konghq.com/plugins: {{ include "facility-layout.kongPluginNames" . | quote }}
+spec:
+  parentRefs:
+    {{- range .Values.analytics.reports.route.parentRefs }}
+    - name: {{ .name }}
+      namespace: {{ .namespace }}
+      {{- if .sectionName }}
+      sectionName: {{ .sectionName }}
+      {{- end }}
+    {{- end }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: {{ .Values.analytics.reports.route.path }}
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /reports
+      backendRefs:
+        - name: {{ include "facility-layout.reportsFullname" . }}
+          port: {{ .Values.analytics.reports.service.port }}
+{{- end }}

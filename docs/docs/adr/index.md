@@ -67,7 +67,7 @@ updated. The history of what was believed and when is the point.
 | [0015](./0015-remove-rest-mcp-auth.md) | Remove the static-bearer REST/MCP auth layer (reverts 0014 and the auth portion of 0007) | Accepted |
 | [0016](./0016-functional-location-roles.md) | Functional location roles beyond storage (Dock, Yard, WorkCenter, Drop, QC, Consolidation, Shipping) | Accepted |
 | [0017](./0017-geometry-and-travel-graph.md) | Physical geometry and a travel-distance read model | Accepted (amended in place, 2026-10) |
-| [0018](./0018-transactional-outbox.md) | Transactional outbox + relay for atomic event publishing | Accepted |
+| [0018](./0018-transactional-outbox.md) | Transactional outbox + relay for atomic event publishing | Accepted (per-key ordering amended by ADR-0036) |
 | [0019](./0019-idempotency-key-middleware.md) | Transactional Idempotency-Key middleware for resource-creation POSTs | Accepted |
 | [0020](./0020-resilience-kafka-dlq-graceful-shutdown.md) | Kafka consumer dead-letter queue and graceful shutdown hardening | Accepted |
 | [0021](./0021-kafka-writer-balancer-hash.md) | Kafka writer Balancer switched from LeastBytes to Hash | Accepted |
@@ -85,6 +85,7 @@ updated. The history of what was believed and when is the point.
 | [0033](./0033-slug-prefixed-mcp-tool-errors.md) | MCP tool errors follow the fleet convention: `<slug>: detail` (refines ADR-0007, reuses ADR-0004 slugs) | Accepted |
 | [0034](./0034-facility-layout-imported-stays-keyed-by-cloudevents-id.md) | FacilityLayoutImported stays keyed by its CloudEvents id (confirms ADR-0032) | Accepted |
 | [0035](./0035-site-transfer-capability-command.md) | Site transfer-capability command raises SiteCapabilityChanged (extends ADR-0025 to Site; payload casing kept) | Accepted |
+| [0036](./0036-outbox-relay-attempt-cap.md) | Outbox relay attempt cap: `OUTBOX_MAX_ATTEMPTS` (default 20) excludes a poison row and logs it at ERROR (amends ADR-0018 per-key ordering) | Accepted |
 
 ## The Kafka record that was deferred until the adapter existed
 
