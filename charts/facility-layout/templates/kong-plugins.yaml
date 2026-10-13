@@ -1,0 +1,90 @@
+{{- /*
+Kong plugins owned by this application's chart.
+
+Fleet decision (2026-10-13): ALL Kong configuration — routes AND plugins —
+belongs to the application's Helm chart, not to warehouse-infra Terraform.
+The old cluster-wide KongClusterPlugins (warehouse-cors,
+warehouse-prometheus, applied by null_resource + kubectl from Terraform)
+silently vanished on a cluster rebuild because local-exec provisioners only
+run when their triggers change; chart-rendered objects are reconciled by
+Helm/ArgoCD forever. Namespace-scoped KongPlugin CRs here are the same
+mechanism, self-healing.
+
+Three plugins, one per concern, attached per-route via the
+`konghq.com/plugins` annotation on this chart's own HTTPRoute templates:
+
+  cors          — REQUIRED for the split localhost edge: assets on
+                  http://localhost, APIs on http://localhost:8000 are
+                  different origins, so every browser call is cross-origin.
+                  Exact origin only, NEVER "*" — endpoints are
+                  unauthenticated.
+  prometheus    — per-route RED metrics (kong_http_requests_total,
+                  kong_latency_bucket, ...) on Kong's :8100 status listener.
+  opentelemetry — OTLP traces to the fleet collector. NOTE: this plugin
+                  ALSO needs Kong itself started with
+                  KONG_TRACING_INSTRUMENTATIONS (set on the kong release in
+                  warehouse-infra); the plugin ships spans, the env var makes
+                  Kong generate them.
+
+NO auth plugin, deliberately: authentication/authorization was removed
+fleet-wide and the standing decision is that the gateway adds none.
+
+All three default `enabled: false` here and are switched on by
+warehouse-infra's values, so this chart stays installable standalone.
+*/ -}}
+{{- range $name, $cfg := .Values.kongPlugins }}
+{{- if $cfg.enabled }}
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: {{ printf "%s-%s" (include "facility-layout.fullname" $) $name }}
+  labels:
+    {{- include "facility-layout.labels" $ | nindent 4 }}
+  annotations:
+    kubernetes.io/ingress.class: kong
+{{- if eq $name "cors" }}
+plugin: cors
+config:
+  origins:
+    - {{ $cfg.origin | quote }}
+  methods:
+    - GET
+    - POST
+    - PUT
+    - PATCH
+    - DELETE
+    - OPTIONS
+  headers:
+    - Accept
+    - Content-Type
+    - Origin
+    # this context's commands POST with an Idempotency-Key header; a
+    # custom request header is not CORS-safelisted, so the preflight must
+    # allow it or the browser blocks the call before it reaches Kong.
+    - Idempotency-Key
+  exposed_headers:
+    - Content-Length
+    - Mcp-Session-Id
+  credentials: false
+  max_age: 3600
+  preflight_continue: false
+{{- else if eq $name "prometheus" }}
+plugin: prometheus
+config:
+  per_consumer: false
+  status_code_metrics: true
+  latency_metrics: true
+  bandwidth_metrics: true
+  upstream_health_metrics: true
+{{- else if eq $name "opentelemetry" }}
+plugin: opentelemetry
+config:
+  traces_endpoint: {{ $cfg.tracesEndpoint | quote }}
+  resource_attributes:
+    service.name: {{ printf "%s-kong" (include "facility-layout.fullname" $) | quote }}
+  propagation:
+    default_format: w3c
+{{- end }}
+---
+{{- end }}
+{{- end }}
