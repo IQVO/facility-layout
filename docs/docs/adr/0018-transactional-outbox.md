@@ -10,7 +10,7 @@ description: "Aggregate saves and their domain event(s) now commit in one Postgr
 
 ## Status
 
-**Accepted.**
+**Accepted.** Per-key ordering amended by [ADR 0036](./0036-outbox-relay-attempt-cap.md) (outbox relay attempt cap).
 
 ## Context
 

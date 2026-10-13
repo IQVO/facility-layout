@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -454,7 +455,9 @@ func outboxAdapters(cfg publisherConfig, logger *slog.Logger, base adapterSet, p
 	base.unitOfWork = postgres.NewUnitOfWork(pool)
 	base.publisher = postgres.NewOutboxPublisher(pool, uuidLike, kafkaPublisher, analyticsPublisher)
 	base.idempotencyPool = pool
-	relay := postgres.NewOutboxRelay(pool, relaySink, logger, postgres.WithInterval(cfg.relayInterval))
+	relay := postgres.NewOutboxRelay(pool, relaySink, logger,
+		postgres.WithInterval(cfg.relayInterval),
+		postgres.WithMaxAttempts(outboxMaxAttempts(logger)))
 	logger.Info("event publisher configured", "publisher", "kafka", "mode", "outbox",
 		"integration_topic", kafka.Topic, "analytics_topic", kafka.AnalyticsTopic, "brokers", brokers)
 
@@ -577,6 +580,31 @@ func durationEnvRaw(key string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	return d
+}
+
+// outboxMaxAttempts parses OUTBOX_MAX_ATTEMPTS (ADR 0036): how many failed
+// sends exclude an outbox row from the relay's claims. Unset means
+// postgres.DefaultOutboxMaxAttempts (20); 0 means unlimited (the pre-ADR
+// behaviour, where one poison row blocks the relay forever).
+func outboxMaxAttempts(logger *slog.Logger) int {
+	return intEnv(logger, "OUTBOX_MAX_ATTEMPTS", postgres.DefaultOutboxMaxAttempts)
+}
+
+// intEnv parses a non-negative integer env var. Unset yields fallback; an
+// invalid or negative value logs a warning and yields fallback, so a typo
+// cannot silently remove a safety limit. "0" is valid and its meaning is the
+// caller's.
+func intEnv(logger *slog.Logger, key string, fallback int) int {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 0 {
+		logger.Warn("invalid integer env var, using default", "key", key, "value", raw, "default", fallback, "error", err)
+		return fallback
+	}
+	return n
 }
 
 // uuidLike mints the CloudEvents `id` (UUID v4) — once per domain event —

@@ -9,6 +9,7 @@ data:
   MIGRATIONS_PATH: {{ .Values.config.migrationsPath | quote }}
   EVENT_PUBLISHER: {{ .Values.config.eventPublisher | quote }}
   OUTBOX_RELAY_INTERVAL: {{ .Values.config.outboxRelayInterval | quote }}
+  OUTBOX_MAX_ATTEMPTS: {{ .Values.config.outboxMaxAttempts | quote }}
   HOUSEKEEPING_INTERVAL: {{ .Values.config.housekeepingInterval | quote }}
   IDEMPOTENCY_KEY_TTL: {{ .Values.config.idempotencyKeyTTL | quote }}
   OUTBOX_RETENTION: {{ .Values.config.outboxRetention | quote }}

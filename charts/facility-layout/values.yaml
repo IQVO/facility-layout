@@ -183,6 +183,13 @@ config:
   # Only read when eventPublisher is "kafka" and a database URL is
   # configured; rendered into the ConfigMap as OUTBOX_RELAY_INTERVAL.
   outboxRelayInterval: "1s"
+  # Outbox relay attempt cap (ADR-0036); rendered as OUTBOX_MAX_ATTEMPTS. A
+  # row that has failed this many sends is excluded from the relay's claims
+  # and logged at ERROR; it stays in outbox_events until an operator re-arms
+  # it (UPDATE outbox_events SET attempts = 0 WHERE id = ...). Later rows,
+  # including rows with the same key, overtake it. 0 = unlimited (one poison
+  # row blocks the relay forever). Same read conditions as above.
+  outboxMaxAttempts: 20
   # Housekeeping sweeper (ADR-0026): bounds the two append-only tables.
   # Rendered as HOUSEKEEPING_INTERVAL / IDEMPOTENCY_KEY_TTL /
   # OUTBOX_RETENTION. "0s" disables the respective knob (the whole

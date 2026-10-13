@@ -42,7 +42,8 @@ message flow, UML class/sequence and ER diagrams — source in
 [`docs/docs/ddd/`](docs/docs/ddd/ddd-artifacts.md)), an interactive API reference generated from
 `apis/openapi.yaml`, the ecosystem context map, and the Architecture Decision
 Records. The site source lives in [`docs/`](docs/) and deploys to GitHub Pages
-via `.github/workflows/docs.yml`.
+via `.github/workflows/docs.yml`, which also builds (without publishing) on
+every pull request that touches `docs/`.
 
 Page map (source under `docs/docs/`):
 
@@ -235,6 +236,7 @@ migrate -source file://migrations -database "$DATABASE_URL" up
 | `EVENT_PUBLISHER` | *(unset)* | `kafka` publishes the full Published Language to `warehouse.facility.events` (and the analytics topic); with `DATABASE_URL` also set, publishing goes through the transactional outbox (ADR-0018) and a background relay drains it — unset ⇒ log publisher |
 | `KAFKA_BROKERS` | `localhost:9092` | Comma-separated broker list, used when `EVENT_PUBLISHER=kafka` |
 | `OUTBOX_RELAY_INTERVAL` | `1s` | How long the outbox relay sleeps between empty passes (ADR-0018; only relevant with `DATABASE_URL` + `EVENT_PUBLISHER=kafka`) |
+| `OUTBOX_MAX_ATTEMPTS` | `20` | Outbox relay attempt cap (ADR-0036): a row that failed this many sends is excluded from the relay and logged at ERROR; re-arm with `UPDATE outbox_events SET attempts = 0 WHERE id = ...`. `0` = unlimited |
 | `HOUSEKEEPING_INTERVAL` | `1h` | Housekeeping sweeper interval (ADR-0026; `0` disables; only relevant with `DATABASE_URL`) |
 | `IDEMPOTENCY_KEY_TTL` | `24h` | How long an idempotency_keys row is kept before the sweeper deletes it (ADR-0026; `0` disables) |
 | `OUTBOX_RETENTION` | `168h` | How long a PUBLISHED outbox_events row is kept before the sweeper deletes it (ADR-0026; `0` disables) |

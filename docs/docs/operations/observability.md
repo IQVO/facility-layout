@@ -87,6 +87,8 @@ OTel log bridge. Inside a span, every record also gets `trace_id` and
 | `event publisher configured` | info | `publisher`, `mode` (`direct`/`outbox`), `integration_topic`, `analytics_topic`, `brokers` | facility |
 | `retrying` / `succeeded after retry` | warn / info | `op`, `attempt`, `in`, `err` | boot retry, all binaries |
 | `outbox relay pass failed` | error | `error` | facility |
+| `outbox relay: row reached the attempt cap and is excluded from future claims; ...` | error | `outbox_id`, `topic`, `event_type`, `key`, `attempts`, `max_attempts`, `error` | facility relay, once per row when it reaches `OUTBOX_MAX_ATTEMPTS` ([ADR-0036](../adr/0036-outbox-relay-attempt-cap.md)) |
+| `invalid integer env var, using default` | warn | `key`, `value`, `default`, `error` | facility, at boot, when `OUTBOX_MAX_ATTEMPTS` is malformed or negative |
 | `outbox relay published events` | **debug** | `count` | facility |
 | `housekeeping sweep` / `housekeeping sweep failed` | info / error | `idempotency_keys_deleted`, `outbox_events_deleted`, `error` | facility |
 | `analytics consumer starting` | info | `topic`, `group`, `brokers` | facility-projector |
@@ -114,6 +116,7 @@ This repo contains no dashboard of its own.
 | Alert | Signal | Why |
 |---|---|---|
 | Outbox backlog growing | `SELECT count(*) FROM outbox_events WHERE published_at IS NULL` above 0 for more than 5 min, or repeated `outbox relay pass failed` logs | The relay cannot reach Kafka. Events are safe but downstream consumers (inventory-storage, warehouse-planning) are going stale. |
+| Outbox row excluded by the attempt cap | any ERROR `outbox relay: row reached the attempt cap ...`, or `SELECT count(*) FROM outbox_events WHERE published_at IS NULL AND attempts >= 20` above 0 | A row failed `OUTBOX_MAX_ATTEMPTS` sends and downstream contexts will never get that event until it is re-armed ([Runbook](./runbook.md#an-outbox-row-hit-the-attempt-cap), ADR-0036). |
 | Projector stopped | log `analytics consumer stopped`, or broker-side lag of group `facility-analytics` rising | The consume loop does not restart by itself. The pod needs a restart. |
 | DLQ receiving messages | any new message on `warehouse.facility.analytics.dlq` | A poison or invalid CloudEvent: investigate the `x-dlq-error` header. |
 | Report freshness | `GET /reports/catalog-growth/freshness` `lagSeconds` above the expected write cadence | The read model is behind the OLTP writes. |
