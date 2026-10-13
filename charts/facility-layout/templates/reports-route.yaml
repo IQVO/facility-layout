@@ -1,4 +1,4 @@
-{{- if and .Values.analytics.enabled .Values.analytics.reports.route.enabled .Values.analytics.reports.enabled -}}
+{{- if and .Values.analytics.enabled .Values.analytics.reports.route.enabled -}}
 {{- /*
 Analytics reports exposure through Kong — replaces the Terraform-side
 null_resource reports HTTPRoutes (services.tf), for the same reason as
