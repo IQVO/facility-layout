@@ -429,6 +429,8 @@ jobs:
         run: bash charts/facility-layout/tests/render_test.sh
       - name: Service selector test
         run: python3 charts/facility-layout/tests/test_service_selectors.py
+      - name: Kong config test (routes + plugins live in the chart, no auth plugin)
+        run: python3 charts/facility-layout/tests/test_kong_config.py
 
   # ============================================================
   # CLASSIFICATION: LINTERS & STATIC ANALYSIS (architecture fitness)
