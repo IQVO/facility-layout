@@ -204,6 +204,12 @@ func (c *AnalyticsConsumer) Run(ctx context.Context) error {
 			return err
 		}
 		if err := c.handleMessage(ctx, msg); err != nil {
+			if ctx.Err() != nil && errors.Is(err, context.Canceled) {
+				// Shutdown landed mid-handle: the offset was not committed,
+				// so the message is redelivered on the next start and the
+				// processed-events check absorbs the replay. A clean stop.
+				return nil
+			}
 			return err
 		}
 	}
@@ -214,7 +220,10 @@ func (c *AnalyticsConsumer) Run(ctx context.Context) error {
 // it dead-letters the raw message (ADR-0020 §DLQ) and commits the offset
 // anyway — one poison message must never permanently block every event
 // behind it on this partition. Only a commit failure or a DLQ publish
-// failure aborts the consume loop.
+// failure aborts the consume loop. A failure that only the cancellation
+// of ctx caused (pod shutdown mid-handle) is NOT poison: ctx.Err() is
+// returned without dead-lettering or committing, so the message is
+// redelivered on the next start.
 //
 // A value that is not a valid CloudEvents 1.0 event (ErrNotCloudEvent,
 // e.g. a retired flat-envelope message) is deterministic poison: it skips
@@ -231,6 +240,9 @@ func (c *AnalyticsConsumer) handleMessage(ctx context.Context, msg kafkago.Messa
 			return fmt.Errorf("analytics: publish to dead-letter topic: %w", dlqErr)
 		}
 		return c.commit(ctx, msg)
+	}
+	if ctx.Err() != nil {
+		return ctx.Err() // shutting down: never dead-letter a message only cancellation interrupted
 	}
 
 	c.Logger.ErrorContext(ctx, "analytics: exhausted retries, sending to dead-letter topic",
