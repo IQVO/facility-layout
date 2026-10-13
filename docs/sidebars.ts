@@ -164,6 +164,7 @@ const sidebars: SidebarsConfig = {
         'adr/0033-slug-prefixed-mcp-tool-errors',
         'adr/0034-facility-layout-imported-stays-keyed-by-cloudevents-id',
         'adr/0035-site-transfer-capability-command',
+        'adr/0036-outbox-relay-attempt-cap',
       ],
     },
   ],

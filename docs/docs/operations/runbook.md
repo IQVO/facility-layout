@@ -148,9 +148,31 @@ the table:
   earlier one: the failing row gets `attempts + 1` and `last_error`, the
   error `outbox relay pass failed` is logged, and the pass retries after
   `OUTBOX_RELAY_INTERVAL`.
+- **Attempt cap** ([ADR-0036](../adr/0036-outbox-relay-attempt-cap.md)): once a
+  row has failed `OUTBOX_MAX_ATTEMPTS` sends (default 20, `0` = unlimited) the
+  relay logs it once at ERROR (`outbox relay: row reached the attempt cap and
+  is excluded from future claims; ...`, with `outbox_id`, `topic`,
+  `event_type`, `key`) and stops claiming it. Later rows, **including rows
+  with the same key**, then overtake it: one poison row no longer blocks the
+  relay forever, at the cost of per-key ordering for that row. The row stays
+  in `outbox_events` (`published_at IS NULL`, `attempts`, `last_error`); the
+  sweeper never deletes unpublished rows.
 - A full batch is followed immediately by another pass. An empty pass sleeps
   for the interval.
 - Delivery is at-least-once, so consumers must dedupe on the CloudEvents `id`.
+
+#### An outbox row hit the attempt cap
+
+1. Find excluded rows (replace `20` with the configured cap):
+   `SELECT id, topic, event_type, key, attempts, last_error FROM outbox_events WHERE published_at IS NULL AND attempts >= 20 ORDER BY id;`
+2. Fix the cause named in `last_error` (broker message size limit, missing
+   topic, ACL, ...).
+3. Re-arm the row: `UPDATE outbox_events SET attempts = 0 WHERE id = <id>;`
+   The relay claims it on its next pass and sends it with the **same**
+   CloudEvents `id`. Later rows with the same key may already have been
+   delivered, so the consumer receives this event late.
+4. Do not delete the row unless you accept that downstream contexts never
+   receive that event.
 
 The chart's default is `config.eventPublisher: "log"`. With that default,
 **no outbox rows are written and nothing reaches Kafka**. Set
@@ -195,10 +217,10 @@ on error. It never crashes the process.
 
 > **Chart wiring:** `templates/configmap.yaml` renders `HTTP_ADDR`,
 > `MIGRATIONS_PATH`, `EVENT_PUBLISHER`, `OUTBOX_RELAY_INTERVAL`,
-> `HOUSEKEEPING_INTERVAL`, `IDEMPOTENCY_KEY_TTL`, `OUTBOX_RETENTION` and (with
+> `OUTBOX_MAX_ATTEMPTS`, `HOUSEKEEPING_INTERVAL`, `IDEMPOTENCY_KEY_TTL`, `OUTBOX_RETENTION` and (with
 > `kafka.enabled`) `KAFKA_BROKERS` from `config.*`, and the api Deployment
 > mounts it with `envFrom` (gap fix D14, 2026-10-12). Changing
-> `config.outboxRelayInterval` or the housekeeping values in `values.yaml`
+> `config.outboxRelayInterval`, `config.outboxMaxAttempts` or the housekeeping values in `values.yaml`
 > takes effect on the next rollout (the `checksum/config` annotation rolls the
 > pods). Explicit `env`/`extraEnv` entries win over the ConfigMap for the same
 > key. The projector, reports and MCP Deployments do not mount it: they set

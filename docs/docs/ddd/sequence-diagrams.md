@@ -277,12 +277,15 @@ sequenceDiagram
     participant ADB as Analytics DB
 
     loop every OUTBOX_RELAY_INTERVAL, immediately again after a full batch
-        RL->>DB: BEGIN, SELECT up to 100 unpublished ORDER BY id FOR UPDATE SKIP LOCKED
+        RL->>DB: BEGIN, SELECT up to 100 unpublished AND attempts below OUTBOX_MAX_ATTEMPTS ORDER BY id FOR UPDATE SKIP LOCKED
         loop each row in order
             RL->>SK: Send encoded CloudEvent to its own topic
             SK->>K: write with content-type application/cloudevents+json
             alt send fails
                 RL->>DB: attempts plus 1, last_error, COMMIT, stop the pass
+                opt attempts reached OUTBOX_MAX_ATTEMPTS, default 20 (ADR 0036)
+                    RL->>RL: log ERROR once, row excluded from later claims until re-armed
+                end
             else
                 RL->>DB: published_at now
             end
