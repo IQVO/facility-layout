@@ -18,10 +18,10 @@ CloudEvents type (`internal/adapters/outbound/kafka/publisher.go`,
 
 ## Canvas at a glance
 
-One picture of the sections below, laid out like the ddd-crew canvas:
-inbound collaborators on the left, this context in the middle (purpose,
-domain roles and the business decisions it enforces), outbound
-collaborators on the right. Arrows follow the message type: **solid blue**
+Two pictures of the sections below, laid out like the ddd-crew canvas:
+first the inbound collaborators feeding this context (purpose, domain roles
+and the business decisions it enforces), then the outbound collaborators it
+calls or notifies. Arrows follow the message type: **solid blue**
 commands (`cmd`), **dotted green** queries (`qry`), **thick orange** events
 (`evt`); each arrow names its channel and the messages it carries. Box shapes
 mark the collaborator kind: rounded = people, UI or any client; blue =
@@ -32,8 +32,10 @@ abbreviated (REST, MCP, Kafka, HTTP, port); the Inbound and Outbound
 Communication tables carry the exact route, tool, topic and CloudEvents
 type for every message.
 
+### Inbound
+
 ```mermaid
-%%{init: {"flowchart": {"nodeSpacing": 18, "rankSpacing": 36, "padding": 8}}}%%
+%%{init: {"flowchart": {"nodeSpacing": 14, "rankSpacing": 40, "padding": 6}}}%%
 flowchart LR
     classDef bc fill:#fff3bf,stroke:#e67700,stroke-width:1.5px,color:#000
     classDef card fill:#fff9db,stroke:#f08c00,color:#000,text-align:left
@@ -44,7 +46,7 @@ flowchart LR
     classDef none fill:#f8f9fa,stroke:#adb5bd,stroke-dasharray:5 5,color:#495057
     subgraph IN["Inbound - who commands, queries or feeds it"]
         direction TB
-        in0(["Operator via facility-mfe (console) or any REST client"]):::actor
+        in0(["Operator via facility-mfe<br/>(console) or any REST<br/>client"]):::actor
         in1["inventory-storage"]:::ctx
         in2["fulfillment-execution"]:::ctx
         in3["wes-work-planning"]:::ctx
@@ -53,36 +55,19 @@ flowchart LR
     end
     subgraph BC["facility-layout - Generic subdomain - WMS tier"]
         direction TB
-        purpose["<b>Purpose</b><br/>System of record for where things<br/>physically are: the site hierarchy,<br/>every coded location slot, its role,<br/>legality and geometry. Not<br/>occupancy, not stock, not travel<br/>time."]:::card
+        purpose["<b>Purpose</b><br/>System of record for where things physically are: the site<br/>hierarchy, every coded location slot, its role, legality<br/>and geometry. Not occupancy, not stock, not travel time."]:::card
         roles["<b>Domain roles</b><br/>- Specification model<br/>- Gateway / Open Host (one Published Language)<br/>- Draft context for its own analytics"]:::card
-        rules["<b>Business decisions it enforces</b><br/>- No orphan slots: Site, Zone and<br/>Aisle must exist and be Active<br/>- Placement legality decided once, at<br/>registration; Deny wins<br/>- Decommission is one-way<br/>- Bulk import is partial-success,<br/>reported per row<br/>- Distance is topology, never time<br/>- CloudEvents 1.0 through the<br/>transactional outbox"]:::card
+        rules["<b>Business decisions it enforces</b><br/>- No orphan slots: Site, Zone and Aisle must exist and be<br/>Active<br/>- Placement legality decided once, at registration; Deny<br/>wins<br/>- Decommission is one-way<br/>- Bulk import is partial-success, reported per row<br/>- Distance is topology, never time<br/>- CloudEvents 1.0 through the transactional outbox"]:::card
         purpose ~~~ roles ~~~ rules
     end
-    subgraph OUT["Outbound - whom it calls or notifies"]
-        direction TB
-        out0["inventory-storage"]:::ctx
-        out1["warehouse-planning"]:::ctx
-        out2["inbound-receiving (dock doors copy)"]:::ctx
-        out3["slotting-optimization (layout copy)"]:::ctx
-        out4["network-inventory-planning"]:::ctx
-        out5["own cmd/facility-projector"]:::self
-        out6["no consumer yet"]:::none
-    end
     in0 -->|"cmd - REST<br/>13 commands: RegisterSite,<br/>RegisterZone, RegisterAisle,<br/>RegisterLocationType,<br/>DefinePlacementRule,<br/>RegisterLocationSlot,<br/>ImportFacilityLayout,<br/>DecommissionLocationSlot,<br/>SetLocationGeometry,<br/>SetAisleGeometry,<br/>RegisterCrossAisle,<br/>RegisterFixedStructure,<br/>ChangeSiteTransferCapability"| BC
-    in0 -.->|"qry - REST<br/>site layout, zone grid, travel<br/>graph, locations by role, single<br/>and list reads"| BC
+    in0 -.->|"qry - REST<br/>site layout, zone grid, travel<br/>graph, locations by role,<br/>single and list reads"| BC
     in1 -.->|"qry - REST (http mode)<br/>GetLocationClassification"| BC
     in2 -.->|"qry - REST (http mode)<br/>GetLocationSlot (role)"| BC
     in3 -.->|"qry - REST (http mode)<br/>EstimateTravelDistance"| BC
     in4 -.->|"qry - MCP<br/>list_sites, get_site_layout,<br/>get_zone_grid,<br/>estimate_travel_distance"| BC
-    in4 -.->|"qry - REST (reports)<br/>catalog growth report, freshness"| BC
+    in4 -.->|"qry - REST (reports)<br/>catalog growth report,<br/>freshness"| BC
     in5 -.->|"qry - MCP<br/>list_functional_locations,<br/>get_zone_travel_graph,<br/>get_facility_catalog_growth_report"| BC
-    BC ==>|"evt - Kafka<br/>warehouse.facility.events<br/>ZoneRegistered,<br/>LocationSlotRegistered,<br/>LocationSlotDecommissioned"| out0
-    BC ==>|"evt - Kafka<br/>warehouse.facility.events<br/>LocationSlotRegistered,<br/>LocationSlotDecommissioned"| out1
-    BC ==>|"evt - Kafka<br/>warehouse.facility.events<br/>LocationSlotRegistered,<br/>LocationSlotDecommissioned"| out2
-    BC ==>|"evt - Kafka<br/>warehouse.facility.events<br/>ZoneRegistered,<br/>LocationSlotRegistered,<br/>LocationSlotDecommissioned"| out3
-    BC ==>|"evt - Kafka<br/>warehouse.facility.events<br/>SiteCapabilityChanged"| out4
-    BC ==>|"evt - Kafka<br/>warehouse.facility.analytics<br/>analytics copy of the domain<br/>events"| out5
-    BC ==>|"evt - Kafka<br/>warehouse.facility.events<br/>SiteRegistered, AisleRegistered,<br/>LocationTypeRegistered,<br/>PlacementRuleDefined,<br/>FacilityLayoutImported,<br/>LocationGeometryUpdated,<br/>AisleGeometryUpdated,<br/>FixedStructureRegistered,<br/>CrossAisleRegistered"| out6
     linkStyle 0 stroke:#1971c2,stroke-width:1.5px
     linkStyle 1 stroke:#2f9e44,stroke-width:1.5px
     linkStyle 2 stroke:#2f9e44,stroke-width:1.5px
@@ -91,14 +76,46 @@ flowchart LR
     linkStyle 5 stroke:#2f9e44,stroke-width:1.5px
     linkStyle 6 stroke:#2f9e44,stroke-width:1.5px
     linkStyle 7 stroke:#2f9e44,stroke-width:1.5px
-    linkStyle 8 stroke:#e8590c,stroke-width:2.5px
-    linkStyle 9 stroke:#e8590c,stroke-width:2.5px
-    linkStyle 10 stroke:#e8590c,stroke-width:2.5px
-    linkStyle 11 stroke:#e8590c,stroke-width:2.5px
-    linkStyle 12 stroke:#e8590c,stroke-width:2.5px
-    linkStyle 13 stroke:#e8590c,stroke-width:2.5px
-    linkStyle 14 stroke:#e8590c,stroke-width:2.5px
     class BC bc
+```
+
+### Outbound
+
+```mermaid
+%%{init: {"flowchart": {"nodeSpacing": 14, "rankSpacing": 40, "padding": 6}}}%%
+flowchart LR
+    classDef bc fill:#fff3bf,stroke:#e67700,stroke-width:1.5px,color:#000
+    classDef card fill:#fff9db,stroke:#f08c00,color:#000,text-align:left
+    classDef ctx fill:#e7f5ff,stroke:#1c7ed6,color:#000
+    classDef actor fill:#fff4e6,stroke:#e8590c,color:#000
+    classDef ext fill:#ffe3e3,stroke:#c92a2a,color:#000
+    classDef self fill:#f1f3f5,stroke:#868e96,color:#000
+    classDef none fill:#f8f9fa,stroke:#adb5bd,stroke-dasharray:5 5,color:#495057
+    BC["<b>facility-layout - Generic subdomain - WMS tier</b>"]:::bc
+    subgraph OUT["Outbound - whom it calls or notifies"]
+        direction TB
+        out0["inventory-storage"]:::ctx
+        out1["warehouse-planning"]:::ctx
+        out2["inbound-receiving (dock<br/>doors copy)"]:::ctx
+        out3["slotting-optimization<br/>(layout copy)"]:::ctx
+        out4["network-inventory-planning"]:::ctx
+        out5["own cmd/facility-projector"]:::self
+        out6["no consumer yet"]:::none
+    end
+    BC ==>|"evt - Kafka<br/>warehouse.facility.events<br/>ZoneRegistered,<br/>LocationSlotRegistered,<br/>LocationSlotDecommissioned"| out0
+    BC ==>|"evt - Kafka<br/>warehouse.facility.events<br/>LocationSlotRegistered,<br/>LocationSlotDecommissioned"| out1
+    BC ==>|"evt - Kafka<br/>warehouse.facility.events<br/>LocationSlotRegistered,<br/>LocationSlotDecommissioned"| out2
+    BC ==>|"evt - Kafka<br/>warehouse.facility.events<br/>ZoneRegistered,<br/>LocationSlotRegistered,<br/>LocationSlotDecommissioned"| out3
+    BC ==>|"evt - Kafka<br/>warehouse.facility.events<br/>SiteCapabilityChanged"| out4
+    BC ==>|"evt - Kafka<br/>warehouse.facility.analytics<br/>analytics copy of the domain<br/>events"| out5
+    BC ==>|"evt - Kafka<br/>warehouse.facility.events<br/>SiteRegistered,<br/>AisleRegistered,<br/>LocationTypeRegistered,<br/>PlacementRuleDefined,<br/>FacilityLayoutImported,<br/>LocationGeometryUpdated,<br/>AisleGeometryUpdated,<br/>FixedStructureRegistered,<br/>CrossAisleRegistered"| out6
+    linkStyle 0 stroke:#e8590c,stroke-width:2.5px
+    linkStyle 1 stroke:#e8590c,stroke-width:2.5px
+    linkStyle 2 stroke:#e8590c,stroke-width:2.5px
+    linkStyle 3 stroke:#e8590c,stroke-width:2.5px
+    linkStyle 4 stroke:#e8590c,stroke-width:2.5px
+    linkStyle 5 stroke:#e8590c,stroke-width:2.5px
+    linkStyle 6 stroke:#e8590c,stroke-width:2.5px
 ```
 
 Source: the Inbound Communication and Outbound Communication tables of this
