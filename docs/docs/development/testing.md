@@ -175,6 +175,7 @@ mutants with 89 killed, 89.90% efficacy and 100% coverage (see
 | `vuln` | govulncheck v1.8.0 | push / PR |
 | `api-lint` | Spectral over `apis/openapi.yaml` (`--fail-severity=warn`) | push / PR |
 | `docs-api-drift` | `npm run clean-api-docs && npm run gen-api-docs`, then `git diff --exit-code -- docs/api-reference/rest` | push / PR |
+| `chart-tests` | `charts/facility-layout/tests/render_test.sh` (ConfigMap mount, `OUTBOX_MAX_ATTEMPTS` default and override, component selectors) and `test_service_selectors.py` | push / PR |
 | `arch-test` | `go test ./internal/architecture/... -v` | push / PR |
 | `web` | Builds warehouse-ui-kit, then lint, `tsc -b`, vitest and build of `web/` | push / PR |
 | `helm-lint` | `ct lint` on `charts/facility-layout` | PR into `main` only |
@@ -185,3 +186,9 @@ mutants with 89 killed, 89.90% efficacy and 100% coverage (see
 On a PR into `develop`, `helm-lint`, `trivy-scan`, `mutation`, `drift`,
 `docker-publish` and `release` report **skipped** because of their `if:`
 conditions. That is expected.
+
+The docs site has its own workflow, `.github/workflows/docs.yml`: on a pull
+request that touches `docs/**` (or the workflow) it runs `npm ci` and
+`npm run build` in `docs/` and publishes nothing; on a push to `main` it also
+uploads the Pages artifact and deploys (gap fix D25). A broken sidebar id,
+link or MDX expression therefore fails the PR, not the release.

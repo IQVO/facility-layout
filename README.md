@@ -42,7 +42,8 @@ message flow, UML class/sequence and ER diagrams — source in
 [`docs/docs/ddd/`](docs/docs/ddd/ddd-artifacts.md)), an interactive API reference generated from
 `apis/openapi.yaml`, the ecosystem context map, and the Architecture Decision
 Records. The site source lives in [`docs/`](docs/) and deploys to GitHub Pages
-via `.github/workflows/docs.yml`.
+via `.github/workflows/docs.yml`, which also builds (without publishing) on
+every pull request that touches `docs/`.
 
 Page map (source under `docs/docs/`):
 
