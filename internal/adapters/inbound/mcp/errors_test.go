@@ -19,8 +19,9 @@ import (
 // request decoding (unexported sentinels of that package). No tool decodes
 // such a body, so the MCP table deliberately has no entry for them.
 var restOnlySlugs = map[string]bool{
-	"missing-geometry-field": true,
-	"missing-sequence-hint":  true,
+	"missing-geometry-field":            true,
+	"missing-sequence-hint":             true,
+	"missing-transfer-capability-field": true,
 }
 
 // TestSlugTableMatchesRESTOneForOne pins the contract of ADR-0033: the MCP

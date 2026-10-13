@@ -133,11 +133,14 @@ var _ ReportsClient = (*ReportsRESTClient)(nil)
 // --- get_facility_catalog_growth_report tool ----------------------------------
 
 // CatalogGrowthToolInput is the tool's argument set (untrusted, from a model).
+// Scope and Granularity carry omitempty so the SDK-inferred input schema
+// leaves them out of "required" (gap fix D16; enforced by
+// internal/architecture TestMCPOptionalToolInputsCarryOmitempty).
 type CatalogGrowthToolInput struct {
 	From        string `json:"from" jsonschema:"start of the window, inclusive, RFC3339 (required)"`
 	To          string `json:"to" jsonschema:"end of the window, exclusive, RFC3339 (required)"`
-	Scope       string `json:"scope" jsonschema:"optional exact-match scope filter: a site code (e.g. WH1), a zone id (e.g. WH1-STOR-AMB), or empty for the catalog-wide scope"`
-	Granularity string `json:"granularity" jsonschema:"time bucket granularity; only 'day' is supported"`
+	Scope       string `json:"scope,omitempty" jsonschema:"optional exact-match scope filter: a site code (e.g. WH1), a zone id (e.g. WH1-STOR-AMB), or omit for every scope"`
+	Granularity string `json:"granularity,omitempty" jsonschema:"optional time bucket granularity; only 'day' is supported (the default)"`
 }
 
 // getCatalogGrowthReport is the tool handler: it validates the required window,

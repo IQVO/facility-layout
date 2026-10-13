@@ -45,11 +45,11 @@ The root of the hierarchy: a physical facility or building.
 | | |
 |---|---|
 | **Identity** | `SiteCode` — non-empty, `[A-Z0-9]` only, unique |
-| **State** | `code`, `name`, `status` |
+| **State** | `code`, `name`, `status`, `capability` (`TransferCapability` value object: origin/destination enabled), `capabilityRevision` (0 = never published), `version` (optimistic-concurrency token, [ADR 0035](../adr/0035-site-transfer-capability-command.md)) |
 | **Constructor** | `NewSite(code, name string) (*Site, error)` |
-| **Rehydration** | `RehydrateSite(code, name string, status shared.Status) *Site` |
-| **Behaviour** | `Decommission() error` |
-| **Errors** | `ErrEmptySiteCode`, `ErrInvalidSiteCode`, `ErrEmptySiteName`, `ErrAlreadyDecommissioned` |
+| **Rehydration** | `RehydrateSite(code, name string, status shared.Status, capability TransferCapability, capabilityRevision int64, version int) *Site` |
+| **Behaviour** | `Decommission() error`, `ChangeTransferCapability(TransferCapability) (changed bool, err error)` — the first change and every real change advance `capabilityRevision` by exactly one; an identical snapshot is a no-op |
+| **Errors** | `ErrEmptySiteCode`, `ErrInvalidSiteCode`, `ErrEmptySiteName`, `ErrAlreadyDecommissioned`, `ErrSiteDecommissioned` |
 
 Uniqueness is enforced at the application/repository layer, not inside the
 aggregate: a single aggregate cannot see its siblings, so it cannot police a

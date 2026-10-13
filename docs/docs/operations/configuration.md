@@ -38,7 +38,7 @@ Only the default `OTEL_SERVICE_NAME` differs between binaries.
 | `SERVICE_VERSION` | `dev` | no | `service.version` resource attribute. In `cmd/facility` a value injected at build time with `-ldflags "-X main.serviceVersion=..."` wins over this variable. | `cmd/*/main.go` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `localhost:4317` | no | OTLP/gRPC Collector endpoint for traces, metrics and logs. Both `host:port` and `http(s)://host:port` work, because the scheme and a trailing `/` are stripped. Export is insecure (no TLS) and non-blocking: if the Collector is unreachable, telemetry is dropped and the process still starts. | `cmd/*/main.go`, `internal/adapters/outbound/telemetry/telemetry.go` |
 | `ENVIRONMENT` | `local` | no | `deployment.environment.name` resource attribute. | `internal/adapters/outbound/telemetry/telemetry.go` |
-| `LOG_LEVEL` | `info` | no | Minimum level for the JSON slog logger (`debug`, `info`, `warn`, `error`). | `cmd/*/main.go` |
+| `LOG_LEVEL` | `info` | no | Minimum level for the JSON slog logger (`debug`, `info`, `warn` or `warning`, `error`; case-insensitive; anything else means `info`). | `cmd/*/main.go` |
 
 ## `facility` (REST API, outbox relay, housekeeping sweeper)
 
@@ -99,10 +99,10 @@ Publisher mode matrix (`buildAdapters` in `cmd/facility/main.go`):
 - **Boot retry.** Each binary retries its first Postgres operations (running
   migrations, then pinging the pool) through `internal/adapters/outbound/bootretry`:
   5 attempts with backoff delays of 1s, 2s, 4s and 8s, so **15s of waiting
-  in total** before it gives up and exits with the last real error. The
-  package comment says "~31s (1+2+4+8+16)", but no delay follows the fifth
-  attempt, so the real budget is 15s plus the duration of the attempts. The
-  retry covers the Istio native-sidecar first-dial reset (ADR-0028).
+  in total** before it gives up and exits with the last real error. No delay
+  follows the fifth attempt, so the real budget is 15s plus the duration of
+  the attempts. The retry covers the Istio native-sidecar first-dial reset
+  (ADR-0028).
 - **Fail-closed analytics.** `facility-projector` and `facility-reports`
   refuse to start without `ANALYTICS_DATABASE_URL`. `facility` and `mcp`
   instead fall back to in-memory storage when `DATABASE_URL` is empty. That
@@ -117,3 +117,17 @@ Publisher mode matrix (`buildAdapters` in `cmd/facility/main.go`):
 See also: [Runbook](./runbook.md) for how the Helm chart sets these
 variables, and [Observability](./observability.md) for the telemetry they
 control.
+
+## How the Helm chart delivers `facility`'s variables
+
+`charts/facility-layout/templates/configmap.yaml` renders `config.*` (plus
+`kafka.brokers` when `kafka.enabled`) into a ConfigMap named after the
+release: `HTTP_ADDR`, `MIGRATIONS_PATH`, `EVENT_PUBLISHER`,
+`OUTBOX_RELAY_INTERVAL`, `HOUSEKEEPING_INTERVAL`, `IDEMPOTENCY_KEY_TTL`,
+`OUTBOX_RETENTION`, `KAFKA_BROKERS`. The api Deployment mounts it with
+`envFrom: configMapRef` (gap fix D14, 2026-10-12), so every `config.*` value
+reaches `cmd/facility`. Explicit `env` entries (the same values, plus the
+Secret-backed DSNs and the OTel variables) and `extraEnv` win over the
+ConfigMap for the same key. The projector, reports and MCP Deployments do not
+mount the ConfigMap; their variables are set explicitly in their own
+templates.

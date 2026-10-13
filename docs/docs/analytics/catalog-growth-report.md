@@ -84,7 +84,11 @@ CloudEvents `id`**, and dead-letters anything that is not a valid CloudEvent.
 
 ## REST contract
 
-Served by `cmd/facility-reports` (read-only):
+Served by `cmd/facility-reports` (read-only). The machine-readable contract
+is [`apis/openapi-reports.yaml`](https://github.com/IQVO/facility-layout/blob/main/apis/openapi-reports.yaml),
+rendered under **API Reference → Reports API**;
+`internal/adapters/inbound/http/reports_contract_test.go` keeps it and the
+router in step.
 
 ### `GET /reports/catalog-growth`
 
@@ -135,7 +139,11 @@ recently applied event's `occurred_at`). It is `0` when the read model is empty.
 `get_facility_catalog_growth_report` (read-only) exposes the same
 report to AI hosts. It calls the reports REST service — it never opens the
 analytical database directly — so the single read path is preserved. It is
-registered only when the MCP server is given `REPORTS_BASE_URL`.
+registered only when the MCP server is given `REPORTS_BASE_URL`. Its input
+schema requires only `from` and `to`; `scope` and `granularity` are optional
+and may be left out (gap fix D16, pinned by
+`TestReportTool_OptionalFiltersAreOptionalOnTheWire` and the architecture test
+`TestMCPOptionalToolInputsCarryOmitempty`).
 
 ## Freshness SLA
 

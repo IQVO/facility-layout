@@ -15,10 +15,10 @@ This page is this bounded context's slice of the fleet map and is part of the
 
 :::info[Current state, verified against each repository's `develop`]
 `facility-layout` has **no outbound dependency** on any other service: it
-calls no one and consumes no other context's events. It is upstream of five
+calls no one and consumes no other context's events. It is upstream of six
 backend contexts — `inventory-storage`, `warehouse-planning`,
-`wes-work-planning`, `fulfillment-execution` and `warehouse-ops-agent` — and
-of its own browser micro-frontend. Every consumer that calls it synchronously
+`wes-work-planning`, `fulfillment-execution`, `warehouse-ops-agent` and
+`network-inventory-planning` — and of its own browser micro-frontend. Every consumer that calls it synchronously
 defaults to a `permissive` mode, so none of them needs this service to start.
 :::
 
@@ -32,6 +32,7 @@ flowchart LR
     WP["wes-work-planning<br/>wes · Core"]
     FE["fulfillment-execution<br/>wes · Core"]
     OA["warehouse-ops-agent<br/>wes"]
+    NIP["network-inventory-planning<br/>wms"]
     WF["workforce-management<br/>Supporting<br/>Separate Ways"]
     PJ["facility-projector and facility-reports<br/>own analytics read side"]
 
@@ -41,6 +42,7 @@ flowchart LR
     FL -->|"U OHS+PL to D CF<br/>REST GET /distance"| WP
     FL -.->|"U OHS+PL to D CF<br/>REST GET /locations/code<br/>opt-in role lookup"| FE
     FL -->|"U OHS+PL to D CF<br/>MCP list_sites, get_site_layout,<br/>get_zone_grid, estimate_travel_distance<br/>plus REST /reports/catalog-growth"| OA
+    FL -->|"U OHS+PL to D CF+ACL<br/>Kafka warehouse.facility.events<br/>SiteCapabilityChanged"| NIP
     FL -->|"same context<br/>Kafka warehouse.facility.analytics"| PJ
     FL ~~~ WF
 
@@ -73,10 +75,11 @@ below), e2e test harnesses, and the `.dlq` topics.
 | 6 | `warehouse-ops-agent` | U: OHS + PL · D: Conformist | MCP (Streamable HTTP) tools `list_sites`, `get_site_layout`, `get_zone_grid`, `estimate_travel_distance`; REST `GET /reports/catalog-growth` (+ `/freshness`) on `cmd/facility-reports` | **Live** (`FACILITY_LAYOUT_MCP_ENDPOINT`, `FACILITY_LAYOUT_REPORTS_REST_URL`) | `warehouse-ops-agent`: `internal/adapters/outbound/mcpclient/facility_layout.go`, `internal/config/config.go` |
 | 7 | own analytics read side | same bounded context, not a context relationship | Kafka `warehouse.facility.analytics`, group `facility-analytics` | **Live** with `EVENT_PUBLISHER=kafka` | this repo: `internal/adapters/inbound/kafka/analytics_consumer.go`; [ADR 0010](../adr/0010-analytical-data-product.md) |
 | 8 | `workforce-management` | **Separate Ways** | — | **Deliberately absent** — it stops at the process-path boundary and never links an associate to a location | no client or consumer in its code |
-| — | `order-management`, `process-path-management`, `labor-performance`, `network-fulfillment`, `network-inventory-planning`, `product-master` | no relationship | — | **Absent** — no client of this context's REST/MCP surface and no consumer of its topics on `develop`; `product-master` (SKU master data, the third `wms` context) neither calls this service nor consumes `warehouse.facility.events`, and this service consumes nothing from it | org-wide code search for `FACILITY_LAYOUT` and `warehouse.facility.events` |
+| 9 | `network-inventory-planning` | U: OHS + PL · D: Conformist + ACL (hand-mirrored snake_case payload upserted into its `site_capability` read model, last-write-wins on `capability_revision`) | Kafka `warehouse.facility.events` — `com.warehouse.wms.facility-layout.site.SiteCapabilityChanged`, raised by `PUT /sites/{siteCode}/transfer-capability` ([ADR 0035](../adr/0035-site-transfer-capability-command.md)) | **Live** when its `KAFKA_BROKERS` and `SITE_CAPABILITY_CONSUMER_GROUP` are set | `network-inventory-planning`: `internal/adapters/inbound/kafka/consumers.go` (`SiteCapabilityConsumer`) |
+| — | `order-management`, `process-path-management`, `labor-performance`, `network-fulfillment`, `product-master` | no relationship | — | **Absent** — no client of this context's REST/MCP surface and no consumer of its topics on `develop`; `product-master` (SKU master data, the third `wms` context) neither calls this service nor consumes `warehouse.facility.events`, and this service consumes nothing from it | org-wide code search for `FACILITY_LAYOUT` and `warehouse.facility.events` |
 | — | anything **this** context calls | — | — | **Deliberately absent** — `facility-layout` has no outbound adapter to another service, ever | `internal/adapters/outbound/` holds only Postgres, memory, Kafka publishers, telemetry, boot-retry and analytics-store adapters |
 
-On `warehouse.facility.events`, nine of the twelve event types have no
+On `warehouse.facility.events`, nine of the thirteen event types have no
 external consumer today: `SiteRegistered`, `AisleRegistered`,
 `LocationTypeRegistered`, `PlacementRuleDefined`, `FacilityLayoutImported`
 and the four ADR 0017 geometry events.

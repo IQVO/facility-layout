@@ -1,0 +1,64 @@
+---
+id: facility-layout-reports-api
+title: "Facility Layout Reports API"
+description: "The READ-ONLY analytical surface of the facility-layout 'Layout Catalog Growth & Change' data product, served by the separate `cmd/facility-reports` binary over a read-only pool (`default_transaction_read_only=on`) against the analytical database — NOT by the OLTP `cmd/facility` binary documented in apis/openapi.yaml."
+sidebar_label: Introduction
+sidebar_position: 0
+hide_title: true
+custom_edit_url: null
+---
+
+import ApiLogo from "@theme/ApiLogo";
+import Heading from "@theme/Heading";
+import SchemaTabs from "@theme/SchemaTabs";
+import TabItem from "@theme/TabItem";
+import Export from "@theme/ApiExplorer/Export";
+
+<span
+  className={"theme-doc-version-badge badge badge--secondary"}
+  children={"Version: 1.0.0"}
+>
+</span>
+
+<Export
+  url={"https://raw.githubusercontent.com/IQVO/facility-layout/main/apis/openapi-reports.yaml"}
+>
+  
+</Export>
+
+<Heading
+  as={"h1"}
+  className={"openapi__heading"}
+  children={"Facility Layout Reports API"}
+>
+</Heading>
+
+
+
+The READ-ONLY analytical surface of the facility-layout "Layout Catalog Growth & Change" data product, served by the separate `cmd/facility-reports` binary over a read-only pool (`default_transaction_read_only=on`) against the analytical database — NOT by the OLTP `cmd/facility` binary documented in apis/openapi.yaml.
+The report is a projection over this service's own domain events (SiteRegistered, ZoneRegistered, AisleRegistered, LocationTypeRegistered, PlacementRuleDefined, LocationSlotRegistered, LocationSlotDecommissioned, FacilityLayoutImported), delivered on the `warehouse.facility.analytics` topic and applied by `cmd/facility-projector`, the single writer. It is therefore EVENTUALLY CONSISTENT: use GET /reports/catalog-growth/freshness to see how far behind the event stream the read model currently is.
+The layout is a slow-changing reference catalog, so rows are bucketed by UTC DAY, not by hour.
+
+
+<div
+  style={{"display":"flex","flexDirection":"column","marginBottom":"var(--ifm-paragraph-margin-bottom)"}}
+>
+  <h3
+    style={{"marginBottom":"0.25rem"}}
+  >
+    Contact
+  </h3><span>
+    Facility Layout Team: 
+  </span><span>
+    URL: [https://github.com/IQVO/facility-layout](https://github.com/IQVO/facility-layout)
+  </span>
+</div><div
+  style={{"marginBottom":"var(--ifm-paragraph-margin-bottom)"}}
+>
+  <h3
+    style={{"marginBottom":"0.25rem"}}
+  >
+    License
+  </h3>
+</div>
+      

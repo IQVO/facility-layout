@@ -32,6 +32,18 @@ const sidebar: SidebarsConfig = {
           label: "Get one site",
           className: "api-method get",
         },
+        {
+          type: "doc",
+          id: "api-reference/rest/get-site-transfer-capability",
+          label: "Get a site's transfer capability",
+          className: "api-method get",
+        },
+        {
+          type: "doc",
+          id: "api-reference/rest/set-site-transfer-capability",
+          label: "Set a site's transfer capability",
+          className: "api-method put",
+        },
       ],
     },
     {

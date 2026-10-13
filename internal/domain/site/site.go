@@ -21,19 +21,55 @@ var (
 	// ErrAlreadyDecommissioned is returned when decommissioning a site that
 	// is already decommissioned.
 	ErrAlreadyDecommissioned = errors.New("site is already decommissioned")
+	// ErrSiteDecommissioned is returned when a command would change a
+	// decommissioned site's state (ADR-0035: a retired site's transfer
+	// capability is frozen).
+	ErrSiteDecommissioned = errors.New("site is decommissioned")
 )
+
+// TransferCapability is the value object naming which roles a site may
+// play in an inter-warehouse transfer (ADR-0035): an origin donates stock,
+// a destination receives it. The zero value is "capable of nothing", which
+// is also how consumers treat a site they have never heard about.
+type TransferCapability struct {
+	originEnabled      bool
+	destinationEnabled bool
+}
+
+// NewTransferCapability builds a full capability snapshot.
+func NewTransferCapability(originEnabled, destinationEnabled bool) TransferCapability {
+	return TransferCapability{originEnabled: originEnabled, destinationEnabled: destinationEnabled}
+}
+
+// OriginEnabled reports whether the site may donate stock to another site.
+func (c TransferCapability) OriginEnabled() bool { return c.originEnabled }
+
+// DestinationEnabled reports whether the site may receive stock from another site.
+func (c TransferCapability) DestinationEnabled() bool { return c.destinationEnabled }
 
 // Site is a physical facility/building. Its identity is its SiteCode, which
 // is also the first segment of every LocationCode inside it. Uniqueness of
 // the code is enforced at the application/repository layer: a single
 // aggregate cannot see its siblings.
+//
+// The site also owns its transfer capability (ADR-0035) and the per-site,
+// monotonically increasing revision of that capability: every change that
+// is published as SiteCapabilityChanged carries the revision it produced,
+// so consumers keep the newest snapshot (last-write-wins on the revision).
 type Site struct {
-	code   string
-	name   string
-	status shared.Status
+	code               string
+	name               string
+	status             shared.Status
+	capability         TransferCapability
+	capabilityRevision int64
+	// version is optimistic-concurrency metadata (ADR-0025, extended to
+	// Site by ADR-0035): the persisted row version this aggregate was
+	// loaded at. Never read by business logic.
+	version int
 }
 
-// NewSite validates and constructs an Active Site.
+// NewSite validates and constructs an Active Site with no transfer
+// capability and no published capability revision yet.
 func NewSite(code, name string) (*Site, error) {
 	if err := validateSiteCode(code); err != nil {
 		return nil, err
@@ -41,13 +77,20 @@ func NewSite(code, name string) (*Site, error) {
 	if name == "" {
 		return nil, ErrEmptySiteName
 	}
-	return &Site{code: code, name: name, status: shared.Active}, nil
+	return &Site{code: code, name: name, status: shared.Active, version: 1}, nil
 }
 
 // RehydrateSite rebuilds a Site from persisted state without re-running the
 // registration invariants. Only persistence adapters may call it.
-func RehydrateSite(code, name string, status shared.Status) *Site {
-	return &Site{code: code, name: name, status: status}
+func RehydrateSite(code, name string, status shared.Status, capability TransferCapability, capabilityRevision int64, version int) *Site {
+	return &Site{
+		code:               code,
+		name:               name,
+		status:             status,
+		capability:         capability,
+		capabilityRevision: capabilityRevision,
+		version:            version,
+	}
 }
 
 func validateSiteCode(code string) error {
@@ -74,6 +117,41 @@ func (s *Site) Status() shared.Status { return s.status }
 
 // IsActive reports whether new structure may be registered against this site.
 func (s *Site) IsActive() bool { return s.status == shared.Active }
+
+// TransferCapability returns the site's current transfer capability.
+func (s *Site) TransferCapability() TransferCapability { return s.capability }
+
+// CapabilityRevision returns the revision of the last capability change; 0
+// means no capability snapshot has ever been published for this site.
+func (s *Site) CapabilityRevision() int64 { return s.capabilityRevision }
+
+// Version returns the persisted row version this aggregate was loaded at
+// (ADR-0025 optimistic concurrency); 1 for a freshly constructed site.
+func (s *Site) Version() int { return s.version }
+
+// ChangeTransferCapability replaces the site's transfer capability with a
+// full snapshot (ADR-0035). It reports whether the change produced a new
+// capability revision, which the caller must then publish as
+// SiteCapabilityChanged:
+//
+//   - the first change is always a change, even when it restates the
+//     default, because no snapshot has been published yet;
+//   - an identical snapshot afterwards is an idempotent no-op (no revision,
+//     no event), so a retried PUT never inflates the revision;
+//   - any other snapshot advances the revision by exactly one.
+//
+// A decommissioned site's capability is frozen: ErrSiteDecommissioned.
+func (s *Site) ChangeTransferCapability(c TransferCapability) (bool, error) {
+	if !s.IsActive() {
+		return false, ErrSiteDecommissioned
+	}
+	if s.capabilityRevision > 0 && s.capability == c {
+		return false, nil
+	}
+	s.capability = c
+	s.capabilityRevision++
+	return true, nil
+}
 
 // Decommission permanently retires the site. One-way: a decommissioned site
 // is never reactivated.
