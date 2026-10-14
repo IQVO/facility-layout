@@ -734,6 +734,7 @@ paths:
                   siteCode: WH1
                   name: Fulfilment Centre One
                   status: Active
+                  siteRole: UNSPECIFIED
                 fixedStructures: []
                 zones:
                   - zoneId: WH1-STOR-AMB
@@ -2211,21 +2212,6 @@ components:
       example: WH1-STOR-AMB-A07-03-02-B
 
   responses:
-    IdempotencyKeyReused:
-      description: >-
-        The Idempotency-Key was already used with a request that had a
-        different body (ADR 0019). Use a new key for a genuinely different
-        request.
-      content:
-        application/problem+json:
-          schema:
-            $ref: "#/components/schemas/Problem"
-          example:
-            type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-reused
-            title: Idempotency-Key was already used with a different request
-            status: 422
-            detail: The Idempotency-Key header on this request was already used with a request that had a different body. Use a new Idempotency-Key for a genuinely different request.
-            instance: /sites
     BadRequest:
       description: >
         Malformed input: a body that is not valid JSON, a location code that
