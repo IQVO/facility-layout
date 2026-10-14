@@ -54,6 +54,12 @@ the HTTP adapter. The coverage gate measures only
 `internal/domain/...` and `internal/application/...`, at a 90% threshold, in
 both `make coverage` and the CI `test` job.
 
+The Makefile is the single source of the coverage scope and threshold
+(gap 16d): the CI `test` job runs `make coverage` instead of its own
+`go test -coverpkg=...` command, so the local and the PR gate cannot drift;
+harness `repo_lint` rule R11 (coverage-scope) forbids a workflow passing
+`-coverpkg` itself. Change the scope or the threshold in the Makefile only.
+
 ## BDD (godog)
 
 - `features_test.go` (`TestFeatures`) drives the **real chi router** over a
@@ -169,7 +175,7 @@ mutants with 89 killed, 89.90% efficacy and 100% coverage (see
 | `lint` | golangci-lint v2.13.1 | push / PR |
 | `guide-lint` | `scripts/harness/guide_lint.py`, `repo_lint.py`, `test_hook.py`, `test_repo_lint.py` | push / PR |
 | `complexity` | golangci-lint `--enable-only gocyclo,gocognit,cyclop,funlen,nestif`, plus a gocyclo report of functions over 10 (informational) | push / PR |
-| `test` | `go build`, `go vet`, unit tests with `-race`, 90% coverage gate | push / PR |
+| `test` | `go build`, `go vet`, then `make coverage` (unit tests with `-race` and the Makefile's coverage scope and 90% gate) | push / PR |
 | `bdd` | `go test ./... -run TestFeatures -v` | push / PR |
 | `contract` | Schemathesis 4.28.0 through `scripts/contract-test.sh` | push / PR |
 | `evals-tests` | MCP evals (see above) | push / PR |

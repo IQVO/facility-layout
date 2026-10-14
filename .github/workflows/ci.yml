@@ -97,24 +97,11 @@ jobs:
           go build ./...
           go vet ./...
 
-      - name: Unit tests with coverage
-        run: |
-          set -euo pipefail
-          go test ./... -race \
-            -coverprofile=coverage.out \
-            -coverpkg=./internal/domain/...,./internal/application/...
-
-      - name: Coverage gate
-        env:
-          THRESHOLD: "90"
-        run: |
-          set -euo pipefail
-          COVERAGE=$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}' | tr -d '%')
-          echo "### Coverage: ${COVERAGE}% (gate: ${THRESHOLD}%)" >> "$GITHUB_STEP_SUMMARY"
-          if awk -v c="$COVERAGE" -v t="$THRESHOLD" 'BEGIN { exit !(c < t) }'; then
-            echo "::error::coverage ${COVERAGE}% is below the ${THRESHOLD}% gate"
-            exit 1
-          fi
+      # Coverage scope and gate live ONLY in the Makefile (gap 16d: a copy of
+      # the package set here can drift from `make coverage`). Harness repo_lint
+      # rule R11 (coverage-scope) forbids a workflow passing -coverpkg itself.
+      - name: Unit tests with coverage + gate (make coverage)
+        run: make coverage
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()

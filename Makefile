@@ -66,12 +66,19 @@ lint: ## golangci-lint run ./...
 test: ## go test ./... -race
 	go test ./... -race
 
+# The ONLY definition of the coverage scope and gate: the CI `test` job runs
+# `make coverage` (gap 16d). Harness repo_lint rule R11 (coverage-scope)
+# forbids a workflow running `go test -coverpkg=...` itself, so the package
+# set cannot drift again. Change the scope or threshold here only.
 coverage: ## coverage run + gate, identical to the CI test job
 	go test ./... -race -coverprofile=coverage.out -coverpkg=$(COVERPKG)
 	@COVERAGE=$$(go tool cover -func=coverage.out | awk '/^total:/ {print $$3}' | tr -d '%'); \
-	echo "Coverage: $${COVERAGE}% (gate: $(COVERAGE_THRESHOLD)%)"; \
+	echo "Coverage: $${COVERAGE}% (gate: $(COVERAGE_THRESHOLD)%, scope: $(COVERPKG))"; \
+	if [ -n "$$GITHUB_STEP_SUMMARY" ]; then \
+		echo "### Coverage: $${COVERAGE}% (gate: $(COVERAGE_THRESHOLD)%, scope: \`$(COVERPKG)\`)" >> "$$GITHUB_STEP_SUMMARY"; \
+	fi; \
 	if awk -v c="$$COVERAGE" -v t="$(COVERAGE_THRESHOLD)" 'BEGIN { exit !(c < t) }'; then \
-		echo "coverage $${COVERAGE}% is below the $(COVERAGE_THRESHOLD)% gate"; \
+		echo "::error::coverage $${COVERAGE}% is below the $(COVERAGE_THRESHOLD)% gate"; \
 		exit 1; \
 	fi
 
