@@ -1,0 +1,11 @@
+-- Trace context crosses the outbox (ADR-0038, fleet decision D27 / gap 15d,
+-- after order-management ADR 0041). Additive and nullable: each new row
+-- stores the W3C trace-context headers (traceparent, tracestate, baggage:
+-- whatever the global propagator injects) of the transaction that wrote it,
+-- as a JSON array [{"key":"traceparent","value":"00-..."}]. The relay sends
+-- them as Kafka message headers next to the CloudEvents content-type.
+--
+-- NULL means "no trace context": a row written with no active span, or any
+-- row written before this migration. Such rows relay exactly as before
+-- (content-type only); nothing is backfilled.
+ALTER TABLE outbox_events ADD COLUMN headers JSONB;

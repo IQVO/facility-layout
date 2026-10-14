@@ -41,13 +41,16 @@ func NewRelaySink(brokers []string) *RelaySink {
 // Send writes one already-encoded outbox row to its own topic. Every row's
 // value is a structured-mode CloudEvent (encoded once by Publisher/
 // AnalyticsPublisher.Encode, with the id persisted in the row), so the
-// CloudEvents content-type header is attached here on the way out. The
-// W3C trace context of ctx is injected into the message headers
-// (ADR-0009): the relay runs outside the request that wrote the row, so
-// the trace it starts here is the producer side of the publish→consume
-// hop.
+// CloudEvents content-type header is attached here on the way out, followed
+// by the trace headers stored with the row (ADR-0038). The relay never
+// injects its own ctx: it runs later and outside the request that wrote the
+// row, so the stored context is the only correct parent for a consumer. A
+// row with no stored trace context relays with content-type only.
 func (s *RelaySink) Send(ctx context.Context, enc Encoded) error {
-	msg := kafkago.Message{Topic: enc.Topic, Key: enc.Key, Value: enc.Value, Headers: injectTraceContext(ctx, []kafkago.Header{cloudevents.ContentTypeHeader()})}
+	headers := make([]kafkago.Header, 0, 1+len(enc.Headers))
+	headers = append(headers, cloudevents.ContentTypeHeader())
+	headers = append(headers, enc.Headers...)
+	msg := kafkago.Message{Topic: enc.Topic, Key: enc.Key, Value: enc.Value, Headers: headers}
 	if err := s.Writer.WriteMessages(ctx, msg); err != nil {
 		return fmt.Errorf("kafka: relay send %s on %s: %w", enc.EventType, enc.Topic, err)
 	}

@@ -126,6 +126,7 @@ erDiagram
         timestamptz published_at "NULL until relayed"
         integer attempts
         text last_error
+        jsonb headers "ADR-0038, W3C trace context, NULL = none"
     }
     idempotency_keys {
         text key PK

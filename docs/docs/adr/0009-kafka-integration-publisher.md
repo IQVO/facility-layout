@@ -15,6 +15,7 @@ The topic, the "publish the whole Published Language" decision and the
 aggregate-id key still stand. The flat `Envelope` described below
 (`event_id`/`event_type`/`occurred_at`/`source`/`data`) was removed:
 every message is now a CloudEvents 1.0 event (Superseded by ADR-0024).
+Outbox-path trace propagation amended by [ADR-0038](./0038-outbox-trace-context.md).
 
 ## Context
 
