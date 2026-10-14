@@ -8,6 +8,14 @@ package http
 type registerSiteRequest struct {
 	SiteCode string `json:"siteCode"`
 	Name     string `json:"name"`
+	// SiteRole is optional (ADR-0037): omitted means UNSPECIFIED.
+	SiteRole string `json:"siteRole,omitempty"`
+}
+
+// setSiteRoleRequest is the body of PUT /sites/{siteCode}/role (ADR-0037).
+// A missing role decodes to "" and is rejected as invalid-site-role.
+type setSiteRoleRequest struct {
+	SiteRole string `json:"siteRole"`
 }
 
 // setTransferCapabilityRequest is the full snapshot PUT
@@ -164,6 +172,16 @@ type siteResponse struct {
 	SiteCode string `json:"siteCode"`
 	Name     string `json:"name"`
 	Status   string `json:"status"`
+	// SiteRole is the site's role in the fulfilment network (ADR-0037).
+	SiteRole string `json:"siteRole"`
+}
+
+// siteRoleTransferDefaultResponse is one row of
+// GET /site-roles/transfer-defaults (ADR-0037).
+type siteRoleTransferDefaultResponse struct {
+	SiteRole                   string `json:"siteRole"`
+	TransferOriginEnabled      bool   `json:"transferOriginEnabled"`
+	TransferDestinationEnabled bool   `json:"transferDestinationEnabled"`
 }
 
 // transferCapabilityResponse is a site's current transfer capability and

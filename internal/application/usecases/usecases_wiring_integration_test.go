@@ -38,6 +38,7 @@ import (
 	"github.com/claudioed/facility-layout/internal/application/usecases"
 	"github.com/claudioed/facility-layout/internal/domain/placement"
 	"github.com/claudioed/facility-layout/internal/domain/shared"
+	"github.com/claudioed/facility-layout/internal/domain/site"
 )
 
 // One Postgres container serves the whole package (containers are slow to
@@ -218,7 +219,7 @@ func newWiredUsecases(t *testing.T) *wiredUsecases {
 func (w *wiredUsecases) seedStorageChain(t *testing.T) {
 	t.Helper()
 	ctx := context.Background()
-	if _, err := w.registerSite.Execute(ctx, "WH1", "Fulfilment Centre One"); err != nil {
+	if _, err := w.registerSite.Execute(ctx, "WH1", "Fulfilment Centre One", site.RoleUnspecified); err != nil {
 		t.Fatalf("seed site: %v", err)
 	}
 	if _, err := w.registerLocationType.Execute(ctx, placement.PalletRack, placement.Storage, mustCapacity(t, 1200, 2.4)); err != nil {
@@ -274,7 +275,7 @@ func TestUsecases_WarehouseMapLifecycleRoundTrip(t *testing.T) {
 	}
 
 	// A duplicate site code is rejected, not silently upserted.
-	if _, err := w.registerSite.Execute(ctx, "WH1", "Fulfilment Centre One"); !errors.Is(err, usecases.ErrDuplicateSite) {
+	if _, err := w.registerSite.Execute(ctx, "WH1", "Fulfilment Centre One", site.RoleUnspecified); !errors.Is(err, usecases.ErrDuplicateSite) {
 		t.Fatalf("duplicate site code must be rejected with ErrDuplicateSite, got %v", err)
 	}
 

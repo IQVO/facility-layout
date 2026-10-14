@@ -243,6 +243,10 @@ func newServer(a adapterSet, clock ports.Clock, locationMetrics ports.LocationMe
 		ChangeSiteTransferCapability: &usecases.ChangeSiteTransferCapability{
 			Sites: a.sites, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork,
 		},
+		ChangeSiteRole: &usecases.ChangeSiteRole{
+			Sites: a.sites, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork,
+		},
+		ListSiteRoleTransferDefaults: &usecases.ListSiteRoleTransferDefaults{},
 
 		RegisterZone: &usecases.RegisterZone{Sites: a.sites, Zones: a.zones, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork},
 		GetZone:      &usecases.GetZone{Zones: a.zones},

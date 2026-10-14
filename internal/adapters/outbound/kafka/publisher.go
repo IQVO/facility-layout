@@ -219,6 +219,8 @@ func aggregateKey(event shared.DomainEvent) string {
 		return e.SiteCode
 	case shared.SiteCapabilityChanged:
 		return e.SiteCode
+	case shared.SiteRoleChanged:
+		return e.SiteCode
 	case shared.ZoneRegistered:
 		return e.ZoneID
 	case shared.AisleRegistered:

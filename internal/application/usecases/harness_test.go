@@ -11,6 +11,7 @@ import (
 	"github.com/claudioed/facility-layout/internal/application/usecases"
 	"github.com/claudioed/facility-layout/internal/domain/placement"
 	"github.com/claudioed/facility-layout/internal/domain/shared"
+	"github.com/claudioed/facility-layout/internal/domain/site"
 )
 
 // fixedNow is the deterministic clock every use case test runs against.
@@ -135,7 +136,7 @@ func (h *harness) seedAmbientAisle() {
 
 func (h *harness) mustRegisterSite(code, name string) {
 	h.t.Helper()
-	if _, err := h.registerSite.Execute(h.ctx(), code, name); err != nil {
+	if _, err := h.registerSite.Execute(h.ctx(), code, name, site.RoleUnspecified); err != nil {
 		h.t.Fatalf("seeding site %q: %v", code, err)
 	}
 }

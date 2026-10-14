@@ -30,7 +30,7 @@ func TestDomainEventsCarryNameTypeAndTime(t *testing.T) {
 	tests := []domainEventCase{
 		{
 			name:     "SiteRegistered",
-			event:    shared.NewSiteRegistered(at, "WH1", "Fulfilment Centre One"),
+			event:    shared.NewSiteRegistered(at, "WH1", "Fulfilment Centre One", "UNSPECIFIED"),
 			wantName: "SiteRegistered",
 			wantType: "com.warehouse.wms.facility-layout.site.SiteRegistered",
 		},
@@ -137,5 +137,23 @@ func TestLocationSlotRegisteredCarriesResolvedParents(t *testing.T) {
 	}
 	if event.MaxWeightKg != 800 || event.MaxVolumeM3 != 1.2 {
 		t.Fatalf("unexpected capacity: %v/%v", event.MaxWeightKg, event.MaxVolumeM3)
+	}
+}
+
+func TestSiteRoleChangedCarriesTheNewAndThePreviousRole(t *testing.T) {
+	at := time.Date(2026, 10, 13, 12, 0, 0, 0, time.UTC)
+	event := shared.NewSiteRoleChanged(at, "WH1", "XL_FC", "UNSPECIFIED")
+	if event.EventName() != "SiteRoleChanged" || event.EventType() != "com.warehouse.wms.facility-layout.site.SiteRoleChanged" {
+		t.Fatalf("name/type = %q / %q", event.EventName(), event.EventType())
+	}
+	if event.SiteCode != "WH1" || event.SiteRole != "XL_FC" || event.PreviousSiteRole != "UNSPECIFIED" || !event.OccurredAt().Equal(at) {
+		t.Fatalf("event = %+v", event)
+	}
+}
+
+func TestSiteRegisteredCarriesTheSiteRole(t *testing.T) {
+	event := shared.NewSiteRegistered(time.Now(), "ABE8", "ABE8 - Non-Sortable Fulfillment Center (Breinigsville, PA)", "NON_SORTABLE_FC")
+	if event.SiteRole != "NON_SORTABLE_FC" {
+		t.Fatalf("site role = %q", event.SiteRole)
 	}
 }

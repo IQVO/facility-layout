@@ -219,7 +219,7 @@ func (uc *ImportFacilityLayout) ensureSite(ctx context.Context, row ImportRow) e
 		if err := uc.Sites.Save(ctx, s); err != nil {
 			return err
 		}
-		return uc.Events.Publish(ctx, shared.NewSiteRegistered(uc.Clock.Now(), s.Code(), s.Name()))
+		return uc.Events.Publish(ctx, shared.NewSiteRegistered(uc.Clock.Now(), s.Code(), s.Name(), string(s.Role())))
 	})
 }
 

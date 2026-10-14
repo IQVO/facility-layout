@@ -66,7 +66,8 @@ func TestLogPublisher_PayloadByteIdenticalToGolden(t *testing.T) {
 		label string
 		event shared.DomainEvent
 	}{
-		{"SiteRegistered", shared.NewSiteRegistered(at, "WH1", "Main")},
+		{"SiteRegistered", shared.NewSiteRegistered(at, "WH1", "Main", "UNSPECIFIED")},
+		{"SiteRoleChanged", shared.NewSiteRoleChanged(at, "WH1", "XL_FC", "UNSPECIFIED")},
 		{"SiteCapabilityChanged", shared.NewSiteCapabilityChanged(at, "WH1", true, false, 42)},
 		{"LocationTypeRegistered", shared.NewLocationTypeRegistered(at, "PalletRack", "Storage", mustCapacity(t, 1000, 2))},
 		{"LocationSlotRegistered_dock", shared.NewLocationSlotRegistered(at, code, "Dock", "Dock", "Inbound", []string{"Receiving", "Putaway"}, shared.Capacity{})},

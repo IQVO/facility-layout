@@ -19,6 +19,7 @@ import (
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/postgres"
 	"github.com/claudioed/facility-layout/internal/application/usecases"
 	"github.com/claudioed/facility-layout/internal/domain/shared"
+	"github.com/claudioed/facility-layout/internal/domain/site"
 )
 
 // outboxDB boots a throwaway Postgres (testcontainers — the test owns its
@@ -100,7 +101,7 @@ func TestOutbox_RegisterSite_CommitsAggregateAndEventTogether(t *testing.T) {
 		UnitOfWork: postgres.NewUnitOfWork(pool),
 	}
 
-	if _, err := uc.Execute(ctx, "WH1", "Main"); err != nil {
+	if _, err := uc.Execute(ctx, "WH1", "Main", site.RoleUnspecified); err != nil {
 		t.Fatalf("register site: %v", err)
 	}
 
@@ -157,7 +158,7 @@ func TestOutbox_PublishFailure_RollsBackAggregate(t *testing.T) {
 		UnitOfWork: postgres.NewUnitOfWork(pool),
 	}
 
-	if _, err := uc.Execute(ctx, "WH2", "Failing"); err == nil {
+	if _, err := uc.Execute(ctx, "WH2", "Failing", site.RoleUnspecified); err == nil {
 		t.Fatal("expected the failing encoder to fail the publish")
 	}
 	found, err := postgres.NewSiteRepo(pool).FindByCode(ctx, "WH2")
@@ -192,7 +193,7 @@ func TestOutboxRelay_PublishesInOrderAndMarksRows(t *testing.T) {
 	registerSite := &usecases.RegisterSite{Sites: sites, Events: pub, Clock: fixedClock{t: now}, UnitOfWork: uow}
 	registerZone := &usecases.RegisterZone{Sites: sites, Zones: zones, Events: pub, Clock: fixedClock{t: now.Add(time.Second)}, UnitOfWork: uow}
 
-	if _, err := registerSite.Execute(ctx, "WH3", "Third"); err != nil {
+	if _, err := registerSite.Execute(ctx, "WH3", "Third", site.RoleUnspecified); err != nil {
 		t.Fatalf("register site: %v", err)
 	}
 	if _, err := registerZone.Execute(ctx, "WH3", "STOR", "AMB", shared.Ambient, false, nil, nil); err != nil {
@@ -238,7 +239,7 @@ func TestOutboxRelay_SinkFailure_StopsAtFailedRowAndRetriesLater(t *testing.T) {
 	registerSite := &usecases.RegisterSite{Sites: sites, Events: pub, Clock: fixedClock{t: now}, UnitOfWork: uow}
 
 	for _, code := range []string{"A1", "B2", "C3"} {
-		if _, err := registerSite.Execute(ctx, code, code); err != nil {
+		if _, err := registerSite.Execute(ctx, code, code, site.RoleUnspecified); err != nil {
 			t.Fatalf("register %s: %v", code, err)
 		}
 	}

@@ -60,11 +60,12 @@ both `make coverage` and the CI `test` job.
   TCP `httptest.Server`, wired with the in-memory adapters, a fixed clock and
   a buffered event publisher. Every scenario is a black-box test of the REST
   API.
-- There are **11 feature files under `features/`** with **107 `Scenario` /
+- There are **12 feature files under `features/`** with **113 `Scenario` /
   `Scenario Outline` headings**: `catalog_reads` 7, `draw_the_warehouse` 4,
   `error_contract` 7, `fixed_structures_and_cross_aisles` 21, `geometry` 18,
   `import` 2, `location_roles_and_reads` 14, `placement_rules` 4,
-  `site_transfer_capability` 6 (ADR-0035), `structure` 6, `travel_graph` 18.
+  `site_role` 6 (ADR-0037), `site_transfer_capability` 6 (ADR-0035),
+  `structure` 6, `travel_graph` 18.
   Outlines expand to more runtime cases.
 - Scenarios tagged `@known-bug` describe the correct behaviour for a defect
   that is still open. The default filter `~@known-bug` skips them.
@@ -83,7 +84,7 @@ both.
 
 | Package | Files |
 |---|---|
-| `internal/adapters/outbound/postgres` | `integration_test.go` (shared container and migrations), `repos_`, `version_` (optimistic concurrency), `site_capability_` (ADR-0035: the `SiteCapabilityChanged` outbox row is the CloudEvent network-inventory-planning decodes; repeat writes no row; concurrent changes never share a revision), `travel_`, `geometry_`, `telemetry_` (otelpgx child spans), `pool_limits_` (MaxConns / statement_timeout), `pool_alias_`, `outbox_`, `outbox_relay_cap_` (ADR-0036: a poison row is excluded after `WithMaxAttempts` failures and logged once at ERROR, the good same-key row behind it publishes; re-arm with `attempts = 0`; `0` = unlimited blocks), `sweeper_` |
+| `internal/adapters/outbound/postgres` | `integration_test.go` (shared container and migrations), `repos_`, `version_` (optimistic concurrency), `site_capability_` (ADR-0035: the `SiteCapabilityChanged` outbox row is the CloudEvent network-inventory-planning decodes; repeat writes no row; concurrent changes never share a revision), `site_role_` (ADR-0037: migration `0009` backfills the role of rows seeded at schema version 8 from the name pattern, leaves other names `UNSPECIFIED`, touches no capability/version and writes no outbox row; the CHECK rejects an unknown role; role changes are version-guarded; the `SiteRoleChanged` outbox row is a CloudEvents 1.0 message with the documented attributes and camelCase data), `travel_`, `geometry_`, `telemetry_` (otelpgx child spans), `pool_limits_` (MaxConns / statement_timeout), `pool_alias_`, `outbox_`, `outbox_relay_cap_` (ADR-0036: a poison row is excluded after `WithMaxAttempts` failures and logged once at ERROR, the good same-key row behind it publishes; re-arm with `attempts = 0`; `0` = unlimited blocks), `sweeper_` |
 | `internal/adapters/outbound/analyticsstore` | `postgres_integration_test.go` (projection and report) |
 | `internal/adapters/outbound/kafka` | `publisher_partition_integration_test.go` (Hash balancer keeps aggregate order) |
 | `internal/adapters/inbound/kafka` | `analytics_dlq_integration_test.go` (retry then DLQ) |
@@ -133,6 +134,7 @@ exactly the schema's properties. Spectral (`api-lint`) lints both specs.
 | `TestEventCatalogueMatchesContract` (+ detector self-test) | Every CloudEvents type this service declares for itself in `apis/asyncapi.yaml` also appears in a CloudEvents ADR under `docs/docs/adr/` |
 | `TestNoStructTagsInDomain` (+ sensor self-test) | No serialisation tags in `internal/domain` |
 | `TestSiteCapabilityChangedContractPublishesFullLWWState` | The `SiteCapabilityChanged` message in the AsyncAPI carries the full last-write-wins state |
+| `TestSiteRoleContractIsPublished` | The AsyncAPI declares `SiteRoleChanged` on the integration topic (type, dataschema, required `siteCode`/`siteRole`/`previousSiteRole`) and the additive `siteRole` ([ADR-0037](../adr/0037-site-role-and-siterolechanged-cloudevents.md)) |
 | `TestKafkaWritersSetRequiredAcks` (+ `TestKafkaWriterAcksSensorBites`) | Every kafka-go `Writer` composite literal in a non-test file under `internal/` or `cmd/` sets `RequiredAcks` (the import alias is resolved per file). kafka-go defaults it to `RequireNone` (acks=0): the broker never confirms the write, so a broker blip silently drops the message while `WriteMessages` returns nil. The twin proves the sensor flags a bad fixture under any alias. |
 
 ## MCP evals

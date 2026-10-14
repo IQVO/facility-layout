@@ -36,7 +36,7 @@ func wireCases(t *testing.T) []wireCase {
 	code := mustLocationCode(t)
 	zone := time.FixedZone("UTC+3", 3*60*60)
 	out = append(out,
-		wireCase{"SiteRegistered_nonUTC_nanos", shared.NewSiteRegistered(time.Date(2026, 2, 3, 4, 5, 6, 123456789, zone), "WH1", "Main")},
+		wireCase{"SiteRegistered_nonUTC_nanos", shared.NewSiteRegistered(time.Date(2026, 2, 3, 4, 5, 6, 123456789, zone), "WH1", "Main", "UNSPECIFIED")},
 		wireCase{"LocationTypeRegistered_noCapacity", shared.NewLocationTypeRegistered(at, "Dock", "Dock", shared.Capacity{})},
 		wireCase{"LocationSlotRegistered_dock", shared.NewLocationSlotRegistered(at, code, "Dock", "Dock", "Inbound", []string{"Receiving", "Putaway"}, shared.Capacity{})},
 		wireCase{"LocationGeometryUpdated_noPickSequence", shared.NewLocationGeometryUpdated(at, code, mustPoint(t, 1, 2, 3), mustDims(t, 1.2, 1, 1.5), nil)},

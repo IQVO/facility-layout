@@ -275,7 +275,7 @@ func TestUseCasesPropagateInfrastructureFailures(t *testing.T) {
 			name: "RegisterSite: site lookup fails",
 			run: func(_ *testing.T, h *harness) error {
 				uc := &usecases.RegisterSite{Sites: &faultySiteRepo{SiteRepo: h.sites, failFind: true}, Events: h.publisher, Clock: h.clock}
-				_, err := uc.Execute(h.ctx(), "WH1", "Fulfilment Centre One")
+				_, err := uc.Execute(h.ctx(), "WH1", "Fulfilment Centre One", site.RoleUnspecified)
 				return err
 			},
 		},
@@ -283,7 +283,7 @@ func TestUseCasesPropagateInfrastructureFailures(t *testing.T) {
 			name: "RegisterSite: save fails",
 			run: func(_ *testing.T, h *harness) error {
 				uc := &usecases.RegisterSite{Sites: &faultySiteRepo{SiteRepo: h.sites, failSave: true}, Events: h.publisher, Clock: h.clock}
-				_, err := uc.Execute(h.ctx(), "WH1", "Fulfilment Centre One")
+				_, err := uc.Execute(h.ctx(), "WH1", "Fulfilment Centre One", site.RoleUnspecified)
 				return err
 			},
 		},
@@ -291,7 +291,7 @@ func TestUseCasesPropagateInfrastructureFailures(t *testing.T) {
 			name: "RegisterSite: publish fails",
 			run: func(_ *testing.T, h *harness) error {
 				uc := &usecases.RegisterSite{Sites: h.sites, Events: faultyPublisher{}, Clock: h.clock}
-				_, err := uc.Execute(h.ctx(), "WH1", "Fulfilment Centre One")
+				_, err := uc.Execute(h.ctx(), "WH1", "Fulfilment Centre One", site.RoleUnspecified)
 				return err
 			},
 		},

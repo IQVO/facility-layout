@@ -57,8 +57,10 @@ func (c TransferCapability) DestinationEnabled() bool { return c.destinationEnab
 // is published as SiteCapabilityChanged carries the revision it produced,
 // so consumers keep the newest snapshot (last-write-wins on the revision).
 type Site struct {
-	code               string
-	name               string
+	code string
+	name string
+	// role is the site's role in the fulfilment network (ADR-0037).
+	role               Role
 	status             shared.Status
 	capability         TransferCapability
 	capabilityRevision int64
@@ -68,24 +70,36 @@ type Site struct {
 	version int
 }
 
-// NewSite validates and constructs an Active Site with no transfer
-// capability and no published capability revision yet.
+// NewSite validates and constructs an Active Site with an UNSPECIFIED role,
+// no transfer capability and no published capability revision yet.
 func NewSite(code, name string) (*Site, error) {
+	return NewSiteWithRole(code, name, RoleUnspecified)
+}
+
+// NewSiteWithRole validates and constructs an Active Site with the given
+// role (ADR-0037; UNSPECIFIED is accepted at registration), no transfer
+// capability and no published capability revision yet. The role never
+// implies a capability: that stays the explicit ADR-0035 command.
+func NewSiteWithRole(code, name string, role Role) (*Site, error) {
 	if err := validateSiteCode(code); err != nil {
 		return nil, err
 	}
 	if name == "" {
 		return nil, ErrEmptySiteName
 	}
-	return &Site{code: code, name: name, status: shared.Active, version: 1}, nil
+	if !role.known() {
+		return nil, fmt.Errorf("%w: %q", ErrInvalidSiteRole, role)
+	}
+	return &Site{code: code, name: name, role: role, status: shared.Active, version: 1}, nil
 }
 
 // RehydrateSite rebuilds a Site from persisted state without re-running the
 // registration invariants. Only persistence adapters may call it.
-func RehydrateSite(code, name string, status shared.Status, capability TransferCapability, capabilityRevision int64, version int) *Site {
+func RehydrateSite(code, name string, role Role, status shared.Status, capability TransferCapability, capabilityRevision int64, version int) *Site {
 	return &Site{
 		code:               code,
 		name:               name,
+		role:               role,
 		status:             status,
 		capability:         capability,
 		capabilityRevision: capabilityRevision,
@@ -111,6 +125,9 @@ func (s *Site) Code() string { return s.code }
 
 // Name returns the human-readable site name.
 func (s *Site) Name() string { return s.name }
+
+// Role returns the site's role in the fulfilment network (ADR-0037).
+func (s *Site) Role() Role { return s.role }
 
 // Status returns the site's lifecycle status.
 func (s *Site) Status() shared.Status { return s.status }
@@ -151,6 +168,32 @@ func (s *Site) ChangeTransferCapability(c TransferCapability) (bool, error) {
 	s.capability = c
 	s.capabilityRevision++
 	return true, nil
+}
+
+// ChangeRole sets the site's role (ADR-0037) and reports the role it
+// replaced and whether anything changed; the caller publishes
+// SiteRoleChanged only when it did:
+//
+//   - the target must be an assignable role: UNSPECIFIED or an unknown value
+//     is ErrInvalidSiteRole;
+//   - the current role is an idempotent no-op (no change, no event);
+//   - a decommissioned site's role is frozen: ErrSiteDecommissioned.
+//
+// The transfer capability is never touched: a role change does not flip
+// capability (capability stays the explicit ADR-0035 command).
+func (s *Site) ChangeRole(r Role) (Role, bool, error) {
+	previous := s.role
+	if !s.IsActive() {
+		return previous, false, ErrSiteDecommissioned
+	}
+	if !r.assignable() {
+		return previous, false, fmt.Errorf("%w: %q cannot be assigned", ErrInvalidSiteRole, r)
+	}
+	if r == previous {
+		return previous, false, nil
+	}
+	s.role = r
+	return previous, true, nil
 }
 
 // Decommission permanently retires the site. One-way: a decommissioned site

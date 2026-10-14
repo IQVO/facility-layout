@@ -97,6 +97,7 @@ var errorCategories = []errorCategory{
 	{placement.ErrUnknownEffect, http.StatusUnprocessableEntity, problemInfo{"unknown-placement-effect", "Unknown placement rule effect"}},
 	{placement.ErrEmptyPredicate, http.StatusUnprocessableEntity, problemInfo{"empty-zone-predicate", "Placement rule predicate constrains nothing"}},
 	{placement.ErrUnknownLocationRole, http.StatusUnprocessableEntity, problemInfo{"unknown-location-role", "Unknown location role"}},
+	{site.ErrInvalidSiteRole, http.StatusUnprocessableEntity, problemInfo{"invalid-site-role", "Site role must be one of the known site roles"}},
 	{slot.ErrUnknownDockFlow, http.StatusUnprocessableEntity, problemInfo{"unknown-dock-flow", "Unknown dock flow"}},
 	{slot.ErrUnknownActivity, http.StatusUnprocessableEntity, problemInfo{"unknown-activity", "Unknown work center activity"}},
 	{slot.ErrDockFlowRequired, http.StatusUnprocessableEntity, problemInfo{"dock-flow-required", "A Dock location requires a dockFlow"}},
