@@ -98,6 +98,7 @@ var errorCatalog = []errorEntry{
 	{placement.ErrUnknownEffect, "unknown-placement-effect"},
 	{placement.ErrEmptyPredicate, "empty-zone-predicate"},
 	{placement.ErrUnknownLocationRole, "unknown-location-role"},
+	{site.ErrInvalidSiteRole, "invalid-site-role"},
 	{slot.ErrUnknownDockFlow, "unknown-dock-flow"},
 	{slot.ErrUnknownActivity, "unknown-activity"},
 	{slot.ErrDockFlowRequired, "dock-flow-required"},

@@ -45,6 +45,7 @@ import (
 	"github.com/claudioed/facility-layout/internal/application/usecases"
 	"github.com/claudioed/facility-layout/internal/domain/placement"
 	"github.com/claudioed/facility-layout/internal/domain/shared"
+	"github.com/claudioed/facility-layout/internal/domain/site"
 )
 
 // One Postgres container serves the whole package, migrated once into a
@@ -212,7 +213,7 @@ func newMCPIntegrationHarness(t *testing.T) *mcpIntegrationHarness {
 		return c
 	}
 
-	if _, err := registerSite.Execute(ctx, "WH1", "Fulfilment Centre One"); err != nil {
+	if _, err := registerSite.Execute(ctx, "WH1", "Fulfilment Centre One", site.RoleUnspecified); err != nil {
 		t.Fatalf("seed site: %v", err)
 	}
 	if _, err := registerType.Execute(ctx, placement.PalletRack, placement.Storage, capacity(1200, 2.4)); err != nil {

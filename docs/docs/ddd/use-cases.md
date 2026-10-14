@@ -38,6 +38,8 @@ published to **both** `warehouse.facility.events` and
 | `RegisterFixedStructure` | `POST /sites/{siteCode}/structures` (Idempotency-Key) | id, site code, kind, footprint, label | site exists; known kind (`unknown-fixed-structure-kind`); real footprint (`empty-fixed-structure-footprint`); unique id | `FixedStructureRegistered` |
 | `RegisterCrossAisle` | `POST /zones/{zoneId}/cross-aisles` (Idempotency-Key) | zone id, from aisle, to aisle, at bay | zone exists; both aisles belong to the zone (`cross-aisle-aisle-mismatch`); distinct aisles (`cross-aisle-same-aisle`); unique (`duplicate-cross-aisle`) | `CrossAisleRegistered` |
 | `ChangeSiteTransferCapability` | `PUT /sites/{siteCode}/transfer-capability` (no Idempotency-Key: a repeat is a no-op) | site code, `transferOriginEnabled`, `transferDestinationEnabled` (both required, `missing-transfer-capability-field`) | site exists (`site-not-found`); site active (`site-not-active`); site version check (`concurrent-modification`, ADR-0025 extended by ADR-0035). An identical snapshot after revision 1 saves and publishes nothing. | `SiteCapabilityChanged` with the new per-site `capability_revision` (1, 2, 3, …) |
+| `ChangeSiteRole` | `PUT /sites/{siteCode}/role` (no Idempotency-Key: a repeat is a no-op) | site code, `siteRole` (required; one of the 15 roles, never `UNSPECIFIED`: `invalid-site-role`) | site exists (`site-not-found`); site active (`site-not-active`); site version check (`concurrent-modification`). The current role saves and publishes nothing; the transfer capability is never touched ([ADR-0037](../adr/0037-site-role-and-siterolechanged-cloudevents.md)). | `SiteRoleChanged` (`siteRole`, `previousSiteRole`) |
+| `ListSiteRoleTransferDefaults` | `GET /site-roles/transfer-defaults` | none | read-only: the domain's role -> default transfer capability table (ADR-0037) | none |
 
 ### `SiteCapabilityChanged`: raised by `ChangeSiteTransferCapability`
 
@@ -59,7 +61,7 @@ outbox like every other event; the analytics projector ignores it.
 
 | Use case | REST trigger | MCP tool | Inputs | Not-found → |
 |---|---|---|---|---|
-| `ListSites` | `GET /sites` | `list_sites` (each entry also carries `transferOriginEnabled`, `transferDestinationEnabled`, `capabilityRevision`) | none | n/a |
+| `ListSites` | `GET /sites` | `list_sites` (each entry also carries `siteRole` (ADR-0037), `transferOriginEnabled`, `transferDestinationEnabled`, `capabilityRevision`) | none | n/a |
 | `GetSite` | `GET /sites/{siteCode}`, `GET /sites/{siteCode}/transfer-capability` | n/a | site code | `site-not-found` |
 | `GetSiteLayout` | `GET /sites/{siteCode}/layout` (`format=json` or `svg`, otherwise `invalid-layout-format`) | `get_site_layout` | site code | `site-not-found` |
 | `ListLocationsByRole` | `GET /sites/{siteCode}/locations?role=` | `list_functional_locations` | site code, role | `site-not-found` |

@@ -74,7 +74,7 @@ func TestChangeTransferCapabilityAdvancesTheRevisionByExactlyOnePerChange(t *tes
 }
 
 func TestChangeTransferCapabilityRejectsADecommissionedSite(t *testing.T) {
-	s := site.RehydrateSite("WH2", "Fulfilment Centre Two", shared.Decommissioned, site.NewTransferCapability(true, true), 3, 4)
+	s := site.RehydrateSite("WH2", "Fulfilment Centre Two", site.RoleUnspecified, shared.Decommissioned, site.NewTransferCapability(true, true), 3, 4)
 	changed, err := s.ChangeTransferCapability(site.NewTransferCapability(false, false))
 	if !errors.Is(err, site.ErrSiteDecommissioned) {
 		t.Fatalf("expected ErrSiteDecommissioned, got %v", err)
@@ -88,7 +88,7 @@ func TestChangeTransferCapabilityRejectsADecommissionedSite(t *testing.T) {
 }
 
 func TestRehydrateSitePreservesCapabilityRevisionAndVersion(t *testing.T) {
-	s := site.RehydrateSite("WH3", "Three", shared.Active, site.NewTransferCapability(true, false), 7, 9)
+	s := site.RehydrateSite("WH3", "Three", site.RoleUnspecified, shared.Active, site.NewTransferCapability(true, false), 7, 9)
 	c := s.TransferCapability()
 	if !c.OriginEnabled() || c.DestinationEnabled() {
 		t.Fatalf("capability = %+v, want origin only", c)

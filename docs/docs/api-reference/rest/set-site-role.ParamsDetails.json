@@ -1,0 +1,1 @@
+{"parameters":[{"name":"siteCode","in":"path","required":true,"description":"The site's code — the first segment of every LocationCode inside it.","schema":{"type":"string","pattern":"^[A-Z0-9]+$"},"example":"WH1"}]}

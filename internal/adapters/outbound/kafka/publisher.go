@@ -47,11 +47,18 @@ type Writer interface {
 // transactional outbox (postgres.OutboxPublisher) stores and the outbox
 // relay later hands to a Sink, so the direct-publish and outbox paths can
 // never disagree about what a message looks like.
+//
+// Headers is the W3C trace context (traceparent, tracestate, baggage) the
+// outbox captured from the writing transaction's ctx and stored with the
+// row (ADR-0038); RelaySink sends it next to the content-type header. Encode
+// never sets it: it is empty on the direct publish path, which injects the
+// live ctx in Send instead.
 type Encoded struct {
 	Topic     string
 	EventType string
 	Key       []byte
 	Value     []byte
+	Headers   []kafkago.Header
 }
 
 // Encoder turns one domain event into its Kafka wire form for one topic,
@@ -83,6 +90,7 @@ type Publisher struct {
 // warehouse-infra PR #42's 1->8 partition scaleup).
 func NewPublisher(brokers []string, newId func() string) *Publisher {
 	return &Publisher{
+		//kafka:fixed-topic-writer Publisher.Send is the only writer of p.Writer and builds Message{Key, Value, Headers} with no Topic (enc.Topic deliberately unused); the package's Topic-setting Message (RelaySink.Send) goes through RelaySink.Writer, which NewRelaySink builds with no Topic
 		Writer: &kafkago.Writer{
 			BatchTimeout:           syncWriterBatchTimeout,
 			RequiredAcks:           syncWriterRequiredAcks,
@@ -218,6 +226,8 @@ func aggregateKey(event shared.DomainEvent) string {
 	case shared.SiteRegistered:
 		return e.SiteCode
 	case shared.SiteCapabilityChanged:
+		return e.SiteCode
+	case shared.SiteRoleChanged:
 		return e.SiteCode
 	case shared.ZoneRegistered:
 		return e.ZoneID

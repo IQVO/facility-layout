@@ -58,7 +58,7 @@ func newServer(t *testing.T) string {
 		return c
 	}
 
-	if _, err := registerSite.Execute(ctx, "WH1", "Fulfilment Centre One"); err != nil {
+	if _, err := registerSite.Execute(ctx, "WH1", "Fulfilment Centre One", site.RoleUnspecified); err != nil {
 		t.Fatalf("seed site: %v", err)
 	}
 	changeCapability := &usecases.ChangeSiteTransferCapability{Sites: sites, Events: publisher, Clock: clock}
@@ -187,6 +187,10 @@ func TestServer_ListSitesOverTheWire(t *testing.T) {
 	wh1, _ := sites[0].(map[string]any)
 	if wh1["transferOriginEnabled"] != true || wh1["transferDestinationEnabled"] != false || wh1["capabilityRevision"] != float64(1) {
 		t.Fatalf("list_sites must carry the transfer capability, got %+v", wh1)
+	}
+	// ADR-0037: list_sites carries each site's role in the network.
+	if wh1["siteRole"] != "UNSPECIFIED" {
+		t.Fatalf("list_sites must carry the site role, got %+v", wh1)
 	}
 }
 

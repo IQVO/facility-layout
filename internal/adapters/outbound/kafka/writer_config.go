@@ -42,6 +42,7 @@ const syncWriterRequiredAcks = kafkago.RequireAll
 // (per-key order on the .dlq topic, ADR-0021). dlqTopic is the full topic
 // name ("<source>.dlq").
 func NewDeadLetterWriter(brokers []string, dlqTopic string) *kafkago.Writer {
+	//kafka:fixed-topic-writer only cmd/facility-projector uses it, injecting it via inboundkafka.WithDLQWriter as AnalyticsConsumer.dlqWriter, and AnalyticsConsumer.dlqPublish writes it Message{Key, Value, Headers} with no Topic; this package's RelaySink never receives it
 	return &kafkago.Writer{
 		Addr:                   kafkago.TCP(brokers...),
 		Topic:                  dlqTopic,

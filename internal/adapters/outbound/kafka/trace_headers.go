@@ -49,6 +49,15 @@ func (c headerCarrier) Keys() []string {
 	return keys
 }
 
+// TraceHeaders returns the W3C trace context of ctx as Kafka headers
+// (whatever the process-wide propagator injects: traceparent, tracestate,
+// baggage), or none when no trace is active. The transactional outbox
+// stores this with each row at write time (ADR-0038) so the relay, which
+// runs later and outside the request, can send the request's context.
+func TraceHeaders(ctx context.Context) []kafka.Header {
+	return injectTraceContext(ctx, nil)
+}
+
 // injectTraceContext returns headers plus the W3C trace context of ctx
 // (traceparent, tracestate, baggage — whatever the process-wide
 // propagator carries), closing ADR-0009's follow-up "W3C trace context

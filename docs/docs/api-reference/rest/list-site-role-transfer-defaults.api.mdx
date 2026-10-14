@@ -1,0 +1,60 @@
+---
+id: list-site-role-transfer-defaults
+title: "The default transfer capability of every site role"
+description: "Read-only table (ADR-0037): for every assignable site role, whether a site of that role should be an inter-site transfer origin and/or destination. It is the ONE source of truth the warehouse-infra seed and operators read instead of hard-coding it. It is a default only: nothing applies it automatically, a role change never flips capability, and capability is set with `PUT /sites/{siteCode}/transfer-capability` (ADR-0035). `UNSPECIFIED` has no row: an unclassified site's capability is left as it is. Rows are in a stable display order."
+sidebar_label: "The default transfer capability of every site role"
+hide_title: true
+hide_table_of_contents: true
+api: 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
+sidebar_class_name: "get api-method"
+info_path: docs/api-reference/rest/facility-layout-api
+custom_edit_url: null
+---
+
+import MethodEndpoint from "@theme/ApiExplorer/MethodEndpoint";
+import ParamsDetails from "@theme/ParamsDetails";
+import RequestSchema from "@theme/RequestSchema";
+import StatusCodes from "@theme/StatusCodes";
+import OperationTabs from "@theme/OperationTabs";
+import TabItem from "@theme/TabItem";
+import Heading from "@theme/Heading";
+import Translate from "@docusaurus/Translate";
+
+<Heading
+  as={"h1"}
+  className={"openapi__heading"}
+  children={"The default transfer capability of every site role"}
+>
+</Heading>
+
+<MethodEndpoint
+  method={"get"}
+  path={"/site-roles/transfer-defaults"}
+  context={"endpoint"}
+>
+  
+</MethodEndpoint>
+
+
+
+Read-only table (ADR-0037): for every assignable site role, whether a site of that role should be an inter-site transfer origin and/or destination. It is the ONE source of truth the warehouse-infra seed and operators read instead of hard-coding it. It is a default only: nothing applies it automatically, a role change never flips capability, and capability is set with `PUT /sites/{siteCode}/transfer-capability` (ADR-0035). `UNSPECIFIED` has no row: an unclassified site's capability is left as it is. Rows are in a stable display order.
+
+
+<ParamsDetails>
+  
+</ParamsDetails>
+
+<RequestSchema
+  {...require("./list-site-role-transfer-defaults.RequestSchema.json")}
+>
+  
+</RequestSchema>
+
+<StatusCodes
+  {...require("./list-site-role-transfer-defaults.StatusCodes.json")}
+>
+  
+</StatusCodes>
+
+
+      

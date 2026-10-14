@@ -32,6 +32,14 @@ type siteRegisteredData struct {
 	wireEnvelope
 	SiteCode string `json:"siteCode"`
 	SiteName string `json:"siteName"`
+	SiteRole string `json:"siteRole"`
+}
+
+type siteRoleChangedData struct {
+	wireEnvelope
+	SiteCode         string `json:"siteCode"`
+	SiteRole         string `json:"siteRole"`
+	PreviousSiteRole string `json:"previousSiteRole"`
 }
 
 type siteCapabilityChangedData struct {
@@ -148,6 +156,21 @@ type crossAisleRegisteredData struct {
 	AtBay     string `json:"atBay"`
 }
 
+// siteWireData maps the Site aggregate's events (registration, role and
+// transfer capability) to their wire DTOs; ok is false for any other event.
+func siteWireData(env wireEnvelope, event shared.DomainEvent) (any, bool) {
+	switch e := event.(type) {
+	case shared.SiteRegistered:
+		return siteRegisteredData{env, e.SiteCode, e.SiteName, e.SiteRole}, true
+	case shared.SiteRoleChanged:
+		return siteRoleChangedData{env, e.SiteCode, e.SiteRole, e.PreviousSiteRole}, true
+	case shared.SiteCapabilityChanged:
+		return siteCapabilityChangedData{env, e.SiteCode, e.TransferOriginEnabled, e.TransferDestinationEnabled, e.CapabilityRevision}, true
+	default:
+		return nil, false
+	}
+}
+
 // WireData maps a domain event to its JSON wire DTO: the value marshalled
 // as the CloudEvent `data` (and as the log publisher's payload). An event
 // type with no DTO is an error rather than a silent fallback to reflection
@@ -155,11 +178,10 @@ type crossAisleRegisteredData struct {
 // shape fails loudly.
 func WireData(event shared.DomainEvent) (any, error) {
 	env := envelopeOf(event)
+	if data, ok := siteWireData(env, event); ok {
+		return data, nil
+	}
 	switch e := event.(type) {
-	case shared.SiteRegistered:
-		return siteRegisteredData{env, e.SiteCode, e.SiteName}, nil
-	case shared.SiteCapabilityChanged:
-		return siteCapabilityChangedData{env, e.SiteCode, e.TransferOriginEnabled, e.TransferDestinationEnabled, e.CapabilityRevision}, nil
 	case shared.ZoneRegistered:
 		return zoneRegisteredData{env, e.ZoneID, e.SiteCode, e.AreaCode, e.ZoneCode, string(e.TemperatureClass), e.Hazmat}, nil
 	case shared.AisleRegistered:

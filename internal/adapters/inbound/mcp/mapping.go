@@ -29,13 +29,17 @@ import (
 // package: they are mapped into the compact, bounded DTOs below, sized for an
 // agent to reason over rather than for completeness.
 
-// siteRef is the compact identity of a Site: its code and human name, plus
+// siteRef is the compact identity of a Site: its code, human name and role
+// in the fulfilment network (ADR-0037), plus
 // its transfer capability and the revision of the last published
 // SiteCapabilityChanged (ADR-0035; revision 0 = never set, capable of
 // nothing). It is the entry in list_sites and the header of a site layout.
 type siteRef struct {
-	Code                       string `json:"code"`
-	Name                       string `json:"name"`
+	Code string `json:"code"`
+	Name string `json:"name"`
+	// SiteRole is the site's role in the fulfilment network (ADR-0037),
+	// UNSPECIFIED when nobody classified it.
+	SiteRole                   string `json:"siteRole"`
 	TransferOriginEnabled      bool   `json:"transferOriginEnabled"`
 	TransferDestinationEnabled bool   `json:"transferDestinationEnabled"`
 	CapabilityRevision         int64  `json:"capabilityRevision"`
@@ -170,6 +174,7 @@ func toSiteRef(s *site.Site) siteRef {
 	return siteRef{
 		Code:                       s.Code(),
 		Name:                       s.Name(),
+		SiteRole:                   string(s.Role()),
 		TransferOriginEnabled:      c.OriginEnabled(),
 		TransferDestinationEnabled: c.DestinationEnabled(),
 		CapabilityRevision:         s.CapabilityRevision(),
