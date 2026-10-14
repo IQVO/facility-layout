@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/claudioed/facility-layout/internal/domain/site"
 	"log/slog"
 	"testing"
 	"time"
@@ -152,7 +153,7 @@ func TestOutboxTrace_TraceparentCrossesTheOutboxToKafka(t *testing.T) {
 	}
 
 	reqCtx, reqSpan := tracer.Start(ctx, "POST /sites", trace.WithSpanKind(trace.SpanKindServer))
-	if _, err := register.Execute(reqCtx, "WH1", "Fulfilment Centre One"); err != nil {
+	if _, err := register.Execute(reqCtx, "WH1", "Fulfilment Centre One", site.RoleUnspecified); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	reqSpan.End()
@@ -240,7 +241,7 @@ func TestOutboxTrace_NoActiveSpanStoresNoHeaders(t *testing.T) {
 		Clock:      fixedClock{t: time.Now().UTC()},
 		UnitOfWork: postgres.NewUnitOfWork(pool),
 	}
-	if _, err := register.Execute(ctx, "WH2", "Two"); err != nil {
+	if _, err := register.Execute(ctx, "WH2", "Two", site.RoleUnspecified); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	var isNull bool
