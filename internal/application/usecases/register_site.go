@@ -22,8 +22,9 @@ type RegisterSite struct {
 	UnitOfWork ports.UnitOfWork
 }
 
-// Execute registers the site and publishes SiteRegistered.
-func (uc *RegisterSite) Execute(ctx context.Context, code, name string) (*site.Site, error) {
+// Execute registers the site with its role (ADR-0037; UNSPECIFIED when the
+// caller states none) and publishes SiteRegistered carrying that role.
+func (uc *RegisterSite) Execute(ctx context.Context, code, name string, role site.Role) (*site.Site, error) {
 	existing, err := uc.Sites.FindByCode(ctx, code)
 	if err != nil {
 		return nil, err
@@ -32,7 +33,7 @@ func (uc *RegisterSite) Execute(ctx context.Context, code, name string) (*site.S
 		return nil, ErrDuplicateSite
 	}
 
-	s, err := site.NewSite(code, name)
+	s, err := site.NewSiteWithRole(code, name, role)
 	if err != nil {
 		return nil, err
 	}
@@ -40,7 +41,7 @@ func (uc *RegisterSite) Execute(ctx context.Context, code, name string) (*site.S
 		if err := uc.Sites.Save(ctx, s); err != nil {
 			return err
 		}
-		return uc.Events.Publish(ctx, shared.NewSiteRegistered(uc.Clock.Now(), s.Code(), s.Name()))
+		return uc.Events.Publish(ctx, shared.NewSiteRegistered(uc.Clock.Now(), s.Code(), s.Name(), string(s.Role())))
 	})
 	if err != nil {
 		return nil, err

@@ -15,7 +15,34 @@ import (
 )
 
 func toSiteResponse(s *site.Site) siteResponse {
-	return siteResponse{SiteCode: s.Code(), Name: s.Name(), Status: string(s.Status())}
+	return siteResponse{SiteCode: s.Code(), Name: s.Name(), Status: string(s.Status()), SiteRole: string(s.Role())}
+}
+
+// fromRegisterSiteRole maps the optional registration role (ADR-0037): an
+// omitted role is UNSPECIFIED, anything else must be a known role.
+func fromRegisterSiteRole(raw string) (site.Role, error) {
+	if raw == "" {
+		return site.RoleUnspecified, nil
+	}
+	return site.ParseRole(raw)
+}
+
+// fromSetSiteRoleRequest maps the PUT /sites/{siteCode}/role body: the role
+// is required and exact; the domain then rejects UNSPECIFIED.
+func fromSetSiteRoleRequest(req setSiteRoleRequest) (site.Role, error) {
+	return site.ParseRole(req.SiteRole)
+}
+
+func toSiteRoleTransferDefaultsResponse(rows []site.RoleTransferDefault) []siteRoleTransferDefaultResponse {
+	out := make([]siteRoleTransferDefaultResponse, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, siteRoleTransferDefaultResponse{
+			SiteRole:                   string(row.Role),
+			TransferOriginEnabled:      row.Capability.OriginEnabled(),
+			TransferDestinationEnabled: row.Capability.DestinationEnabled(),
+		})
+	}
+	return out
 }
 
 func toTransferCapabilityResponse(s *site.Site) transferCapabilityResponse {

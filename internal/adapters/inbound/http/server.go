@@ -52,6 +52,11 @@ type Server struct {
 	// /sites/{siteCode}/transfer-capability (ADR-0035); the GET reads the
 	// same aggregate through GetSite.
 	ChangeSiteTransferCapability *usecases.ChangeSiteTransferCapability
+	// ChangeSiteRole backs PUT /sites/{siteCode}/role (ADR-0037).
+	ChangeSiteRole *usecases.ChangeSiteRole
+	// ListSiteRoleTransferDefaults backs GET /site-roles/transfer-defaults
+	// (ADR-0037).
+	ListSiteRoleTransferDefaults *usecases.ListSiteRoleTransferDefaults
 	RegisterZone                 *usecases.RegisterZone
 	GetZone                      *usecases.GetZone
 	ListZones                    *usecases.ListZones
@@ -179,6 +184,7 @@ func NewRouter(s *Server, logger *slog.Logger, opts ...RouterOption) http.Handle
 		// Idempotency-Key middleware, like the geometry PUTs.
 		r.Get("/{siteCode}/transfer-capability", s.handleGetSiteTransferCapability)
 		r.Put("/{siteCode}/transfer-capability", s.handleChangeSiteTransferCapability)
+		r.Put("/{siteCode}/role", s.handleChangeSiteRole) // ADR-0037: a repeat is a no-op, no Idempotency-Key
 		idempotent(r).Post("/{siteCode}/zones", s.handleRegisterZone)
 		r.Get("/{siteCode}/zones", s.handleListZones)
 		idempotent(r).Post("/{siteCode}/structures", s.handleRegisterFixedStructure)
@@ -198,6 +204,7 @@ func NewRouter(s *Server, logger *slog.Logger, opts ...RouterOption) http.Handle
 	})
 
 	r.Get("/distance", s.handleEstimateTravelDistance)
+	r.Get("/site-roles/transfer-defaults", s.handleListSiteRoleTransferDefaults)
 
 	r.Route("/location-types", func(r chi.Router) {
 		idempotent(r).Post("/", s.handleRegisterLocationType)
@@ -240,7 +247,12 @@ func (s *Server) handleRegisterSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	registered, err := s.RegisterSite.Execute(r.Context(), req.SiteCode, req.Name)
+	role, err := fromRegisterSiteRole(req.SiteRole)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	registered, err := s.RegisterSite.Execute(r.Context(), req.SiteCode, req.Name, role)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -303,6 +315,36 @@ func (s *Server) handleChangeSiteTransferCapability(w http.ResponseWriter, r *ht
 		return
 	}
 	writeJSON(w, http.StatusOK, toTransferCapabilityResponse(updated))
+}
+
+// handleChangeSiteRole sets a site's role in the fulfilment network
+// (ADR-0037). 200 with the site; a repeat of the current role is a 200
+// no-op. UNSPECIFIED, an unknown or a missing role is 422
+// invalid-site-role; a concurrent change of the same site loses with 409
+// concurrent-modification. The transfer capability is never touched.
+func (s *Server) handleChangeSiteRole(w http.ResponseWriter, r *http.Request) {
+	var req setSiteRoleRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	role, err := fromSetSiteRoleRequest(req)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	updated, err := s.ChangeSiteRole.Execute(r.Context(), chi.URLParam(r, "siteCode"), role)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toSiteResponse(updated))
+}
+
+// handleListSiteRoleTransferDefaults returns the role -> default transfer
+// capability table (ADR-0037): the one source of truth the warehouse-infra
+// seed and operators read instead of hard-coding it.
+func (s *Server) handleListSiteRoleTransferDefaults(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, toSiteRoleTransferDefaultsResponse(s.ListSiteRoleTransferDefaults.Execute(r.Context())))
 }
 
 // handleListLocationsByRole answers "where are this site's dock doors" (or

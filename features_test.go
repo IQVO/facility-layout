@@ -89,18 +89,20 @@ func (w *world) start() {
 		ChangeSiteTransferCapability: &usecases.ChangeSiteTransferCapability{
 			Sites: sites, Events: publisher, Clock: clock,
 		},
-		RegisterZone:         &usecases.RegisterZone{Sites: sites, Zones: zones, Events: publisher, Clock: clock},
-		GetZone:              &usecases.GetZone{Zones: zones},
-		ListZones:            &usecases.ListZones{Sites: sites, Zones: zones},
-		RegisterAisle:        &usecases.RegisterAisle{Zones: zones, Aisles: aisles, Events: publisher, Clock: clock},
-		GetAisle:             &usecases.GetAisle{Aisles: aisles},
-		ListAisles:           &usecases.ListAisles{Zones: zones, Aisles: aisles},
-		RegisterLocationType: &usecases.RegisterLocationType{LocationTypes: locationTypes, Events: publisher, Clock: clock},
-		GetLocationType:      &usecases.GetLocationType{LocationTypes: locationTypes},
-		ListLocationTypes:    &usecases.ListLocationTypes{LocationTypes: locationTypes},
-		DefinePlacementRule:  &usecases.DefinePlacementRule{LocationTypes: locationTypes, Rules: rules, Events: publisher, Clock: clock},
-		GetPlacementRule:     &usecases.GetPlacementRule{Rules: rules},
-		ListPlacementRules:   &usecases.ListPlacementRules{Rules: rules},
+		ChangeSiteRole:               &usecases.ChangeSiteRole{Sites: sites, Events: publisher, Clock: clock},
+		ListSiteRoleTransferDefaults: &usecases.ListSiteRoleTransferDefaults{},
+		RegisterZone:                 &usecases.RegisterZone{Sites: sites, Zones: zones, Events: publisher, Clock: clock},
+		GetZone:                      &usecases.GetZone{Zones: zones},
+		ListZones:                    &usecases.ListZones{Sites: sites, Zones: zones},
+		RegisterAisle:                &usecases.RegisterAisle{Zones: zones, Aisles: aisles, Events: publisher, Clock: clock},
+		GetAisle:                     &usecases.GetAisle{Aisles: aisles},
+		ListAisles:                   &usecases.ListAisles{Zones: zones, Aisles: aisles},
+		RegisterLocationType:         &usecases.RegisterLocationType{LocationTypes: locationTypes, Events: publisher, Clock: clock},
+		GetLocationType:              &usecases.GetLocationType{LocationTypes: locationTypes},
+		ListLocationTypes:            &usecases.ListLocationTypes{LocationTypes: locationTypes},
+		DefinePlacementRule:          &usecases.DefinePlacementRule{LocationTypes: locationTypes, Rules: rules, Events: publisher, Clock: clock},
+		GetPlacementRule:             &usecases.GetPlacementRule{Rules: rules},
+		ListPlacementRules:           &usecases.ListPlacementRules{Rules: rules},
 		RegisterLocationSlot: &usecases.RegisterLocationSlot{
 			Sites: sites, Zones: zones, Aisles: aisles, Slots: slots,
 			LocationTypes: locationTypes, Rules: rules, Events: publisher, Clock: clock,
@@ -965,5 +967,6 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^the listed placement rules are "([^"]*)"$`, w.theListedPlacementRulesAre)
 	w.registerWave2Steps(sc)
 	w.registerCapabilitySteps(sc)
+	w.registerSiteRoleSteps(sc)
 	sc.Step(`^the classification reports hazmat (true|false) and temperature class "([^"]*)"$`, w.theClassificationReports)
 }

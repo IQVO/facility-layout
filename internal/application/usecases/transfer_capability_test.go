@@ -105,7 +105,7 @@ func TestChangeSiteTransferCapabilityRejectsUnknownAndRetiredSites(t *testing.T)
 		t.Fatalf("unknown site: expected ErrSiteNotFound, got %v", err)
 	}
 
-	retired := site.RehydrateSite("WH2", "Two", shared.Decommissioned, site.TransferCapability{}, 0, 1)
+	retired := site.RehydrateSite("WH2", "Two", site.RoleUnspecified, shared.Decommissioned, site.TransferCapability{}, 0, 1)
 	if err := f.sites.Save(ctx, retired); err != nil {
 		t.Fatalf("seed: %v", err)
 	}

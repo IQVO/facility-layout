@@ -53,6 +53,7 @@ other fleet context uses `wes`.
 ```
 com.warehouse.wms.facility-layout.site.SiteRegistered
 com.warehouse.wms.facility-layout.site.SiteCapabilityChanged
+com.warehouse.wms.facility-layout.site.SiteRoleChanged
 com.warehouse.wms.facility-layout.zone.ZoneRegistered
 com.warehouse.wms.facility-layout.aisle.AisleRegistered
 com.warehouse.wms.facility-layout.locationtype.LocationTypeRegistered
@@ -97,7 +98,7 @@ Every event embeds the same base, serialized as:
 `time.Now()` inside the domain — which is what makes event timestamps
 deterministic in tests.
 
-## The thirteen events
+## The fourteen events
 
 ### SiteRegistered
 
@@ -107,6 +108,21 @@ A physical facility was added to the warehouse map.
 |---|---|
 | `siteCode` | string |
 | `siteName` | string |
+| `siteRole` | string — the site's role in the fulfilment network, `UNSPECIFIED` when none was stated (additive, [ADR 0037](../adr/0037-site-role-and-siterolechanged-cloudevents.md)) |
+
+### SiteRoleChanged
+
+An operator changed a site's role in the fulfilment network
+([ADR 0037](../adr/0037-site-role-and-siterolechanged-cloudevents.md)), raised by `PUT /sites/{siteCode}/role`
+(use case `ChangeSiteRole`) once per real change. It never implies a
+transfer-capability change. The one-time backfill of migration `0009`
+publishes none.
+
+| Field | Type |
+|---|---|
+| `siteCode` | string |
+| `siteRole` | string — the new role |
+| `previousSiteRole` | string — the replaced role (`UNSPECIFIED` the first time) |
 
 ### SiteCapabilityChanged
 
@@ -294,6 +310,7 @@ site would need an additive `siteCode` (a contract change) for no benefit
 |---|---|---|---|---|
 | `com.warehouse.wms.facility-layout.site.SiteRegistered` | `siteCode` | `siteCode` | `RegisterSite`, `ImportFacilityLayout` | own projector |
 | `com.warehouse.wms.facility-layout.site.SiteCapabilityChanged` | `site_code` | `site_code` | `ChangeSiteTransferCapability` | `network-inventory-planning` (`site_capability` read model); own projector ignores it |
+| `com.warehouse.wms.facility-layout.site.SiteRoleChanged` | `siteCode` | `siteCode` | `ChangeSiteRole` | none; own projector ignores it |
 | `com.warehouse.wms.facility-layout.zone.ZoneRegistered` | `zoneId` | `zoneId` | `RegisterZone`, `ImportFacilityLayout` | `inventory-storage`, own projector |
 | `com.warehouse.wms.facility-layout.aisle.AisleRegistered` | `aisleId` | `aisleId` | `RegisterAisle`, `ImportFacilityLayout` | own projector |
 | `com.warehouse.wms.facility-layout.locationtype.LocationTypeRegistered` | `locationType` | `locationType` | `RegisterLocationType` | own projector |
@@ -316,6 +333,7 @@ Source: `internal/domain/shared/events.go`,
 |---|---|
 | `RegisterSite` | `SiteRegistered` |
 | `ChangeSiteTransferCapability` | `SiteCapabilityChanged` (only when the snapshot changed or was never published) |
+| `ChangeSiteRole` | `SiteRoleChanged` (only when the role changed) |
 | `RegisterZone` | `ZoneRegistered` |
 | `RegisterAisle` | `AisleRegistered` |
 | `RegisterLocationType` | `LocationTypeRegistered` |

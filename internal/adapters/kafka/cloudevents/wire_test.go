@@ -28,7 +28,7 @@ func marshalWire(t *testing.T, e shared.DomainEvent) (map[string]any, []byte) {
 
 func TestWireData_EnvelopeCarriesEventIdentity(t *testing.T) {
 	at := time.Date(2026, 8, 22, 9, 0, 0, 0, time.UTC)
-	e := shared.NewSiteRegistered(at, "WH1", "Fulfilment Centre One")
+	e := shared.NewSiteRegistered(at, "WH1", "Fulfilment Centre One", "UNSPECIFIED")
 	decoded, payload := marshalWire(t, e)
 	if decoded["eventName"] != e.EventName() || decoded["eventType"] != e.EventType() || decoded["occurredAt"] != "2026-08-22T09:00:00Z" {
 		t.Fatalf("wire envelope lost the event identity: %s", payload)

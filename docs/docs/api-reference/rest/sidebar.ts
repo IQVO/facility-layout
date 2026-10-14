@@ -34,6 +34,18 @@ const sidebar: SidebarsConfig = {
         },
         {
           type: "doc",
+          id: "api-reference/rest/set-site-role",
+          label: "Set a site's role in the fulfilment network",
+          className: "api-method put",
+        },
+        {
+          type: "doc",
+          id: "api-reference/rest/list-site-role-transfer-defaults",
+          label: "The default transfer capability of every site role",
+          className: "api-method get",
+        },
+        {
+          type: "doc",
           id: "api-reference/rest/get-site-transfer-capability",
           label: "Get a site's transfer capability",
           className: "api-method get",
