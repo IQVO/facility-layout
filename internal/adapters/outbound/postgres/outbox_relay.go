@@ -165,7 +165,7 @@ func (r *OutboxRelay) claimBatch(ctx context.Context, tx pgx.Tx) ([]pendingRow, 
 		args = append(args, r.maxAttempts)
 	}
 	rows, err := tx.Query(ctx, `
-		SELECT id, topic, event_type, key, value
+		SELECT id, topic, event_type, key, value, headers
 		FROM outbox_events
 		WHERE published_at IS NULL `+attemptsFilter+`
 		ORDER BY id
@@ -179,8 +179,12 @@ func (r *OutboxRelay) claimBatch(ctx context.Context, tx pgx.Tx) ([]pendingRow, 
 	var batch []pendingRow
 	for rows.Next() {
 		var p pendingRow
-		if err := rows.Scan(&p.id, &p.enc.Topic, &p.enc.EventType, &p.enc.Key, &p.enc.Value); err != nil {
+		var headers []byte
+		if err := rows.Scan(&p.id, &p.enc.Topic, &p.enc.EventType, &p.enc.Key, &p.enc.Value, &headers); err != nil {
 			return nil, fmt.Errorf("postgres: scan outbox row: %w", err)
+		}
+		if p.enc.Headers, err = unmarshalTraceHeaders(headers); err != nil {
+			return nil, fmt.Errorf("postgres: decode outbox row %d trace headers: %w", p.id, err)
 		}
 		batch = append(batch, p)
 	}

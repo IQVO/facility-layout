@@ -99,7 +99,7 @@ HTTP. MCP drains HTTP with a 10s budget.
 
 | Schema | Files | Run by | DSN |
 |---|---|---|---|
-| OLTP | `migrations/0001_init` … `0009_site_role` (tables `sites`, `zones`, `aisles`, `location_types`, `placement_rules`, `location_slots`, `fixed_structures`, `cross_aisles`, `outbox_events`, `idempotency_keys`; `0005` drops the legacy `events` table; `0008` adds the additive `sites` columns `transfer_origin_enabled`, `transfer_destination_enabled`, `capability_revision` and `version`, ADR-0035; `0009` adds `sites.site_role` (default `UNSPECIFIED`, CHECK of the 16 values) and runs the ONE-TIME backfill that maps the seeded names `<CODE> - <Role words> (<city>)` to a role, ADR-0037) | **both** `facility` and `mcp`, at every boot, before the pool opens | `MIGRATIONS_DATABASE_URL`, falling back to `DATABASE_URL` |
+| OLTP | `migrations/0001_init` … `0010_outbox_trace_headers` (tables `sites`, `zones`, `aisles`, `location_types`, `placement_rules`, `location_slots`, `fixed_structures`, `cross_aisles`, `outbox_events`, `idempotency_keys`; `0005` drops the legacy `events` table; `0008` adds the additive `sites` columns `transfer_origin_enabled`, `transfer_destination_enabled`, `capability_revision` and `version`, ADR-0035; `0009` adds `sites.site_role` (default `UNSPECIFIED`, CHECK of the 16 values) and runs the ONE-TIME backfill that maps the seeded names `<CODE> - <Role words> (<city>)` to a role, ADR-0037; `0010` adds the nullable `outbox_events.headers` holding the writing transaction's W3C trace context, ADR-0038) | **both** `facility` and `mcp`, at every boot, before the pool opens | `MIGRATIONS_DATABASE_URL`, falling back to `DATABASE_URL` |
 | Analytical | `migrations/analytics/0001_report` (tables `analytics_processed_events`, `analytics_consumed_events`, `catalog_growth_rollup`) | `facility-projector` only, at every boot | `ANALYTICS_DATABASE_URL` |
 
 Migrations use golang-migrate (`internal/adapters/outbound/postgres/migrate.go`).
@@ -120,7 +120,8 @@ There is one platform broker, reached in-cluster through
 `kafka.brokers` (chart default `kafka:9092`) or locally at `localhost:9092`.
 Every message is a CloudEvents 1.0 event in **structured** content mode
 (ADR-0024, `internal/adapters/kafka/cloudevents`), with W3C trace context in
-the message headers.
+the message headers. On the outbox path that context is the one stored with
+the row when it was written (`outbox_events.headers`, ADR-0038).
 
 | Topic | Direction | Producer / consumer | Group | Key |
 |---|---|---|---|---|

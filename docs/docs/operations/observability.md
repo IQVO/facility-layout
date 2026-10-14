@@ -63,13 +63,20 @@ alerts below).
 | `query <normalized SQL>` (also `prepare`, `batch query`, connection acquire) | otelpgx (`WithQuerySpanNamePrefix`) | Child spans of the request or use case. Statements are normalized, without literal values. |
 | `mcp.tool <tool-name>` | `internal/adapters/inbound/mcp/tools.go` | One span per tool call with attribute `mcp.tool.name`. Status is `Error` with the slug-prefixed message (ADR-0033). |
 
-Kafka trace propagation is weaker than the package comments suggest:
+Kafka trace propagation:
 
 - **Direct publishing** (no `DATABASE_URL`, `EVENT_PUBLISHER=kafka`) injects
   the request's `traceparent` into the message headers.
-- **Outbox mode** (production) stores no headers in `outbox_events`, and the
-  relay sends with its own background context. Relayed messages therefore
-  do not carry the originating request's trace.
+- **Outbox mode** (production) stores the writing transaction's W3C trace
+  context (`traceparent`, `tracestate`, `baggage`) in
+  `outbox_events.headers` (migration `0010`), and the relay sends it as Kafka
+  headers next to the CloudEvents `content-type`
+  ([ADR-0038](../adr/0038-outbox-trace-context.md)). A consumer that extracts
+  the headers parents its span on the originating request. The relay never
+  injects its own context. Rows written with no active span, or before
+  migration `0010`, have `headers` NULL and relay with `content-type` only.
+  Check one row with
+  `SELECT id, event_type, headers FROM outbox_events ORDER BY id DESC LIMIT 5;`.
 - The analytics consumer never extracts trace context and starts no spans,
   so projector work is not traced.
 

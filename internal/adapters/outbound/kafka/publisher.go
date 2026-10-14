@@ -47,11 +47,18 @@ type Writer interface {
 // transactional outbox (postgres.OutboxPublisher) stores and the outbox
 // relay later hands to a Sink, so the direct-publish and outbox paths can
 // never disagree about what a message looks like.
+//
+// Headers is the W3C trace context (traceparent, tracestate, baggage) the
+// outbox captured from the writing transaction's ctx and stored with the
+// row (ADR-0038); RelaySink sends it next to the content-type header. Encode
+// never sets it: it is empty on the direct publish path, which injects the
+// live ctx in Send instead.
 type Encoded struct {
 	Topic     string
 	EventType string
 	Key       []byte
 	Value     []byte
+	Headers   []kafkago.Header
 }
 
 // Encoder turns one domain event into its Kafka wire form for one topic,

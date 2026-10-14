@@ -166,6 +166,7 @@ const sidebars: SidebarsConfig = {
         'adr/0035-site-transfer-capability-command',
         'adr/0036-outbox-relay-attempt-cap',
         'adr/0037-site-role-and-siterolechanged-cloudevents',
+        'adr/0038-outbox-trace-context',
       ],
     },
   ],
