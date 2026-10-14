@@ -90,6 +90,7 @@ type Publisher struct {
 // warehouse-infra PR #42's 1->8 partition scaleup).
 func NewPublisher(brokers []string, newId func() string) *Publisher {
 	return &Publisher{
+		//kafka:fixed-topic-writer Publisher.Send is the only writer of p.Writer and builds Message{Key, Value, Headers} with no Topic (enc.Topic deliberately unused); the package's Topic-setting Message (RelaySink.Send) goes through RelaySink.Writer, which NewRelaySink builds with no Topic
 		Writer: &kafkago.Writer{
 			BatchTimeout:           syncWriterBatchTimeout,
 			RequiredAcks:           syncWriterRequiredAcks,
