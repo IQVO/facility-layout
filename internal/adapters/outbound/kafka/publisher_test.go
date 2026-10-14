@@ -100,9 +100,12 @@ func goldenCases(t *testing.T) []goldenCase {
 		return `"eventName":"` + name + `","eventType":"` + p + entity + "." + name + `","occurredAt":"` + goldenTime + `"`
 	}
 	return []goldenCase{
-		{"SiteRegistered", shared.NewSiteRegistered(at, "WH1", "Main"),
+		{"SiteRegistered", shared.NewSiteRegistered(at, "WH1", "Main", "NON_SORTABLE_FC"),
 			p + "site.SiteRegistered", "WH1", "WH1",
-			`{` + base("site", "SiteRegistered") + `,"siteCode":"WH1","siteName":"Main"}`},
+			`{` + base("site", "SiteRegistered") + `,"siteCode":"WH1","siteName":"Main","siteRole":"NON_SORTABLE_FC"}`},
+		{"SiteRoleChanged", shared.NewSiteRoleChanged(at, "WH1", "XL_FC", "UNSPECIFIED"),
+			p + "site.SiteRoleChanged", "WH1", "WH1",
+			`{` + base("site", "SiteRoleChanged") + `,"siteCode":"WH1","siteRole":"XL_FC","previousSiteRole":"UNSPECIFIED"}`},
 		{"SiteCapabilityChanged", shared.NewSiteCapabilityChanged(at, "WH1", true, false, 42),
 			p + "site.SiteCapabilityChanged", "WH1", "WH1",
 			`{` + base("site", "SiteCapabilityChanged") + `,"site_code":"WH1","transfer_origin_enabled":true,"transfer_destination_enabled":false,"capability_revision":42}`},
@@ -287,7 +290,7 @@ func TestPublisher_CrossServiceContractTypes(t *testing.T) {
 // carried on the wire (minted once, stable across redelivery).
 func TestPublisher_EncodeUsesCallerID(t *testing.T) {
 	p := outboundkafka.NewPublisher(nil, func() string { return "must-not-be-used" })
-	enc, err := p.Encode(context.Background(), shared.NewSiteRegistered(time.Now(), "WH1", "Main"), "outbox-id")
+	enc, err := p.Encode(context.Background(), shared.NewSiteRegistered(time.Now(), "WH1", "Main", "UNSPECIFIED"), "outbox-id")
 	if err != nil {
 		t.Fatalf("Encode: %v", err)
 	}
@@ -307,7 +310,7 @@ func TestPublisher_PropagatesWriteError(t *testing.T) {
 	p := outboundkafka.NewPublisher(nil, func() string { return "evt" })
 	p.Writer = &fakeWriter{err: boom}
 
-	err := p.Publish(context.Background(), shared.NewSiteRegistered(time.Now(), "WH1", "Main"))
+	err := p.Publish(context.Background(), shared.NewSiteRegistered(time.Now(), "WH1", "Main", "UNSPECIFIED"))
 	if !errors.Is(err, boom) {
 		t.Fatalf("err = %v, want wrapped broker down", err)
 	}

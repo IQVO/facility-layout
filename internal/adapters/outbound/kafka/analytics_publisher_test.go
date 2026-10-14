@@ -32,7 +32,7 @@ func TestAnalyticsPublisher_GoldenCloudEventPerType(t *testing.T) {
 }
 
 func TestAnalyticsPublisher_EncodeTargetsAnalyticsTopic(t *testing.T) {
-	enc, err := (&outboundkafka.AnalyticsPublisher{}).Encode(context.Background(), shared.NewSiteRegistered(time.Now(), "WH1", "Main"), "id-1")
+	enc, err := (&outboundkafka.AnalyticsPublisher{}).Encode(context.Background(), shared.NewSiteRegistered(time.Now(), "WH1", "Main", "UNSPECIFIED"), "id-1")
 	if err != nil {
 		t.Fatalf("Encode: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestAnalyticsPublisher_PropagatesWriteError(t *testing.T) {
 	p := outboundkafka.NewAnalyticsPublisher(nil, func() string { return "evt" })
 	p.Writer = &fakeWriter{err: boom}
 
-	err := p.Publish(context.Background(), shared.NewSiteRegistered(time.Now(), "WH1", "Main"))
+	err := p.Publish(context.Background(), shared.NewSiteRegistered(time.Now(), "WH1", "Main", "UNSPECIFIED"))
 	if !errors.Is(err, boom) {
 		t.Fatalf("err = %v, want wrapped broker down", err)
 	}

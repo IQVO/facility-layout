@@ -18,7 +18,7 @@ func TestFanOut_MintsOneIDSharedAcrossTopics(t *testing.T) {
 	calls := 0
 	f := outboundkafka.FanOut{NewId: func() string { calls++; return "shared-id" }, Targets: []outboundkafka.EncodeSender{ip, ap}}
 
-	if err := f.Publish(context.Background(), shared.NewSiteRegistered(time.Now(), "WH1", "Main")); err != nil {
+	if err := f.Publish(context.Background(), shared.NewSiteRegistered(time.Now(), "WH1", "Main", "UNSPECIFIED")); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
 	if calls != 1 || len(iw.msgs) != 1 || len(aw.msgs) != 1 {
@@ -42,7 +42,7 @@ func TestFanOut_StopsAtFirstError(t *testing.T) {
 		&outboundkafka.Publisher{Writer: &fakeWriter{err: boom}},
 		&outboundkafka.AnalyticsPublisher{Writer: aw},
 	}}
-	if err := f.Publish(context.Background(), shared.NewSiteRegistered(time.Now(), "WH1", "Main")); !errors.Is(err, boom) {
+	if err := f.Publish(context.Background(), shared.NewSiteRegistered(time.Now(), "WH1", "Main", "UNSPECIFIED")); !errors.Is(err, boom) {
 		t.Fatalf("err = %v", err)
 	}
 	if len(aw.msgs) != 0 {

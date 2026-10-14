@@ -19,6 +19,7 @@ import (
 	"github.com/claudioed/facility-layout/internal/application/usecases"
 	"github.com/claudioed/facility-layout/internal/domain/placement"
 	"github.com/claudioed/facility-layout/internal/domain/shared"
+	"github.com/claudioed/facility-layout/internal/domain/site"
 )
 
 // evalHarness is a fully wired MCP server over in-memory repos plus the
@@ -92,7 +93,7 @@ func seedEvalLayout(t *testing.T) inboundmcp.Deps {
 		LocationTypes: locationTypes, Rules: rules, Events: publisher, Clock: clock,
 	}
 
-	_, err := registerSite.Execute(ctx, "WH1", "Fulfilment Centre One")
+	_, err := registerSite.Execute(ctx, "WH1", "Fulfilment Centre One", site.RoleUnspecified)
 	must(err)
 	_, err = registerType.Execute(ctx, placement.PalletRack, placement.Storage, mustCapacity(1200, 2.4))
 	must(err)

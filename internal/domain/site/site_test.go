@@ -62,7 +62,7 @@ func TestSiteDecommissionIsOneWay(t *testing.T) {
 }
 
 func TestRehydrateSitePreservesPersistedStatus(t *testing.T) {
-	s := site.RehydrateSite("WH2", "Fulfilment Centre Two", shared.Decommissioned, site.TransferCapability{}, 0, 1)
+	s := site.RehydrateSite("WH2", "Fulfilment Centre Two", site.RoleUnspecified, shared.Decommissioned, site.TransferCapability{}, 0, 1)
 	if s.Code() != "WH2" || s.Name() != "Fulfilment Centre Two" {
 		t.Fatalf("unexpected rehydrated site %q/%q", s.Code(), s.Name())
 	}

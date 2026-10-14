@@ -46,15 +46,39 @@ func newBase(entity, name string, occurredAt time.Time) base {
 }
 
 // SiteRegistered: a physical facility was added to the warehouse map.
+// SiteRole is additive (ADR-0037): the site's role in the fulfilment
+// network, UNSPECIFIED when the registration did not state one.
 type SiteRegistered struct {
 	base
 	SiteCode string
 	SiteName string
+	SiteRole string
 }
 
 // NewSiteRegistered builds a SiteRegistered event.
-func NewSiteRegistered(occurredAt time.Time, siteCode, siteName string) SiteRegistered {
-	return SiteRegistered{base: newBase("site", "SiteRegistered", occurredAt), SiteCode: siteCode, SiteName: siteName}
+func NewSiteRegistered(occurredAt time.Time, siteCode, siteName, siteRole string) SiteRegistered {
+	return SiteRegistered{base: newBase("site", "SiteRegistered", occurredAt), SiteCode: siteCode, SiteName: siteName, SiteRole: siteRole}
+}
+
+// SiteRoleChanged: an operator changed a site's role in the fulfilment
+// network (ADR-0037). It carries the new and the replaced role; it never
+// implies a transfer-capability change (that is SiteCapabilityChanged,
+// raised only by the explicit ADR-0035 command).
+type SiteRoleChanged struct {
+	base
+	SiteCode         string
+	SiteRole         string
+	PreviousSiteRole string
+}
+
+// NewSiteRoleChanged builds a SiteRoleChanged event.
+func NewSiteRoleChanged(occurredAt time.Time, siteCode, siteRole, previousSiteRole string) SiteRoleChanged {
+	return SiteRoleChanged{
+		base:             newBase("site", "SiteRoleChanged", occurredAt),
+		SiteCode:         siteCode,
+		SiteRole:         siteRole,
+		PreviousSiteRole: previousSiteRole,
+	}
 }
 
 // SiteCapabilityChanged: a site's transfer capability state changed. The

@@ -13,7 +13,7 @@ import (
 func TestRegisterSite(t *testing.T) {
 	t.Run("registers a site and publishes SiteRegistered", func(t *testing.T) {
 		h := newHarness(t)
-		s, err := h.registerSite.Execute(h.ctx(), "WH1", "Fulfilment Centre One")
+		s, err := h.registerSite.Execute(h.ctx(), "WH1", "Fulfilment Centre One", site.RoleUnspecified)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -26,13 +26,13 @@ func TestRegisterSite(t *testing.T) {
 	t.Run("rejects a duplicate site code", func(t *testing.T) {
 		h := newHarness(t)
 		h.mustRegisterSite("WH1", "Fulfilment Centre One")
-		_, err := h.registerSite.Execute(h.ctx(), "WH1", "A Different Name")
+		_, err := h.registerSite.Execute(h.ctx(), "WH1", "A Different Name", site.RoleUnspecified)
 		assertErrorIs(t, err, usecases.ErrDuplicateSite)
 	})
 
 	t.Run("rejects a malformed site code without publishing", func(t *testing.T) {
 		h := newHarness(t)
-		_, err := h.registerSite.Execute(h.ctx(), "wh1", "Fulfilment Centre One")
+		_, err := h.registerSite.Execute(h.ctx(), "wh1", "Fulfilment Centre One", site.RoleUnspecified)
 		assertErrorIs(t, err, site.ErrInvalidSiteCode)
 		h.assertNotPublished("SiteRegistered")
 	})

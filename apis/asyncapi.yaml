@@ -164,6 +164,7 @@ channels:
         oneOf:
           - $ref: '#/components/messages/siteRegistered'
           - $ref: '#/components/messages/siteCapabilityChanged'
+          - $ref: '#/components/messages/siteRoleChanged'
           - $ref: '#/components/messages/zoneRegistered'
           - $ref: '#/components/messages/aisleRegistered'
           - $ref: '#/components/messages/locationTypeRegistered'
@@ -294,6 +295,13 @@ components:
       enum: [OneWay, TwoWay]
       description: How an aisle may be traversed.
 
+    siteRole:
+      type: string
+      description: >
+        A site's role in the fulfilment network (ADR-0037). `UNSPECIFIED`
+        means not classified yet.
+      enum: [UNSPECIFIED, ROBOTICS_SORTABLE_FC, NON_SORTABLE_FC, TRADITIONAL_SORTABLE_FC, SUB_SAME_DAY_FC, FRESH_GROCERY_FC, XL_FC, SOFT_LINES_SORTABLE_FC, MICRO_FC, SIMULATED_FC, INBOUND_CROSS_DOCK, NATIONAL_INBOUND_CROSS_DOCK, RETURNS_CENTER, SORTATION_CENTER, DELIVERY_STATION, AIR_HUB_GATEWAY]
+
   messages:
     siteRegistered:
       name: SiteRegistered
@@ -303,7 +311,9 @@ components:
       summary: A physical facility/building was added to the warehouse map.
       description: >
         Raised by `RegisterSite`. Kafka key: `siteCode`. No consumer wired
-        today.
+        today. `siteRole` is additive (ADR-0037): the site's role in the
+        fulfilment network, `UNSPECIFIED` when the registration stated none
+        (a consumer decoding the older payload simply ignores it).
       payload:
         allOf:
           - $ref: '#/components/schemas/cloudEvent'
@@ -324,6 +334,46 @@ components:
                         description: Uppercase alphanumeric, unique. e.g. `WH1`.
                       siteName:
                         type: string
+                      siteRole:
+                        $ref: '#/components/schemas/siteRole'
+
+    siteRoleChanged:
+      name: SiteRoleChanged
+      contentType: application/cloudevents+json
+      title: Site role changed
+      tags: [{ name: site }]
+      summary: An operator changed a site's role in the fulfilment network.
+      description: >
+        Raised by `PUT /sites/{siteCode}/role` through the transactional
+        outbox, once per real change (repeating the current role publishes
+        nothing) (ADR-0037). Kafka key and CloudEvents subject: `siteCode`,
+        so the changes of one site stay ordered. Carries the new and the
+        replaced role. It never implies a transfer-capability change: that
+        is only ever `SiteCapabilityChanged` (ADR-0035). The one-time
+        backfill of migration 0009 publishes no SiteRoleChanged; read the
+        role of existing sites on `GET /sites`.
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/cloudEvent'
+          - type: object
+            properties:
+              type:
+                const: com.warehouse.wms.facility-layout.site.SiteRoleChanged
+              dataschema:
+                const: urn:warehouse:facility-layout:events:SiteRoleChanged:v1
+              data:
+                allOf:
+                  - $ref: '#/components/schemas/eventDataBase'
+                  - type: object
+                    required: [siteCode, siteRole, previousSiteRole]
+                    properties:
+                      siteCode:
+                        type: string
+                        description: Uppercase alphanumeric site identity; also the Kafka key and CloudEvents subject.
+                      siteRole:
+                        $ref: '#/components/schemas/siteRole'
+                      previousSiteRole:
+                        $ref: '#/components/schemas/siteRole'
 
     siteCapabilityChanged:
       name: SiteCapabilityChanged

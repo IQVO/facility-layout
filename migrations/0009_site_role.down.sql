@@ -1,0 +1,2 @@
+ALTER TABLE sites DROP CONSTRAINT IF EXISTS sites_site_role_known;
+ALTER TABLE sites DROP COLUMN IF EXISTS site_role;
