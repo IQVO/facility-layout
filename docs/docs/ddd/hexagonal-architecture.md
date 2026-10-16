@@ -64,7 +64,7 @@ cmd/facility-projector/       analytics projector: warehouse.facility.analytics 
 cmd/facility-reports/         analytics reader: serves /reports/catalog-growth
 internal/
   domain/                     pure business logic; imports nothing but stdlib and itself
-    shared/                   LocationCode, Capacity, geometry values, enums, the 12 events
+    shared/                   LocationCode, Capacity, geometry values, enums, the 14 events
     site/  zone/  aisle/      the structural aggregates (aisle/ also holds CrossAisle)
     placement/                LocationType, LocationRole, PlacementRule, RuleSet evaluation
     slot/                     LocationSlot — the coded leaf aggregate — and its functional attributes
