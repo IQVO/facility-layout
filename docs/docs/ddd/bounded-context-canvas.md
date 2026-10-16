@@ -285,6 +285,6 @@ Top terms:
 - There is no use case that sets `UnderMaintenance`, decommissions a Site,
   Zone, Aisle or CrossAisle, or deletes a placement rule — the methods exist
   on the aggregates but nothing exposes them.
-- Nine of the twelve event types have no external consumer. Is the
+- Ten of the fourteen event types have no external consumer. Is the
   geometry Published Language worth its contract cost before a WES consumer
   exists?

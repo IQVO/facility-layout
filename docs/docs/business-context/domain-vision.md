@@ -71,7 +71,7 @@ extracted into one service, and everyone else references it.
 This service has **no** dependency on any other warehouse-systems service,
 and never will. It does not read `inventory-storage`'s stock, it does not
 know what a Task is, and it does not call anybody. Everything it publishes is
-its **Published Language**: twelve past-tense
+its **Published Language**: fourteen past-tense
 [domain events](../ddd/domain-events.md) plus a stable REST surface.
 
 That asymmetry is the point. A context that everyone depends on must be
