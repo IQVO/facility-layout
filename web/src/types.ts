@@ -8,7 +8,49 @@ export interface Site {
   siteCode: string;
   name: string;
   status: string;
+  /** The site's role in the fulfilment network (ADR-0037); wire value is
+   *  the UPPER_SNAKE SiteRole enum, "UNSPECIFIED" until classified. */
+  siteRole: string;
 }
+
+/** SiteRole (ADR-0037) -- what kind of network node the building is.
+ *  UNSPECIFIED is the registration default and can never be assigned. */
+export type SiteRole =
+  | "UNSPECIFIED"
+  | "ROBOTICS_SORTABLE_FC"
+  | "NON_SORTABLE_FC"
+  | "TRADITIONAL_SORTABLE_FC"
+  | "SUB_SAME_DAY_FC"
+  | "FRESH_GROCERY_FC"
+  | "XL_FC"
+  | "SOFT_LINES_SORTABLE_FC"
+  | "MICRO_FC"
+  | "SIMULATED_FC"
+  | "INBOUND_CROSS_DOCK"
+  | "NATIONAL_INBOUND_CROSS_DOCK"
+  | "RETURNS_CENTER"
+  | "SORTATION_CENTER"
+  | "DELIVERY_STATION"
+  | "AIR_HUB_GATEWAY";
+
+/** One row of GET /site-roles/transfer-defaults (ADR-0037): the reference
+ *  default capability for a role -- never applied automatically. */
+export interface SiteRoleTransferDefault {
+  siteRole: string;
+  transferOriginEnabled: boolean;
+  transferDestinationEnabled: boolean;
+}
+
+/** GET|PUT /sites/{siteCode}/transfer-capability (ADR-0035): whether the
+ *  site may donate/receive inter-site transfers, plus the revision of the
+ *  last published SiteCapabilityChanged (0 = never set). */
+export interface SiteTransferCapability {
+  siteCode: string;
+  transferOriginEnabled: boolean;
+  transferDestinationEnabled: boolean;
+  capabilityRevision: number;
+}
+
 
 export interface Zone {
   zoneId: string;
@@ -27,6 +69,32 @@ export interface Aisle {
   sequenceHint: number;
   direction: string;
   status: string;
+  /** The aisle's travel centreline, when set (ADR-0017). Absent until
+   *  PUT /zones/{zoneId}/aisles/{aisleCode}/geometry is called. */
+  centreline?: Segment;
+}
+
+/** A position in the site's local coordinate frame, in metres (ADR-0017).
+ *  X/Y are arbitrary; Z is height above floor and must be >= 0. */
+export interface Point3D {
+  xM: number;
+  yM: number;
+  zM: number;
+}
+
+/** A rectangular footprint's extent, in metres (ADR-0017) -- all three
+ *  strictly positive. */
+export interface Dimensions {
+  widthM: number;
+  depthM: number;
+  heightM: number;
+}
+
+/** A straight-line travel centreline between two distinct points
+ *  (ADR-0017). */
+export interface Segment {
+  start: Point3D;
+  end: Point3D;
 }
 
 export interface Capacity {
@@ -70,6 +138,13 @@ export interface LocationSlot {
   activities?: string[];
   capacity: Capacity;
   status: string;
+  /** The slot's physical position, when set (ADR-0017). Absent until
+   *  PUT /locations/{locationCode}/geometry is called. */
+  position?: Point3D;
+  /** The slot's physical footprint, when set (ADR-0017). */
+  dimensions?: Dimensions;
+  /** Explicit pick-path override, when set (ADR-0017). */
+  pickSequence?: number;
 }
 
 /** locationClassificationResponse -- the denormalized Hazmat/TemperatureClass

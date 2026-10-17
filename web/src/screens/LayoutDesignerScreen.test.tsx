@@ -6,7 +6,7 @@ import { FACILITY_API_BASE } from "../config";
 import { LayoutDesignerScreen } from "./LayoutDesignerScreen";
 import type { LocationType, Site, TravelDistance, Zone, ZoneGrid } from "../types";
 
-const SITES: Site[] = [{ siteCode: "WH1", name: "Fulfilment Centre One", status: "Active" }];
+const SITES: Site[] = [{ siteCode: "WH1", name: "Fulfilment Centre One", status: "Active", siteRole: "UNSPECIFIED" }];
 const ZONES: Zone[] = [
   {
     zoneId: "WH1-STOR-AMB",
