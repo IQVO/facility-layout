@@ -235,7 +235,7 @@ Source: `internal/application/usecases/decommission_location_slot.go`,
 | RegisterLocationSlot, ImportFacilityLayout, DecommissionLocationSlot | Command | `register_location_slot.go`, `import_facility_layout.go`, `decommission_location_slot.go` |
 | SetLocationGeometry, SetAisleGeometry, RegisterCrossAisle, RegisterFixedStructure | Command | `set_location_geometry.go`, `set_aisle_geometry.go`, `register_cross_aisle.go`, `register_fixed_structure.go` |
 | Site, Zone, Aisle, CrossAisle, LocationSlot, LocationType, PlacementRule, FixedStructure | Aggregate | `internal/domain/site`, `zone`, `aisle`, `slot`, `placement`, `structure` |
-| 12 events | Domain Event | `internal/domain/shared/events.go` |
+| 14 events | Domain Event | `internal/domain/shared/events.go` |
 | Parent must exist and be Active / Chain of custody | Policy | `RegisterZone`, `RegisterAisle`, `RegisterLocationSlot.resolveChain` |
 | Placement rules | Policy | `placement.RuleSet.Check` |
 | Role needs dockFlow / activities / capacity | Policy | `slot.NewFunctionalAttributes`, `LocationRole.RequiresCapacity` |

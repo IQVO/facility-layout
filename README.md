@@ -92,7 +92,7 @@ cmd/facility-projector/       analytics projector (the only analytical-DB writer
 cmd/facility-reports/         analytics reader (serves /reports/catalog-growth)
 internal/
   domain/                     pure business logic; imports nothing but stdlib and itself
-    shared/                   LocationCode, Capacity, geometry values, enums, the 12 events
+    shared/                   LocationCode, Capacity, geometry values, enums, the 14 events
     site/  zone/  aisle/      the structural aggregates (aisle/ also holds CrossAisle)
     placement/                LocationType, LocationRole, PlacementRule, RuleSet evaluation
     slot/                     LocationSlot — the coded leaf aggregate — and its functional attributes
@@ -164,18 +164,20 @@ case that sets it.
 
 ## Domain events (Published Language)
 
-`SiteRegistered`, `ZoneRegistered`, `AisleRegistered`,
-`LocationTypeRegistered`, `PlacementRuleDefined`, `LocationSlotRegistered`,
-`LocationSlotDecommissioned`, `FacilityLayoutImported`,
+`SiteRegistered`, `SiteCapabilityChanged`, `SiteRoleChanged`, `ZoneRegistered`,
+`AisleRegistered`, `LocationTypeRegistered`, `PlacementRuleDefined`,
+`LocationSlotRegistered`, `LocationSlotDecommissioned`, `FacilityLayoutImported`,
 `LocationGeometryUpdated`, `AisleGeometryUpdated`,
 `FixedStructureRegistered`, `CrossAisleRegistered`.
 
-With `EVENT_PUBLISHER=kafka` all twelve are published to
+With `EVENT_PUBLISHER=kafka` all fourteen are published to
 `warehouse.facility.events` (specified in `apis/asyncapi.yaml`) and to
 `warehouse.facility.analytics`. `inventory-storage` consumes
 `ZoneRegistered`, `LocationSlotRegistered` and `LocationSlotDecommissioned`
 from the integration topic; `warehouse-planning` consumes
-`LocationSlotRegistered` and `LocationSlotDecommissioned`.
+`LocationSlotRegistered` and `LocationSlotDecommissioned`,
+`slotting-optimization` consumes all three of the slot/zone events, and
+`network-inventory-planning` consumes `SiteCapabilityChanged`.
 
 Every Kafka message (integration and analytics topics) is a **CloudEvents 1.0**
 event in structured content mode — mandatory, no other envelope
@@ -838,7 +840,7 @@ Content-Type: application/problem+json
 `apis/openapi.yaml` (OpenAPI 3.0.3) documents every route with full
 request/response schemas, a shared `Problem` component, and real
 domain-grounded examples. `apis/asyncapi.yaml` (AsyncAPI 2.6.0) specifies the
-`warehouse.facility.events` topic, its CloudEvents 1.0 envelope (ADR-0024) and all twelve messages. The
+`warehouse.facility.events` topic, its CloudEvents 1.0 envelope (ADR-0024) and all fourteen messages. The
 OpenAPI document is linted in CI:
 
 ```sh

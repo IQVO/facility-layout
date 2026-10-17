@@ -118,13 +118,14 @@ empty or contains characters other than `[A-Z0-9]`.
 
 ## Domain events (past tense)
 
-SiteRegistered, ZoneRegistered, AisleRegistered, LocationTypeRegistered,
+SiteRegistered, SiteCapabilityChanged, SiteRoleChanged, ZoneRegistered,
+AisleRegistered, LocationTypeRegistered,
 PlacementRuleDefined, LocationSlotRegistered, LocationSlotDecommissioned,
 FacilityLayoutImported (emitted once per bulk import call, carrying a
 count of slots imported — individual `LocationSlotRegistered` events also
 fire per-slot within that same import), and the ADR-0017 geometry events
 LocationGeometryUpdated, AisleGeometryUpdated, FixedStructureRegistered,
-CrossAisleRegistered — twelve in all, published to
+CrossAisleRegistered — fourteen in all, published to
 `warehouse.facility.events` (`apis/asyncapi.yaml`) when
 `EVENT_PUBLISHER=kafka`.
 
