@@ -76,6 +76,38 @@ function newIdempotencyKey(): string {
 }
 
 /**
+ * PUT-style JSON call with the same RFC 7807 error handling as apiPost.
+ *
+ * Deliberately sends NO Idempotency-Key: every PUT this remote makes
+ * (site role, transfer capability, location/aisle geometry) is a full
+ * snapshot replace on an EXISTING resource that the server explicitly
+ * excluded from its idempotency middleware -- a repeat of the current
+ * snapshot is a 200 no-op by contract (ADR-0035/0037), so a caller-supplied
+ * key would add nothing.
+ */
+export async function apiPut<TResponse>(
+  path: string,
+  body: unknown,
+): Promise<TResponse> {
+  const res = await fetch(`${FACILITY_API_BASE}${path}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let problem: ProblemDetails | null = null;
+    try {
+      problem = (await res.json()) as ProblemDetails;
+    } catch {
+      // non-JSON error body -- fall through with problem = null
+    }
+    throw new ApiError(res.status, problem, `${res.status} ${res.statusText}`);
+  }
+  if (res.status === 204) return undefined as TResponse;
+  return (await res.json()) as TResponse;
+}
+
+/**
  * GET call with the same RFC 7807 error handling as apiPost, for
  * on-demand reads triggered by a user action (e.g. "Measure" on the
  * distance probe) rather than useFetch's declarative load-on-mount/poll

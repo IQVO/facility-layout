@@ -7,7 +7,7 @@ import { FacilityScreen } from "./FacilityScreen";
 import type { SiteLayout } from "../types";
 
 const LAYOUT: SiteLayout = {
-  site: { siteCode: "WH1", name: "Fulfilment Centre One", status: "Active" },
+  site: { siteCode: "WH1", name: "Fulfilment Centre One", status: "Active", siteRole: "UNSPECIFIED" },
   totals: { zones: 2, aisles: 2, slots: 2 },
   zones: [
     {

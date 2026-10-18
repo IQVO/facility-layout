@@ -14,8 +14,8 @@
   "dependencies": {
     "@warehouse/ui-kit": "file:../../warehouse-ui-kit",
     "konva": "^10.3.3",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
     "react-konva": "^19.2.6",
     "react-router-dom": "^7.18.3"
   },
