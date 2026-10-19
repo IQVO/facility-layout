@@ -1,5 +1,7 @@
 # Facility Layout (Generic Subdomain — physical warehouse structure)
 
+<!-- harness-template: v4 -->
+
 System of record for **where things physically are in the building**: the
 site hierarchy (site, area, zone, aisle) and the coded storage slots in it.
 It owns whether a coded location **exists, is active, and is legal for a
