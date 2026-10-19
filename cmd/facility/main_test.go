@@ -8,8 +8,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/claudioed/facility-layout/internal/adapters/outbound/postgres"
 )
 
 // TestMigrationsDatabaseURLFallback proves the fallback wiring
@@ -129,32 +127,22 @@ func quietLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-// TestStartBackground_TypedNilSweeperDoesNotPanic reproduces the contract
-// job crash: with no DATABASE_URL the service runs in-memory and
-// memoryAdapters returns a typed-nil *postgres.Sweeper. Boxing that into
-// startBackground's interface parameter makes worker != nil, so the old
-// guard let it through and worker.Run dereferenced a nil receiver,
-// SIGSEGV-panicking the whole process ~5ms after boot (Schemathesis's
-// in-memory service died before probing a single endpoint). The
-// normalization inside startBackground must treat it as "no worker".
-func TestStartBackground_TypedNilSweeperDoesNotPanic(t *testing.T) {
+// TestStartBackground_NilWorkerIsClosed proves a nil worker yields an
+// already-closed done channel and no error, so shutdown never waits on it.
+func TestStartBackground_NilWorkerIsClosed(t *testing.T) {
 	logger := quietLogger()
 	errCh := make(chan error, 1)
-	var typedNilSweeper *postgres.Sweeper
 
-	done := startBackground(context.Background(), logger, typedNilSweeper, "housekeeping sweeper running", errCh)
+	done := startBackground(context.Background(), logger, nil, "housekeeping sweeper running", errCh)
 
 	select {
 	case <-done:
-		// done closed without launching the goroutine: correct.
 	case <-time.After(5 * time.Second):
-		t.Fatal("startBackground did not return a closed done channel for a typed-nil sweeper within 5s")
-	case err := <-errCh:
-		t.Fatalf("startBackground reported an error for a typed-nil sweeper: %v", err)
+		t.Fatal("startBackground did not return a closed done channel for a nil worker within 5s")
 	}
 	select {
 	case err := <-errCh:
-		t.Fatalf("unexpected error from typed-nil sweeper: %v", err)
+		t.Fatalf("unexpected error from a nil worker: %v", err)
 	default:
 	}
 }

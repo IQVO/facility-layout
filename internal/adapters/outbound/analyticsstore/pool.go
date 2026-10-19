@@ -10,7 +10,7 @@ import (
 
 // MaxConns is the analytics writer's (cmd/facility-projector) per-process
 // connection ceiling. The projector is fixed at ONE replica by default —
-// its Kafka consumer group (kafka.AnalyticsConsumerGroup) is a stable,
+// its Kafka consumer group (ANALYTICS_CONSUMER_GROUP) is a stable,
 // shared group name so N replicas CAN safely share partitions (see
 // charts/facility-layout values.yaml's autoscaling.projector block, max
 // 2) — but even at that ceiling a small, flat pool is enough: its writes

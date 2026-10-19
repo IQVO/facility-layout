@@ -13,13 +13,10 @@ package main
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -28,6 +25,7 @@ import (
 	"github.com/riandyrn/otelchi"
 	otelchimetric "github.com/riandyrn/otelchi/metric"
 
+	inboundhttp "github.com/claudioed/facility-layout/internal/adapters/inbound/http"
 	inboundkafka "github.com/claudioed/facility-layout/internal/adapters/inbound/kafka"
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/analyticsstore"
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/bootretry"
@@ -36,10 +34,6 @@ import (
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/telemetry"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-// errMissingAnalyticsURL is returned when ANALYTICS_DATABASE_URL is unset: the
-// projector is the writer of the analytical database and cannot start without it.
-var errMissingAnalyticsURL = errors.New("ANALYTICS_DATABASE_URL is required")
 
 // defaultServiceName is the OTel service name reported when
 // OTEL_SERVICE_NAME is unset (the chart sets it to "facility-projector").
@@ -72,12 +66,15 @@ func run() error {
 
 	rootCtx := context.Background()
 
-	adminAddr := getenv("ADMIN_ADDR", ":8091")
-	analyticsURL := os.Getenv("ANALYTICS_DATABASE_URL")
-	if analyticsURL == "" {
-		return errMissingAnalyticsURL
+	// Fail fast, before any connection and before the admin listener binds:
+	// a missing mandatory variable is a boot error that names it (ADR 0039).
+	cfg, err := loadConfig(os.Getenv)
+	if err != nil {
+		return err
 	}
-	kafkaBrokers := strings.Split(getenv("KAFKA_BROKERS", "localhost:9092"), ",")
+	adminAddr := getenv("ADMIN_ADDR", ":8091")
+	analyticsURL := cfg.analyticsURL
+	kafkaBrokers := cfg.brokers
 	migrationsPath := getenv("ANALYTICS_MIGRATIONS_PATH", "migrations/analytics")
 
 	pool, err := openAnalyticsPool(rootCtx, logger, analyticsURL, migrationsPath)
@@ -100,7 +97,7 @@ func run() error {
 	// report success before the broker stores the message — the source
 	// offset is committed right after, so RequireNone (kafka-go's default)
 	// would silently lose the poison message.
-	consumer := inboundkafka.NewAnalyticsConsumer(kafkaBrokers, outboundkafka.AnalyticsTopic, projection, consumed, logger,
+	consumer := inboundkafka.NewAnalyticsConsumer(kafkaBrokers, outboundkafka.AnalyticsTopic, cfg.group, projection, consumed, logger,
 		inboundkafka.WithDLQWriter(outboundkafka.NewDeadLetterWriter(kafkaBrokers, outboundkafka.AnalyticsTopic+".dlq")))
 	defer func() {
 		if err := consumer.Close(); err != nil {
@@ -108,16 +105,13 @@ func run() error {
 		}
 	}()
 
-	// notReady backs GET /readyz (ADR-0020 §graceful shutdown): flipped
-	// to 1 as the FIRST step of the shutdown sequence below, before the
-	// admin server itself stops accepting connections, so a Kubernetes
-	// readinessProbe has a chance to observe the flip and stop routing
-	// new traffic during the drain window that follows. /healthz is
-	// unaffected -- it stays a pure liveness signal, never flipped by
-	// shutdown.
-	var notReady atomic.Bool
+	// readiness backs GET /readyz (ADR-0020 §graceful shutdown, ADR 0039):
+	// the drain gate, flipped as the FIRST step of the shutdown sequence
+	// below, AND a Postgres ping AND a Kafka metadata check. /healthz is
+	// unaffected -- it stays a pure liveness signal.
+	readiness := newReadiness(pool.Ping, outboundkafka.NewBrokerCheck(kafkaBrokers).Check)
 
-	srv := &http.Server{Addr: adminAddr, Handler: newAdminMux(&notReady, serviceName), ReadHeaderTimeout: 5 * time.Second}
+	srv := &http.Server{Addr: adminAddr, Handler: newAdminMux(readiness, serviceName), ReadHeaderTimeout: 5 * time.Second}
 
 	go func() {
 		logger.Info("projector admin server listening", "addr", adminAddr)
@@ -128,7 +122,7 @@ func run() error {
 
 	consumerCtx, cancelConsumer := context.WithCancel(context.Background())
 	defer cancelConsumer()
-	consumerDone := startConsumer(consumerCtx, logger, consumer, kafkaBrokers)
+	consumerDone := startConsumer(consumerCtx, logger, consumer, kafkaBrokers, cfg.group)
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
@@ -150,7 +144,7 @@ func run() error {
 	//     order pool.Close() -- which closes the analytics pgx pool --
 	//     runs LAST of all, after the consumer has already stopped
 	//     touching it.
-	notReady.Store(true)
+	readiness.SetNotReady()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -172,11 +166,11 @@ func run() error {
 // whatever message it was mid-handling when ctx is cancelled -- so
 // graceful shutdown can wait for a REAL stop, not just fire-and-forget
 // the cancel.
-func startConsumer(ctx context.Context, logger *slog.Logger, consumer *inboundkafka.AnalyticsConsumer, brokers []string) chan struct{} {
+func startConsumer(ctx context.Context, logger *slog.Logger, consumer *inboundkafka.AnalyticsConsumer, brokers []string, group string) chan struct{} {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		logger.Info("analytics consumer starting", "topic", outboundkafka.AnalyticsTopic, "group", inboundkafka.AnalyticsConsumerGroup, "brokers", brokers)
+		logger.Info("analytics consumer starting", "topic", outboundkafka.AnalyticsTopic, "group", group, "brokers", brokers)
 		if err := consumer.Run(ctx); err != nil {
 			logger.Error("analytics consumer stopped", "error", err)
 		}
@@ -196,12 +190,22 @@ func setupTelemetry(serviceName string) (func(context.Context) error, error) {
 	)
 }
 
+// newReadiness builds the projector's /readyz gate: the drain gate AND a
+// Postgres ping AND a Kafka metadata check, cached for a few seconds.
+func newReadiness(pingPostgres, checkKafka func(context.Context) error) *inboundhttp.Readiness {
+	return inboundhttp.NewReadiness(0, 0,
+		inboundhttp.Dependency{Name: "postgres", Check: pingPostgres},
+		inboundhttp.Dependency{Name: "kafka", Check: checkKafka},
+	)
+}
+
 // newAdminMux builds the projector's admin endpoints behind the same
 // otelchi tracing and otelchimetric HTTP metrics the main router carries
 // (ADR-0012 — the chart injects OTEL_* env into this pod): /healthz is a
-// pure liveness signal, never flipped by shutdown; /readyz mirrors notReady
-// so a Kubernetes readinessProbe observes the shutdown flip (ADR-0020).
-func newAdminMux(notReady *atomic.Bool, serviceName string) http.Handler {
+// pure liveness signal, never flipped by shutdown; /readyz is the drain gate
+// plus the dependency checks, so a Kubernetes readinessProbe observes both the
+// shutdown flip (ADR-0020) and an unreachable Postgres or Kafka (ADR 0039).
+func newAdminMux(readiness *inboundhttp.Readiness, serviceName string) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(otelchi.Middleware(serviceName, otelchi.WithChiRoutes(r)))
@@ -214,15 +218,7 @@ func newAdminMux(notReady *atomic.Bool, serviceName string) http.Handler {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
-	r.Get("/readyz", func(w http.ResponseWriter, _ *http.Request) {
-		if notReady.Load() {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			_, _ = w.Write([]byte(`{"status":"not_ready"}`))
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ready"}`))
-	})
+	r.Get("/readyz", inboundhttp.HandleReadyz(readiness))
 	return r
 }
 

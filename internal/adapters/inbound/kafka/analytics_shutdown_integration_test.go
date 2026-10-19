@@ -97,7 +97,7 @@ func TestAnalyticsConsumer_ShutdownMidHandle_IsCleanAndDeadLettersNothing(t *tes
 	createTopic(t, brokers, dlqTopic)
 
 	projection := &blockingProjection{entered: make(chan struct{}, 1)}
-	consumer := inboundkafka.NewAnalyticsConsumer(brokers, topic, projection, newItestProcessed(), slog.Default())
+	consumer := inboundkafka.NewAnalyticsConsumer(brokers, topic, topic+"-group", projection, newItestProcessed(), slog.Default())
 	defer func() { _ = consumer.Close() }()
 
 	consumeCtx, consumeCancel := context.WithCancel(ctx)
