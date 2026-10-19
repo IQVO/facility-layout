@@ -83,13 +83,7 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := shutdownTelemetry(shutdownCtx); err != nil {
-			logger.Warn("telemetry shutdown reported an error", "error", err)
-		}
-	}()
+	defer flushTelemetry(logger, shutdownTelemetry)
 
 	locationMetrics, err := telemetry.NewLocationMetrics()
 	if err != nil {
@@ -170,6 +164,16 @@ func run(ctx context.Context) error {
 	}
 
 	return gracefulShutdown(logger, httpServer, readiness, stopRelay, relayDone)
+}
+
+// flushTelemetry flushes and stops the OTel providers within a 5 s budget,
+// the last thing run() does.
+func flushTelemetry(logger *slog.Logger, shutdown func(context.Context) error) {
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := shutdown(shutdownCtx); err != nil {
+		logger.Warn("telemetry shutdown reported an error", "error", err)
+	}
 }
 
 // startBackground runs a background worker (the housekeeping sweeper;

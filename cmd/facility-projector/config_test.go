@@ -9,7 +9,7 @@ func envFrom(m map[string]string) func(string) string {
 	return func(k string) string { return m[k] }
 }
 
-func TestLoadConfig(t *testing.T) {
+func TestLoadConfigRejects(t *testing.T) {
 	full := map[string]string{
 		"ANALYTICS_DATABASE_URL":   "postgres://x",
 		"KAFKA_BROKERS":            "k1:9092, k2:9092",
@@ -36,6 +36,7 @@ func TestLoadConfig(t *testing.T) {
 		{"missing ANALYTICS_CONSUMER_GROUP", without("ANALYTICS_CONSUMER_GROUP"), []string{"ANALYTICS_CONSUMER_GROUP"}},
 		{"all reported at once", map[string]string{}, []string{"ANALYTICS_DATABASE_URL", "KAFKA_BROKERS", "ANALYTICS_CONSUMER_GROUP"}},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := loadConfig(envFrom(tt.env))
@@ -49,14 +50,18 @@ func TestLoadConfig(t *testing.T) {
 			}
 		})
 	}
+}
 
-	t.Run("complete", func(t *testing.T) {
-		c, err := loadConfig(envFrom(full))
-		if err != nil {
-			t.Fatalf("loadConfig() = %v", err)
-		}
-		if strings.Join(c.brokers, "|") != "k1:9092|k2:9092" || c.group != "facility-analytics" || c.analyticsURL != "postgres://x" {
-			t.Errorf("config = %+v", c)
-		}
-	})
+func TestLoadConfigComplete(t *testing.T) {
+	c, err := loadConfig(envFrom(map[string]string{
+		"ANALYTICS_DATABASE_URL":   "postgres://x",
+		"KAFKA_BROKERS":            "k1:9092, k2:9092",
+		"ANALYTICS_CONSUMER_GROUP": "facility-analytics",
+	}))
+	if err != nil {
+		t.Fatalf("loadConfig() = %v", err)
+	}
+	if strings.Join(c.brokers, "|") != "k1:9092|k2:9092" || c.group != "facility-analytics" || c.analyticsURL != "postgres://x" {
+		t.Errorf("config = %+v", c)
+	}
 }
