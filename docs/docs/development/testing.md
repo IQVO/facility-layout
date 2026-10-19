@@ -117,7 +117,10 @@ containers, locally `docker compose up -d --wait` does), on `127.0.0.1:18081`
 (`CONTRACT_MAX_EXAMPLES`) and 4 workers. Because the Idempotency-Key check is
 always on, `scripts/contract_hooks.py` (a Schemathesis `before_call` hook)
 gives every request a fresh `Idempotency-Key`; the header is `required: true`
-on the create operations in the spec. The old boot seeded nothing: the service
+on the create operations in the spec. NUL characters are not generated
+(`--generation-allow-x00 false`): the service answers them with 400 (body) or
+404 (path) instead of the 500 a Postgres text parameter would give, pinned by
+unit and real-Postgres tests (ADR 0039). The old boot seeded nothing: the service
 started empty in memory and still starts empty, on a fresh database.
 
 Six operations are excluded because their cross-field rules cannot be

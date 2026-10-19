@@ -104,6 +104,17 @@ deployment.
    database equally. A Schemathesis hook (`scripts/contract_hooks.py`) gives
    every request a fresh `Idempotency-Key`, since a reused key with a
    different body is by design a `422`.
+9. **A NUL is a client error.** The first CI run of the real-service contract
+   job found what the in-memory boot hid: a fuzzed JSON body with U+0000 in a
+   string reached a Postgres text parameter, which aborted the idempotency
+   transaction and surfaced as `500 internal-error` (SQLSTATE 25P02).
+   `rejectNUL` (`internal/adapters/inbound/http/nul.go`) now answers a NUL in a
+   body with `400 malformed-request-body` before the Idempotency-Key
+   middleware records anything, and a NUL in the path with `404`. The
+   contract script passes `--generation-allow-x00 false`, because OpenAPI 3.0
+   cannot express "no U+0000" and the rejection would otherwise read as "API
+   rejected schema-compliant request"; the behaviour is pinned by `TestRejectNUL`
+   and `TestNUL_IsAClientErrorAndDoesNotConsumeTheKey` (real Postgres).
 
 ## Consequences
 

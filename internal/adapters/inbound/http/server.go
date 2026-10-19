@@ -148,7 +148,7 @@ func NewRouter(s *Server, logger *slog.Logger, opts ...RouterOption) http.Handle
 	r.Use(otelchimetric.NewServerActiveRequests(metricCfg))
 	r.Use(RequestLogger(logger))
 	r.Use(middleware.Recoverer)
-	r.Use(corsMiddleware())
+	r.Use(corsMiddleware(), rejectNUL)
 
 	r.Get("/healthz", s.handleHealthz)
 	r.Get("/readyz", HandleReadyz(s.Readiness))

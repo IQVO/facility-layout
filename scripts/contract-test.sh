@@ -141,11 +141,18 @@ curl -sf "${BASE_URL}/readyz" >/dev/null # fail loudly if it never became ready
 # Idempotency-Key (ADR 0019, enforced in every deployment now): the hooks
 # file gives every request that carries the header a fresh UUID, like a real
 # client sending one per logical submit (see scripts/contract_hooks.py).
+#
+# --generation-allow-x00 false: the schemas cannot say "no U+0000", and
+# PostgreSQL text cannot hold one. The service answers a NUL in a body with
+# 400 and in a path with 404 (internal/adapters/inbound/http/nul.go, pinned by
+# TestRejectNUL and TestNUL_IsAClientErrorAndDoesNotConsumeTheKey), which
+# Schemathesis would report as "API rejected schema-compliant request".
 export SCHEMATHESIS_HOOKS="scripts/contract_hooks.py"
 st run apis/openapi.yaml \
   --url "${BASE_URL}" \
   --max-examples "${MAX_EXAMPLES}" \
   --workers 4 \
+  --generation-allow-x00 false \
   --exclude-checks allow_header_conformance \
   --exclude-operation-id registerLocationType \
   --exclude-operation-id registerLocationSlot \
