@@ -88,6 +88,7 @@ updated. The history of what was believed and when is the point.
 | [0036](./0036-outbox-relay-attempt-cap.md) | Outbox relay attempt cap: `OUTBOX_MAX_ATTEMPTS` (default 20) excludes a poison row and logs it at ERROR (amends ADR-0018 per-key ordering) | Accepted |
 | [0037](./0037-site-role-and-siterolechanged-cloudevents.md) | Site role: an explicit network role on the Site aggregate, `PUT /sites/{siteCode}/role`, `SiteRoleChanged`, one-time name backfill and `GET /site-roles/transfer-defaults` (extends ADR-0035) | Accepted |
 | [0038](./0038-outbox-trace-context.md) | The W3C trace context crosses the outbox in `outbox_events.headers` (migration `0010`; D27 / gap 15d, after order-management ADR 0041) | Accepted |
+| [0039](./0039-postgres-and-kafka-are-the-only-runtime.md) | Postgres and Kafka are the only runtime: no in-memory mode, no log publisher, no optional relay; mandatory config is a boot error naming the variable; `/readyz` checks Postgres and a broker; sensors, the contract job and the chart enforce it (fleet decision 2026-10-17) | Accepted |
 
 ## The Kafka record that was deferred until the adapter existed
 

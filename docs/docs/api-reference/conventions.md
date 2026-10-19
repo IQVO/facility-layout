@@ -84,10 +84,9 @@ resource, so there is no single `Location` to hand back.
 Every true resource-creation `POST` — `/sites`, `/sites/{siteCode}/zones`,
 `/sites/{siteCode}/structures`, `/zones/{zoneId}/aisles`,
 `/zones/{zoneId}/cross-aisles`, `/location-types`, `/placement-rules`,
-`/locations` — requires a caller-supplied `Idempotency-Key` header
-whenever the service is running with `DATABASE_URL` set (ADR-0019). The
-middleware is Postgres-backed: an in-memory/no-database run skips the
-check entirely. `POST /locations/import` (bulk, partial-success
+`/locations` — requires a caller-supplied `Idempotency-Key` header, always
+(ADR-0019, ADR 0039). The middleware is Postgres-backed and always on; there
+is no database-less run that skips the check. `POST /locations/import` (bulk, partial-success
 semantics) and `POST /locations/{locationCode}/decommission` (acts on an
 existing resource, not a creation) are deliberately excluded.
 

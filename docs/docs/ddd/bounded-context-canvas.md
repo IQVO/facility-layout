@@ -190,7 +190,7 @@ reads this context's own `warehouse.facility.analytics` topic.
 
 ## Outbound Communication
 
-Every domain event goes to **both** topics when `EVENT_PUBLISHER=kafka`
+Every domain event goes to **both** topics
 (integration `warehouse.facility.events`, analytics
 `warehouse.facility.analytics`). CloudEvents type prefix:
 `com.warehouse.wms.facility-layout.`

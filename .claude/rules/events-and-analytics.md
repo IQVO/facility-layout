@@ -20,8 +20,8 @@ This is an **Open Host Service**: its domain events are its Published
 Language.
 
 - **Integration (ADR-0009)**: `outbound/kafka` publishes every domain event
-  to `warehouse.facility.events` when `EVENT_PUBLISHER=kafka`. Default
-  (unset) uses the `outbound/events` log/outbox publisher. No OTel package
+  to `warehouse.facility.events`, always, through the transactional outbox
+  (ADR 0039: no log-only publisher, no direct fan-out in any binary). No OTel package
   on this publisher — it is trace-free by design.
 - **Analytics (ADR-0010)**: additive read side built from this service's
   OWN events. OLTP domain/application must NOT import the analytics store
@@ -41,10 +41,10 @@ Language.
 - **Idempotency (ADR-0019)**: every true resource-creation POST (eight of
   them — sites, zones, fixed structures, aisles, cross-aisles, location
   types, placement rules, location slots) requires a caller-supplied
-  `Idempotency-Key` header when `DATABASE_URL` is set, so a lost-response
+  `Idempotency-Key` header, always (Postgres is mandatory), so a lost-response
   retry replays the original outcome instead of double-creating. Bulk
-  import and decommission are deliberately excluded. In-memory/no-database
-  runs skip the check entirely (`IdempotencyPool` nil ⇒ no-op passthrough).
+  import and decommission are deliberately excluded. The memory test doubles
+  carry no idempotency pool, which is why they are never a runtime.
 
 ## Events: CloudEvents 1.0 is MANDATORY
 

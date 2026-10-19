@@ -62,10 +62,14 @@ harness `repo_lint` rule R11 (coverage-scope) forbids a workflow passing
 
 ## BDD (godog)
 
-- `features_test.go` (`TestFeatures`) drives the **real chi router** over a
-  TCP `httptest.Server`, wired with the in-memory adapters, a fixed clock and
-  a buffered event publisher. Every scenario is a black-box test of the REST
-  API.
+- `features/features_test.go` (`TestFeatures`; the godog files live in
+  `features/`, never at the repo root, enforced by `TestNoGoFilesAtRepoRoot`)
+  drives the **real chi router** over a TCP `httptest.Server`, wired with the
+  in-memory test doubles, a fixed clock and a buffered event publisher. Every
+  scenario is a black-box test of the REST API. The in-memory adapters are
+  test doubles only: no shipped binary imports them
+  (`TestRuntimeBinaryHasNoInMemoryAdapters`, ADR 0039); the real runtime is
+  proven by `TestRunOnRealPostgresAndKafka` below.
 - There are **12 feature files under `features/`** with **113 `Scenario` /
   `Scenario Outline` headings**: `catalog_reads` 7, `draw_the_warehouse` 4,
   `error_contract` 7, `fixed_structures_and_cross_aisles` 21, `geometry` 18,
@@ -96,6 +100,7 @@ both.
 | `internal/adapters/inbound/kafka` | `analytics_dlq_integration_test.go` (retry then DLQ) |
 | `internal/adapters/inbound/http` | `idempotency_integration_test.go` (Idempotency-Key replay and reuse) |
 | `internal/adapters/inbound/mcp` | `streamable_http_integration_test.go` |
+| `cmd/facility` | `e2e_integration_test.go` (`TestRunOnRealPostgresAndKafka`: boots the real `run()` on testcontainers Postgres and Kafka, drives only REST, asserts the Postgres rows, the byte-exact CloudEvents on both topics, `Idempotency-Key` replay, an in-process restart, and `/readyz` following Postgres and Kafka going away) |
 | `internal/application/usecases` | `usecases_wiring_integration_test.go` |
 
 The CI `integration` job runs `go test -tags=integration ./... -race -count=1`,
@@ -103,10 +108,17 @@ so every tagged package runs, the same as `make integration`.
 
 ## Contract tests (Schemathesis)
 
-`scripts/contract-test.sh` builds `cmd/facility`, boots it in-memory on
-`127.0.0.1:18081` (override with `CONTRACT_PORT`), waits for `/healthz`, and
-runs `st run apis/openapi.yaml` with 100 examples per operation
-(`CONTRACT_MAX_EXAMPLES`) and 4 workers.
+`scripts/contract-test.sh` builds `cmd/facility`, boots it against a **real
+Postgres and a real Kafka** (`DATABASE_URL` and `KAFKA_BROKERS` are required;
+CI provides `postgres:16` and `confluentinc/confluent-local:7.6.1` service
+containers, locally `docker compose up -d --wait` does), on `127.0.0.1:18081`
+(override with `CONTRACT_PORT`), waits for `/readyz`, and runs
+`st run apis/openapi.yaml` with 100 examples per operation
+(`CONTRACT_MAX_EXAMPLES`) and 4 workers. Because the Idempotency-Key check is
+always on, `scripts/contract_hooks.py` (a Schemathesis `before_call` hook)
+gives every request a fresh `Idempotency-Key`; the header is `required: true`
+on the create operations in the spec. The old boot seeded nothing: the service
+started empty in memory and still starts empty, on a fresh database.
 
 Six operations are excluded because their cross-field rules cannot be
 expressed in OpenAPI 3.0.3. The script names the test that covers each one:
