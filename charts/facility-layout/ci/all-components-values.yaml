@@ -1,0 +1,14 @@
+# Used by `helm lint` / `ct lint` (chart-testing): every optional component on.
+# Dummy values, no password; nothing is ever dialled.
+database:
+  url: "postgres://u@example.invalid:5432/db"
+kafka:
+  brokers: "kafka.example.invalid:9092"
+analytics:
+  enabled: true
+  database:
+    projectorUrl: "postgres://projector@example.invalid:5432/analytics"
+mcp:
+  enabled: true
+frontend:
+  enabled: true
