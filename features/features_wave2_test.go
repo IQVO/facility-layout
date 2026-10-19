@@ -1,4 +1,4 @@
-package main_test
+package features_test
 
 // Wave-2 step definitions: generic REST request and JSON-path assertion steps
 // used by the geometry, fixed-structure, cross-aisle, travel-graph and

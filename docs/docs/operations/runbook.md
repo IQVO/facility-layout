@@ -117,7 +117,8 @@ A failing migration therefore shows up as a crash-looping pod (see
 ## Kafka
 
 There is one platform broker, reached in-cluster through
-`kafka.brokers` (chart default `kafka:9092`) or locally at `localhost:9092`.
+`kafka.brokers` (mandatory, no default; ADR 0039) or locally at `localhost:9092`
+(`docker compose up -d --wait`).
 Every message is a CloudEvents 1.0 event in **structured** content mode
 (ADR-0024, `internal/adapters/kafka/cloudevents`), with W3C trace context in
 the message headers. On the outbox path that context is the one stored with
@@ -137,7 +138,8 @@ every domain event the use cases raise. All writers use the `Hash` balancer
 
 ### Outbox relay (ADR-0018)
 
-The relay runs only when `DATABASE_URL` is set **and** `EVENT_PUBLISHER=kafka`.
+The relay always runs in `facility` (`DATABASE_URL` and `KAFKA_BROKERS` are
+mandatory, ADR 0039; there is no mode that turns it off).
 Each use case writes its aggregate and up to two `outbox_events` rows (one
 per topic) in a single transaction. A goroutine in `facility` then drains
 the table:
@@ -175,9 +177,9 @@ the table:
 4. Do not delete the row unless you accept that downstream contexts never
    receive that event.
 
-The chart's default is `config.eventPublisher: "log"`. With that default,
-**no outbox rows are written and nothing reaches Kafka**. Set
-`config.eventPublisher=kafka` and `kafka.enabled=true` together.
+The chart's `config.eventPublisher` is `kafka`; `log` is refused at render time
+and by the binary at boot (ADR 0039), so a deployment can no longer end up
+writing no outbox rows and publishing nothing.
 
 ### Analytics consumer and DLQ (ADR-0020, ADR-0030)
 
@@ -218,8 +220,8 @@ on error. It never crashes the process.
 
 > **Chart wiring:** `templates/configmap.yaml` renders `HTTP_ADDR`,
 > `MIGRATIONS_PATH`, `EVENT_PUBLISHER`, `OUTBOX_RELAY_INTERVAL`,
-> `OUTBOX_MAX_ATTEMPTS`, `HOUSEKEEPING_INTERVAL`, `IDEMPOTENCY_KEY_TTL`, `OUTBOX_RETENTION` and (with
-> `kafka.enabled`) `KAFKA_BROKERS` from `config.*`, and the api Deployment
+> `OUTBOX_MAX_ATTEMPTS`, `HOUSEKEEPING_INTERVAL`, `IDEMPOTENCY_KEY_TTL`, `OUTBOX_RETENTION` and
+> `KAFKA_BROKERS` (from `kafka.brokers`, mandatory) from `config.*`, and the api Deployment
 > mounts it with `envFrom` (gap fix D14, 2026-10-12). Changing
 > `config.outboxRelayInterval`, `config.outboxMaxAttempts` or the housekeeping values in `values.yaml`
 > takes effect on the next rollout (the `checksum/config` annotation rolls the

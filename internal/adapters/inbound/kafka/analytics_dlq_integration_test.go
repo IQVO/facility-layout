@@ -235,7 +235,7 @@ func TestAnalyticsConsumer_PoisonMessage_GoesToDeadLetterTopicWithoutBlockingPar
 	projection := &poisonProjection{poisonEventID: poisonEventID}
 	processed := newItestProcessed()
 
-	consumer := inboundkafka.NewAnalyticsConsumer(brokers, topic, projection, processed, slog.Default())
+	consumer := inboundkafka.NewAnalyticsConsumer(brokers, topic, topic+"-group", projection, processed, slog.Default())
 	defer func() { _ = consumer.Close() }()
 
 	consumeCtx, consumeCancel := context.WithCancel(ctx)
@@ -360,7 +360,7 @@ func TestAnalyticsConsumer_LegacyFlatEnvelope_DeadLetteredWithoutRetry(t *testin
 
 	healthyEventID := fmt.Sprintf("evt-ce-good-%d", time.Now().UnixNano())
 	projection := &poisonProjection{}
-	consumer := inboundkafka.NewAnalyticsConsumer(brokers, topic, projection, newItestProcessed(), slog.Default())
+	consumer := inboundkafka.NewAnalyticsConsumer(brokers, topic, topic+"-group", projection, newItestProcessed(), slog.Default())
 	defer func() { _ = consumer.Close() }()
 
 	consumeCtx, consumeCancel := context.WithCancel(ctx)

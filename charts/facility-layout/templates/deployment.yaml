@@ -1,3 +1,4 @@
+{{- include "facility-layout.requireRealRuntime" . -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -65,11 +66,12 @@ spec:
               value: {{ .Values.config.eventPublisher | quote }}
             - name: MIGRATIONS_PATH
               value: {{ .Values.config.migrationsPath | quote }}
-            {{- if .Values.kafka.enabled }}
+            # KAFKA_BROKERS and DATABASE_URL are mandatory (ADR 0039):
+            # requireRealRuntime at the top of this file fails the render
+            # without kafka.brokers and without database.url or
+            # database.existingSecret.
             - name: KAFKA_BROKERS
               value: {{ .Values.kafka.brokers | quote }}
-            {{- end }}
-            {{- if or .Values.database.url .Values.database.existingSecret }}
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -88,7 +90,6 @@ spec:
                   name: {{ include "facility-layout.databaseSecretName" . }}
                   key: {{ .Values.database.migrationsExistingSecretKey }}
                   optional: true
-            {{- end }}
             {{- end }}
             {{- if .Values.otel.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT

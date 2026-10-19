@@ -28,12 +28,24 @@ from pathlib import Path
 
 CHART = Path(__file__).resolve().parents[1]
 
+# Mandatory since ADR 0039 (the chart refuses to render without them); dummy
+# values, never dialled.
+REQUIRED = [
+    "--set", "database.url=postgres://u@example.invalid:5432/db",
+    "--set", "kafka.brokers=kafka.example.invalid:9092",
+]
+
 FORBIDDEN_PLUGINS = {
     "basic-auth", "key-auth", "jwt", "oauth2", "oidc", "acl",
     "hmac-auth", "ldap-auth", "mtls", "session", "request-termination",
 }
 
 ENABLE_KONG = [
+    # Mandatory since ADR 0039 (the chart refuses to render without them);
+    # dummy values, never dialled.
+    "--set", "database.url=postgres://u@example.invalid:5432/db",
+    "--set", "kafka.brokers=kafka.example.invalid:9092",
+    "--set", "analytics.database.projectorUrl=postgres://projector@example.invalid:5432/a",
     "--set", "gatewayApi.enabled=true",
     "--set", "gatewayApi.parentRefs[0].name=warehouse-gateway",
     "--set", "gatewayApi.parentRefs[0].namespace=kong",
@@ -69,7 +81,7 @@ def main() -> int:
     failures: list[str] = []
 
     # 1. Defaults render zero Kong objects.
-    default_docs = render([])
+    default_docs = render(REQUIRED)
     kong_docs = [d for d in default_docs if "Kong" in (d.get("kind") or "")]
     if kong_docs:
         failures.append(

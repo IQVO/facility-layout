@@ -13,7 +13,9 @@ import (
 )
 
 // testRouter builds the exact HTTP surface cmd/mcp serves: the real MCP
-// server over in-memory repos, wrapped by newRouter. There is no auth layer.
+// server over the in-memory TEST DOUBLES (the shipped binary has none: see
+// TestRuntimeBinaryHasNoInMemoryAdapters), wrapped by newRouter. There is no
+// auth layer.
 func testRouter(t *testing.T) http.Handler {
 	t.Helper()
 	sites := memory.NewSiteRepo()
