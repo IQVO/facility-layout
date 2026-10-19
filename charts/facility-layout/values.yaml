@@ -127,9 +127,9 @@ autoscaling:
     minReplicas: 1
     maxReplicas: 4
     targetCPUUtilizationPercentage: 70
-  # cmd/facility-projector: kafka.AnalyticsConsumerGroup ==
-  # "facility-analytics" (internal/adapters/inbound/kafka/
-  # analytics_consumer.go) is a STABLE, shared consumer-group name with no
+  # cmd/facility-projector: ANALYTICS_CONSUMER_GROUP (analytics.projector.
+  # consumerGroup, default "facility-analytics") is a STABLE, shared
+  # consumer-group name with no
   # per-instance uniqueness -- the fleet's correctly-scalable pattern (N
   # replicas share partitions via normal Kafka group rebalancing), verified
   # from the actual consumer code before enabling this. Every projection
@@ -162,10 +162,12 @@ autoscaling:
     maxReplicas: 3
     targetCPUUtilizationPercentage: 70
 
-# Falls back to the in-memory adapters + log-only event publishing when
-# database.url is left empty, same as running the binary locally with no env
-# vars set. migrationsPath is resolved inside the image, where the Dockerfile
-# copies /migrations next to the binary.
+# Postgres and Kafka are the ONLY runtime (ADR 0039): there is no in-memory
+# mode and no log sink. database.url or database.existingSecret (DATABASE_URL)
+# and kafka.brokers (KAFKA_BROKERS) are mandatory -- the chart refuses to
+# render without them, and the binaries exit at boot naming the variable.
+# migrationsPath is resolved inside the image, where the Dockerfile copies
+# /migrations next to the binary.
 #
 # Every key below is rendered into templates/configmap.yaml and reaches
 # cmd/facility through the api Deployment's `envFrom: configMapRef` (gap fix
@@ -173,28 +175,26 @@ autoscaling:
 config:
   httpAddr: ":8080"
   migrationsPath: "migrations"
-  # Selects the outbound EventPublisher (ADR-0009): "log" (default) logs
-  # events only — NO outbox rows are written and nothing reaches Kafka;
-  # "kafka" writes events through the Postgres transactional outbox
-  # (ADR-0018) and relays them to the integration topic AND, when
-  # analytics.enabled, the analytics topic the projector consumes.
-  eventPublisher: "log"   # "log" or "kafka"
-  # How long the outbox relay sleeps between empty passes (ADR-0018).
-  # Only read when eventPublisher is "kafka" and a database URL is
-  # configured; rendered into the ConfigMap as OUTBOX_RELAY_INTERVAL.
+  # The only publisher is "kafka" (ADR 0039): events are written through the
+  # Postgres transactional outbox (ADR-0018) and relayed to the integration
+  # topic AND the analytics topic the projector consumes. The key is kept
+  # because warehouse-infra sets it; "log" (the retired log-only sink) is
+  # refused at render time and by the binary at boot.
+  eventPublisher: "kafka"
+  # How long the outbox relay sleeps between empty passes (ADR-0018). The
+  # relay always runs; rendered into the ConfigMap as OUTBOX_RELAY_INTERVAL.
   outboxRelayInterval: "1s"
   # Outbox relay attempt cap (ADR-0036); rendered as OUTBOX_MAX_ATTEMPTS. A
   # row that has failed this many sends is excluded from the relay's claims
   # and logged at ERROR; it stays in outbox_events until an operator re-arms
   # it (UPDATE outbox_events SET attempts = 0 WHERE id = ...). Later rows,
   # including rows with the same key, overtake it. 0 = unlimited (one poison
-  # row blocks the relay forever). Same read conditions as above.
+  # row blocks the relay forever).
   outboxMaxAttempts: 20
   # Housekeeping sweeper (ADR-0026): bounds the two append-only tables.
   # Rendered as HOUSEKEEPING_INTERVAL / IDEMPOTENCY_KEY_TTL /
   # OUTBOX_RETENTION. "0s" disables the respective knob (the whole
-  # sweeper for the interval, one half for a TTL/retention). Only read
-  # when a database URL is configured.
+  # sweeper for the interval, one half for a TTL/retention).
   housekeepingInterval: "1h"
   idempotencyKeyTTL: "24h"
   outboxRetention: "168h"
@@ -216,6 +216,8 @@ otel:
 environment: "local"
 
 database:
+  # MANDATORY (ADR 0039): set url (the chart then creates its own Secret) or
+  # existingSecret; the chart refuses to render with neither.
   url: ""
   existingSecret: ""
   existingSecretKey: "DATABASE_URL"
@@ -257,27 +259,29 @@ livenessProbe:
   periodSeconds: 10
 
 readinessProbe:
-  # ADR-0020 §graceful shutdown, mirroring order-management's ADR-0025
-  # §8 verbatim: /readyz is a DISTINCT endpoint from /healthz above, so it
-  # can be flipped to not-ready by a draining pod without also failing
-  # liveness (which would get the pod SIGKILLed mid-drain instead of
-  # allowed to finish it).
+  # ADR-0020 §graceful shutdown, ADR 0039: /readyz is a DISTINCT endpoint
+  # from /healthz above. It is the drain gate AND a Postgres ping AND a Kafka
+  # broker metadata check (cached for a few seconds; it never requires a
+  # topic), so a draining pod or an unreachable dependency stops receiving
+  # traffic without also failing liveness (which would get the pod SIGKILLed).
   httpGet:
     path: /readyz
     port: http
   initialDelaySeconds: 3
   periodSeconds: 5
 
-# ADR-0020 §graceful shutdown (order-management's ADR-0025 §8 verbatim):
-# the HTTP Shutdown budget (10s) plus the outbox-relay/Kafka-consumer stop
-# budget (the same 10s, reused) plus margin for readinessProbe's
-# periodSeconds above to have actually observed the not-ready flip before
-# traffic fully stops arriving.
+# ADR-0020 §graceful shutdown: readiness flips first, then ONE 10s budget
+# drains HTTP and lets the outbox relay finish its pass, then a 5s telemetry
+# flush, plus margin for readinessProbe's periodSeconds above to have observed
+# the not-ready flip. The chart refuses a value under 20.
 terminationGracePeriodSeconds: 30
 
 kafka:
-  enabled: false
-  brokers: "kafka:9092"
+  # MANDATORY (ADR 0039): comma-separated KAFKA_BROKERS; the chart refuses to
+  # render without it and there is no default broker. `kafka.enabled` is no
+  # longer a switch (warehouse-infra still sets it to true, which keeps
+  # rendering); false is refused.
+  brokers: ""
 
 nodeSelector: {}
 tolerations: []
@@ -288,8 +292,8 @@ affinity: {}
 # writer (projector) and a read-only reader (reports), backed by a separate
 # analytical database. Disabled by default so existing releases are
 # unaffected; set analytics.enabled=true to deploy the two extra processes.
-# Requires config.eventPublisher / kafka.enabled=true on the main deployment
-# too, or the projector's Kafka topic never receives events to consume.
+# Requires kafka.brokers on the main deployment too (mandatory anyway), or the
+# projector's Kafka topic never receives events to consume.
 analytics:
   enabled: false
   # Directory (inside the image) of the analytical *.up.sql migrations the
@@ -307,6 +311,12 @@ analytics:
   projector:
     replicaCount: 1
     adminAddr: ":8091"
+    # ANALYTICS_CONSUMER_GROUP (ADR 0039): the projector's stable, shared
+    # Kafka group id, mandatory and never defaulted by the binary. The value
+    # below is the group the projector has always used, so committed offsets
+    # survive the move from the constant to the variable. Do NOT rename it
+    # on a live system: a new group replays the whole analytics topic.
+    consumerGroup: "facility-analytics"
     # HPA min 1 / max 2, see the top-level autoscaling.projector block for
     # the full reasoning (stable shared consumer group, idempotent
     # upserts).

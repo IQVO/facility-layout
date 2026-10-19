@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"io"
 	"log/slog"
 	"os"
@@ -67,18 +68,30 @@ func TestBuildAdapters_UsesMigrationsDatabaseURLNotDatabaseURLForMigrations(t *t
 	}
 }
 
-// TestBuildAdapters_NoDatabaseURLUsesMemoryImmediately proves the
-// no-database branch is untouched by the migrationsDatabaseURL parameter:
-// with databaseURL empty, buildAdapters must return the in-memory
-// adapters instantly, without ever attempting to run migrations (which
-// would fail fast against a bogus migrationsDatabaseURL if it were
-// reached).
-func TestBuildAdapters_NoDatabaseURLUsesMemoryImmediately(t *testing.T) {
+// TestBuildAdapters_NoDatabaseURLIsABootError proves there is no fallback
+// runtime: with databaseURL empty, buildAdapters fails with the error that
+// names DATABASE_URL, without ever attempting to run migrations (which would
+// fail with a parse error against the bogus migrationsDatabaseURL if reached).
+func TestBuildAdapters_NoDatabaseURLIsABootError(t *testing.T) {
 	_, closeFn, err := buildAdapters("", "not-a-valid-connection-string", t.TempDir(), quietLoggerMCP())
-	if err != nil {
-		t.Fatalf("buildAdapters: %v", err)
+	if !errors.Is(err, errNoDatabase) {
+		t.Fatalf("buildAdapters error = %v, want errNoDatabase", err)
 	}
 	closeFn()
+}
+
+// TestRunRefusesToBootWithoutDatabaseURL pins the fail-fast boot error of the
+// MCP binary: run() returns the error naming DATABASE_URL before it opens any
+// connection or binds the listener.
+func TestRunRefusesToBootWithoutDatabaseURL(t *testing.T) {
+	t.Setenv("DATABASE_URL", "")
+	err := run()
+	if !errors.Is(err, errNoDatabase) {
+		t.Fatalf("run() error = %v, want errNoDatabase", err)
+	}
+	if !strings.Contains(err.Error(), "DATABASE_URL") {
+		t.Fatalf("run() error %q does not name DATABASE_URL", err)
+	}
 }
 
 func quietLoggerMCP() *slog.Logger {

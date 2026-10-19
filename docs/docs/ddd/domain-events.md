@@ -11,7 +11,7 @@ This bounded context emits fourteen past-tense domain events. Together they are
 its **Published Language** — the vocabulary downstream Conformists key off.
 
 :::info[Published to Kafka, specified in AsyncAPI]
-With `EVENT_PUBLISHER=kafka`, every domain event is published to the
+Every domain event is published to the
 `warehouse.facility.events` integration topic
 ([ADR 0009](../adr/0009-kafka-integration-publisher.md)) and, in the same
 call, to the separate `warehouse.facility.analytics` topic that feeds the
@@ -22,13 +22,12 @@ its CloudEvents 1.0 envelope
 [`apis/asyncapi.yaml`](https://github.com/IQVO/facility-layout/blob/main/apis/asyncapi.yaml)
 (AsyncAPI 2.6.0).
 
-With `DATABASE_URL` **and** `EVENT_PUBLISHER=kafka` set, publishing goes
+Publishing always goes
 through the transactional outbox (`outbox_events`,
 [ADR 0018](../adr/0018-transactional-outbox.md)): the use case writes the
 aggregate row and one outbox row per topic in one transaction, and the
-in-process relay drains them onto Kafka. Without `EVENT_PUBLISHER=kafka`,
-events go to the service log only — whether or not `DATABASE_URL` is set
-(the old `events` table was dropped by migration `0005_outbox`). See
+in-process relay drains them onto Kafka. There is no log-only mode
+([ADR 0039](../adr/0039-postgres-and-kafka-are-the-only-runtime.md)). The old `events` table was dropped by migration `0005_outbox`. See
 [Publishers](#publishers) and the [Context map](../ecosystem/context-map.md)
 for who consumes what.
 :::
@@ -291,7 +290,7 @@ A walkable connection between two aisles of the same zone was declared.
 
 ## Catalogue at a glance
 
-Every event is published to **both** topics when `EVENT_PUBLISHER=kafka`:
+Every event is published to **both** topics:
 `warehouse.facility.events` (integration, `dataschema`
 `urn:warehouse:facility-layout:events:<EventName>:v1`) and
 `warehouse.facility.analytics` (analytics, `dataschema`
@@ -349,23 +348,19 @@ Source: `internal/domain/shared/events.go`,
 
 ## Publishers
 
-Which publisher the composition root (`cmd/facility/main.go`,
-`buildAdapters`) wires depends on two switches:
-
-| `DATABASE_URL` | `EVENT_PUBLISHER` | Publisher wired | Outbox relay |
-|---|---|---|---|
-| unset | unset | `outbound/events` log publisher | no |
-| unset | `kafka` | `outbound/kafka` `FanOut` — direct publish to both topics, no outbox | no |
-| set | unset | `outbound/events` log publisher | no |
-| set | `kafka` | `outbound/postgres` `OutboxPublisher` — one `outbox_events` row per topic, in the use case's transaction | yes |
+Only one publisher is wired by the composition root (`cmd/facility/main.go`,
+`buildAdapters`): `outbound/postgres` `OutboxPublisher` — one `outbox_events`
+row per topic, in the use case's transaction — drained by the outbox relay.
+`DATABASE_URL` and `KAFKA_BROKERS` are mandatory ([ADR 0039](../adr/0039-postgres-and-kafka-are-the-only-runtime.md));
+`EVENT_PUBLISHER` accepts only `kafka`.
 
 | Adapter | Use |
 |---|---|
 | `outbound/kafka` — `Publisher` | Encodes each event as a CloudEvents 1.0 event (structured mode, `source=/warehouse/facility-layout`, `type` = the event type, `subject` = aggregate id, `dataschema=urn:warehouse:facility-layout:events:<EventName>:v1`, `data` = the event's JSON wire DTO (`cloudevents.WireData`; domain events carry no struct tags); [ADR-0024](../adr/0024-cloudevents-mandatory-envelope.md)) for `warehouse.facility.events`. Writer: `kafkago.Hash` balancer ([ADR 0021](../adr/0021-kafka-writer-balancer-hash.md)), `RequireAll` acks with a 10 ms batch timeout ([ADR 0031](../adr/0031-kafka-writer-durability.md)); the W3C trace context of the publishing request is injected into the message headers. |
 | `outbound/kafka` — `AnalyticsPublisher` | The same occurrence (same `type` and `id`) with `dataschema=urn:warehouse:facility-layout:analytics:<EventName>:v1`, for `warehouse.facility.analytics`. |
-| `outbound/kafka` — `FanOut` | No-database + `kafka` mode: mints one id and sends the event through both publishers above. |
-| `outbound/postgres` — `OutboxPublisher` + `OutboxRelay` | Database + `kafka` mode: enqueues both encodings into `outbox_events` inside the use case's `UnitOfWork`; the relay (`OUTBOX_RELAY_INTERVAL`, default 1s, batches of 100, `FOR UPDATE SKIP LOCKED`) sends them through `RelaySink` ([ADR-0018](../adr/0018-transactional-outbox.md)). A row that fails `OUTBOX_MAX_ATTEMPTS` sends (default 20) is excluded and later rows with the same key overtake it ([ADR 0036](../adr/0036-outbox-relay-attempt-cap.md)). Published rows are deleted after `OUTBOX_RETENTION` by the housekeeping sweeper ([ADR 0026](../adr/0026-housekeeping-sweeper.md)). |
-| `outbound/events` — log publisher | Default whenever `EVENT_PUBLISHER` is not `kafka`. Writes each event to the service log. |
+| `outbound/kafka` — `FanOut` | Test double / library only: mints one id and sends the event through both publishers above. Not wired by any binary (ADR 0039). |
+| `outbound/postgres` — `OutboxPublisher` + `OutboxRelay` | The only runtime path: enqueues both encodings into `outbox_events` inside the use case's `UnitOfWork`; the relay (`OUTBOX_RELAY_INTERVAL`, default 1s, batches of 100, `FOR UPDATE SKIP LOCKED`) sends them through `RelaySink` ([ADR-0018](../adr/0018-transactional-outbox.md)). A row that fails `OUTBOX_MAX_ATTEMPTS` sends (default 20) is excluded and later rows with the same key overtake it ([ADR 0036](../adr/0036-outbox-relay-attempt-cap.md)). Published rows are deleted after `OUTBOX_RETENTION` by the housekeeping sweeper ([ADR 0026](../adr/0026-housekeeping-sweeper.md)). |
+| `outbound/events` — log publisher | Test double (and a library for local experiments): writes each event to a log. Not wired by any binary (ADR 0039). |
 | `outbound/events` — buffered publisher | Tests. Collects events in memory for assertion. |
 
 The `EventPublisher` port is one method —
