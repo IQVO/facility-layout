@@ -23,6 +23,7 @@ import (
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/kafka"
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/memory"
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/postgres"
+	"github.com/claudioed/facility-layout/internal/adapters/outbound/system"
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/telemetry"
 	"github.com/claudioed/facility-layout/internal/application/ports"
 	"github.com/claudioed/facility-layout/internal/application/usecases"
@@ -92,7 +93,7 @@ func run() error {
 
 	httpServer := &http.Server{
 		Addr:              httpAddr,
-		Handler:           inboundhttp.NewRouter(newServer(adapters, memory.SystemClock{}, locationMetrics, readiness), logger, inboundhttp.WithServiceName(serviceName)),
+		Handler:           inboundhttp.NewRouter(newServer(adapters, system.Clock{}, locationMetrics, readiness), logger, inboundhttp.WithServiceName(serviceName)),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
