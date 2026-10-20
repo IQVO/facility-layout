@@ -1,15 +1,11 @@
 // Package memory provides thread-safe, in-memory implementations of every
-// outbound port. They back the unit/acceptance tests and let the service
-// run locally with no database at all.
+// outbound port. They are TEST DOUBLES for the unit and BDD tests: no cmd/**
+// binary imports this package (internal/architecture
+// TestRuntimeBinaryHasNoInMemoryAdapters); the shipped binaries run on real
+// Postgres and real Kafka only (ADR 0039).
 package memory
 
 import "time"
-
-// SystemClock implements ports.Clock using wall-clock time.
-type SystemClock struct{}
-
-// Now returns the current wall-clock time.
-func (SystemClock) Now() time.Time { return time.Now() }
 
 // FixedClock implements ports.Clock with a fixed, settable time, for tests.
 type FixedClock struct {

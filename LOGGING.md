@@ -56,6 +56,6 @@ Every log line is a single JSON object written to stdout via
   responses, `Info` otherwise). It is installed in `NewRouter` right after
   `middleware.RequestID` and before `middleware.Recoverer`.
 - `internal/adapters/outbound/events/log_publisher.go`'s `LogPublisher`
-  (the default `EventPublisher` when no database is configured) logs each
+  (a test double: no binary wires it since ADR 0039) logs each
   published domain event as a structured `slog.Info` call instead of a
   formatted string.

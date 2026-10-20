@@ -636,3 +636,35 @@ func TestIdempotency_PlacementRules_Smoke(t *testing.T) {
 		t.Fatalf("placement_rules rows = %d, want 1", got)
 	}
 }
+
+// A NUL in a request is a client error on the real runtime: PostgreSQL text
+// cannot hold U+0000, and the statement that carried it used to abort the
+// idempotency transaction and surface as a 500 (SQLSTATE 25P02) that
+// Schemathesis found in CI. The key is not consumed by the rejected request.
+func TestNUL_IsAClientErrorAndDoesNotConsumeTheKey(t *testing.T) {
+	pool := idempotencyDB(t)
+	router := newIdempotencyRouter(t, pool)
+
+	nul := idempotentPost(t, router, "/placement-rules", "nul-1",
+		`{"ruleId":"r","locationType":"a\u0000b","effect":"Deny","zone":{"temperatureClass":"Frozen"}}`)
+	if nul.Code != http.StatusBadRequest {
+		t.Fatalf("NUL body status = %d, want 400 (body: %s)", nul.Code, nul.Body.String())
+	}
+	if got := problemSlug(t, nul.Body.Bytes()); got != "malformed-request-body" {
+		t.Errorf("problem = %q, want malformed-request-body", got)
+	}
+	if got := countRows(t, pool, "idempotency_keys"); got != 0 {
+		t.Errorf("idempotency_keys rows = %d, want 0: the rejected request must not consume the key", got)
+	}
+
+	path := httptest.NewRecorder()
+	router.ServeHTTP(path, httptest.NewRequest(http.MethodGet, "/sites/a%00b", nil))
+	if path.Code != http.StatusNotFound {
+		t.Errorf("NUL path status = %d, want 404 (body: %s)", path.Code, path.Body.String())
+	}
+
+	ok := idempotentPost(t, router, "/sites", "nul-1", `{"siteCode":"WH1","name":"One"}`)
+	if ok.Code != http.StatusCreated {
+		t.Fatalf("the same key on a clean request = %d, want 201 (body: %s)", ok.Code, ok.Body.String())
+	}
+}

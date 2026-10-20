@@ -1,8 +1,10 @@
-// Package main_test hosts the godog (Cucumber for Go) acceptance suite. It
-// drives the REAL chi router over HTTP — the same wiring the service uses in
-// production, but with the in-memory outbound adapters — so every scenario in
-// features/*.feature is a true black-box test of the REST API.
-package main_test
+// Package features_test hosts the godog (Cucumber for Go) acceptance suite. It
+// drives the REAL chi router over HTTP — the same use-case wiring the service
+// uses in production — but with the in-memory outbound adapters, which are
+// TEST DOUBLES (the shipped binaries never import them, ADR 0039), so every
+// scenario in the *.feature files next to it is a true black-box test of the
+// REST API.
+package features_test
 
 import (
 	"bytes"
@@ -28,7 +30,7 @@ import (
 	"github.com/claudioed/facility-layout/internal/application/usecases"
 )
 
-// TestFeatures runs every Gherkin feature under features/ against a freshly
+// TestFeatures runs every Gherkin feature in this directory against a freshly
 // wired HTTP server.
 //
 // Scenarios tagged @known-bug describe the CORRECT behaviour from
@@ -45,7 +47,7 @@ func TestFeatures(t *testing.T) {
 		ScenarioInitializer: InitializeScenario,
 		Options: &godog.Options{
 			Format:   "pretty",
-			Paths:    []string{"features"},
+			Paths:    []string{"."},
 			Tags:     tags,
 			Strict:   true,
 			TestingT: t,

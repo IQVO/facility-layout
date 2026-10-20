@@ -29,8 +29,9 @@ internal/
                                   `internal-error`; errors.go, ADR-0033)
     inbound/kafka/                analytics projector's consumer (FirstOffset replay)
     outbound/postgres/            pgxpool repos + migrations
-    outbound/memory/              in-memory repos for tests/local
-    outbound/events/              log/outbox publisher (default when EVENT_PUBLISHER unset)
+    outbound/memory/              in-memory repos: TEST DOUBLES only, never imported by cmd/** (ADR 0039)
+    outbound/system/              the wall clock and id source the binaries use
+    outbound/events/              log + buffered publishers (test doubles)
     kafka/cloudevents/            the ONLY CloudEvents 1.0 helper (New/Decode/ContentTypeHeader)
     outbound/kafka/               integration + analytics publishers (CloudEvents only)
     outbound/analyticsstore/      analytics read-side Postgres repos

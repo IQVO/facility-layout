@@ -126,8 +126,8 @@ count of slots imported — individual `LocationSlotRegistered` events also
 fire per-slot within that same import), and the ADR-0017 geometry events
 LocationGeometryUpdated, AisleGeometryUpdated, FixedStructureRegistered,
 CrossAisleRegistered — fourteen in all, published to
-`warehouse.facility.events` (`apis/asyncapi.yaml`) when
-`EVENT_PUBLISHER=kafka`.
+`warehouse.facility.events` (`apis/asyncapi.yaml`), always, through the
+transactional outbox (ADR 0039).
 
 CloudEvents `type` convention (IDENTICAL to the other fleet
 services — reverse-DNS, lowercase except the final PascalCase event name,
