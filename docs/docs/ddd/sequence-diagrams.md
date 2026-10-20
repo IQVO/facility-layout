@@ -10,17 +10,10 @@ description: UML sequence diagrams for every Facility Layout command use case �
 
 Derived from the use-case function bodies in
 `internal/application/usecases/` and the adapters they run through. All
-diagrams show the **Postgres + `EVENT_PUBLISHER=kafka`** configuration, the
-only one with a `UnitOfWork` and the transactional outbox
-(`cmd/facility/main.go`, `outboxAdapters`). In the other configurations:
-
-- no `DATABASE_URL` → in-memory repositories, no Idempotency-Key check, no
-  transaction; the publisher is the log publisher or (with
-  `EVENT_PUBLISHER=kafka`) a direct `FanOut` to both topics;
-- `DATABASE_URL` without `kafka` → Postgres repositories and the
-  Idempotency-Key check, but the log publisher and **no** `UnitOfWork`
-  (`Save` and `Publish` run back to back, `atomically` with a nil unit of
-  work).
+All diagrams show the one runtime configuration, Postgres + Kafka
+(ADR 0039): a `UnitOfWork` and the transactional outbox
+(`cmd/facility/main.go`, `outboxAdapters`). There is no in-memory or
+log-only variant; the in-memory adapters exist only as test doubles.
 
 Participants: **Client**, the **inbound adapter** (HTTP handler, MCP tool,
 Kafka consumer), the **use case**, the **aggregate**, the **repositories**,

@@ -43,7 +43,9 @@ spec:
             # opening the same read repos cmd/facility uses.
             - name: MIGRATIONS_PATH
               value: {{ .Values.config.migrationsPath | quote }}
-            {{- if or .Values.database.url .Values.database.existingSecret }}
+            # DATABASE_URL is mandatory (ADR 0039): the api Deployment's
+            # requireRealRuntime fails the whole render without
+            # database.url or database.existingSecret.
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -59,7 +61,6 @@ spec:
                   name: {{ include "facility-layout.databaseSecretName" . }}
                   key: {{ .Values.database.migrationsExistingSecretKey }}
                   optional: true
-            {{- end }}
             {{- end }}
             {{- if .Values.mcp.reportsBaseUrl }}
             - name: REPORTS_BASE_URL

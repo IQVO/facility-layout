@@ -221,20 +221,22 @@ therefore a red build, not a review comment somebody might miss.
 reads the environment, picks the adapters, constructs the use cases and
 mounts the router:
 
-- `DATABASE_URL` set → Postgres repositories, migrations run at startup
+- `DATABASE_URL` is mandatory (a boot error naming the variable otherwise,
+  [ADR 0039](../adr/0039-postgres-and-kafka-are-the-only-runtime.md)):
+  Postgres repositories, migrations run at startup
   (against `MIGRATIONS_DATABASE_URL` when set, [ADR 0023](../adr/0023-migrations-direct-postgres-connection.md)),
   the Idempotency-Key middleware and the housekeeping sweeper.
-- `DATABASE_URL` unset → in-memory repositories; the Idempotency-Key check
-  is skipped.
-- `EVENT_PUBLISHER` unset → the log publisher, whatever the store.
-- `EVENT_PUBLISHER=kafka` without a database → the Kafka integration and
-  analytics publishers, fanned out directly (`FanOut`).
-- `EVENT_PUBLISHER=kafka` with a database → the transactional outbox
-  publisher plus a `UnitOfWork`, and the outbox relay goroutine that drains
-  `outbox_events` onto both topics ([ADR 0018](../adr/0018-transactional-outbox.md)).
+- `KAFKA_BROKERS` is mandatory too, and `EVENT_PUBLISHER` accepts only
+  `kafka` (unset means `kafka`; `log` is a boot error): the transactional
+  outbox publisher plus a `UnitOfWork`, and the outbox relay goroutine that
+  drains `outbox_events` onto both topics ([ADR 0018](../adr/0018-transactional-outbox.md)).
+  `/readyz` is the drain gate plus a Postgres ping plus a Kafka metadata check.
+- The in-memory repositories, the log and buffered publishers are test
+  doubles: no `cmd/**` package imports `outbound/memory`
+  (`TestRuntimeBinaryHasNoInMemoryAdapters`). The wall clock lives in
+  `outbound/system`.
 
-Because the swap happens at exactly one place and every port is an interface
-over domain types, the HTTP layer and the entire test suite are identical in
-both modes. The BDD suite in `features/` runs the real router over the
+Because every port is an interface over domain types, the HTTP layer and the
+test suite do not care which adapter is behind it. The BDD suite in `features/` runs the real router over the
 in-memory adapters via `httptest.NewServer`, which is only possible because
 nothing above the port knows which adapter it got.

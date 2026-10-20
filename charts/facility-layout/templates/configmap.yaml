@@ -13,6 +13,4 @@ data:
   HOUSEKEEPING_INTERVAL: {{ .Values.config.housekeepingInterval | quote }}
   IDEMPOTENCY_KEY_TTL: {{ .Values.config.idempotencyKeyTTL | quote }}
   OUTBOX_RETENTION: {{ .Values.config.outboxRetention | quote }}
-  {{- if .Values.kafka.enabled }}
   KAFKA_BROKERS: {{ .Values.kafka.brokers | quote }}
-  {{- end }}

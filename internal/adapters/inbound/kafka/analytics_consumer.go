@@ -24,11 +24,6 @@ import (
 	"github.com/claudioed/facility-layout/internal/analytics/report"
 )
 
-// AnalyticsConsumerGroup is the Kafka consumer group the analytics projector
-// reads under. It is distinct from any OLTP consumer group so the two pipelines
-// track their offsets independently.
-const AnalyticsConsumerGroup = "facility-analytics"
-
 // dlqTopicSuffix names the dead-letter topic this consumer publishes a poison
 // message to, relative to its OWN source topic (never a fixed constant) — see
 // ADR-0020's DLQ section, which copies order-management's ADR-0025 §DLQ
@@ -116,16 +111,19 @@ func WithDLQWriter(w *kafkago.Writer) ConsumerOption {
 }
 
 // NewAnalyticsConsumer constructs an AnalyticsConsumer reading topic from
-// brokers under AnalyticsConsumerGroup, with a dead-letter writer targeting
-// topic+".dlq" (ADR-0020 §DLQ).
-func NewAnalyticsConsumer(brokers []string, topic string, projection report.ProjectionStore, processed ProcessedEvents, logger *slog.Logger, opts ...ConsumerOption) *AnalyticsConsumer {
+// brokers under the consumer group group, with a dead-letter writer targeting
+// topic+".dlq" (ADR-0020 §DLQ). The group is the caller's, read from
+// ANALYTICS_CONSUMER_GROUP by the projector (ADR 0039): it is a stable group
+// name distinct from any OLTP consumer group so the pipelines track their
+// offsets independently.
+func NewAnalyticsConsumer(brokers []string, topic, group string, projection report.ProjectionStore, processed ProcessedEvents, logger *slog.Logger, opts ...ConsumerOption) *AnalyticsConsumer {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	reader := kafkago.NewReader(kafkago.ReaderConfig{
 		Brokers: brokers,
 		Topic:   topic,
-		GroupID: AnalyticsConsumerGroup,
+		GroupID: group,
 		// Start a brand-new consumer group at the EARLIEST offset. The analytics
 		// projection must see the full history of the topic (it is a replayable
 		// read model, not a live integration reaction), so a fresh projector — or

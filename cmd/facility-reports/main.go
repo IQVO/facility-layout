@@ -26,8 +26,9 @@ import (
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/telemetry"
 )
 
-// errMissingAnalyticsURL is returned when ANALYTICS_DATABASE_URL is unset.
-var errMissingAnalyticsURL = errors.New("ANALYTICS_DATABASE_URL is required")
+// errMissingAnalyticsURL is returned when ANALYTICS_DATABASE_URL is unset: the
+// reader has no other runtime (ADR 0039).
+var errMissingAnalyticsURL = errors.New("ANALYTICS_DATABASE_URL is required: the reader serves only the analytical Postgres database")
 
 // defaultServiceName is the OTel service name reported when
 // OTEL_SERVICE_NAME is unset (the chart sets it to "facility-reports").
@@ -90,10 +91,12 @@ func run() error {
 	}
 
 	handlers := &inboundhttp.ReportsHandlers{Store: analyticsstore.NewPostgresReport(pool)}
-	// readiness backs GET /readyz (ADR-0020 §graceful shutdown): flipped
-	// to not-ready as the FIRST step of the shutdown sequence below,
-	// before the HTTP server itself stops accepting connections.
-	readiness := &inboundhttp.Readiness{}
+	// readiness backs GET /readyz (ADR-0020 §graceful shutdown, ADR 0039): the
+	// drain gate, flipped to not-ready as the FIRST step of the shutdown
+	// sequence below, AND a Postgres ping on the analytical database.
+	readiness := inboundhttp.NewReadiness(0, 0,
+		inboundhttp.Dependency{Name: "postgres", Check: pool.Ping},
+	)
 	handlers.Readiness = readiness
 	router := inboundhttp.NewReportsRouter(handlers, logger, inboundhttp.WithServiceName(serviceName))
 
