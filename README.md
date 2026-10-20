@@ -106,8 +106,9 @@ internal/
     inbound/mcp/              MCP tools, resource template and prompt
     inbound/kafka/            analytics topic consumer (projector)
     outbound/postgres/        pgxpool repos, golang-migrate runner, UnitOfWork, transactional outbox + relay, sweeper
-    outbound/memory/          thread-safe in-memory repos for tests and local runs
-    outbound/events/          log + buffered publishers
+    outbound/memory/          thread-safe in-memory repos: TEST DOUBLES only, never imported by cmd/** (ADR 0039)
+    outbound/system/          the wall clock and id source the binaries use
+    outbound/events/          log + buffered publishers (test doubles)
     outbound/kafka/           integration + analytics topic publishers
     outbound/analyticsstore/  analytical DB projection and report queries
     outbound/telemetry/       OpenTelemetry wiring
@@ -170,7 +171,7 @@ case that sets it.
 `LocationGeometryUpdated`, `AisleGeometryUpdated`,
 `FixedStructureRegistered`, `CrossAisleRegistered`.
 
-With `EVENT_PUBLISHER=kafka` all fourteen are published to
+All fourteen are published (through the transactional outbox) to
 `warehouse.facility.events` (specified in `apis/asyncapi.yaml`) and to
 `warehouse.facility.analytics`. `inventory-storage` consumes
 `ZoneRegistered`, `LocationSlotRegistered` and `LocationSlotDecommissioned`
@@ -206,21 +207,21 @@ com.warehouse.wms.facility-layout.placementrule.PlacementRuleDefined
 
 ## Running it
 
-### Local, no database (in-memory adapters)
+### Postgres and Kafka are the only runtime
+
+There is no in-memory mode and no log-only publisher
+([ADR 0039](docs/docs/adr/0039-postgres-and-kafka-are-the-only-runtime.md)):
+`cmd/facility` needs a database and a broker, and exits at boot with an error
+that names the missing variable (`DATABASE_URL is required ...`). The
+in-memory adapters exist only as test doubles and are not linked into any
+binary (enforced by `TestRuntimeBinaryHasNoInMemoryAdapters`).
 
 ```sh
-go run ./cmd/facility
-# {"time":"...","level":"INFO","msg":"telemetry configured","service_name":"facility-layout","service_version":"dev","environment":"local","otlp_endpoint":"localhost:4317"}
-# {"time":"...","level":"INFO","msg":"database url not configured; using in-memory adapters"}
+docker compose up -d --wait          # postgres:16 + confluent-local Kafka on localhost:9092
+export DATABASE_URL="postgres://facility:***@localhost:5432/facility?sslmode=disable"
+export KAFKA_BROKERS="localhost:9092"
+go run ./cmd/facility                # migrations run automatically at startup
 # {"time":"...","level":"INFO","msg":"http server listening","addr":":8080"}
-```
-
-### With Postgres
-
-```sh
-docker compose up -d postgres
-export DATABASE_URL="postgres://facility:facility@localhost:5432/facility?sslmode=disable"
-go run ./cmd/facility          # migrations run automatically at startup
 ```
 
 Migrations can also be applied standalone:
@@ -234,10 +235,10 @@ migrate -source file://migrations -database "$DATABASE_URL" up
 | Env var | Default | Meaning |
 |---|---|---|
 | `HTTP_ADDR` | `:8080` | Listen address |
-| `DATABASE_URL` | *(unset)* | Postgres DSN. Unset ⇒ in-memory adapters + log-only event publishing |
-| `EVENT_PUBLISHER` | *(unset)* | `kafka` publishes the full Published Language to `warehouse.facility.events` (and the analytics topic); with `DATABASE_URL` also set, publishing goes through the transactional outbox (ADR-0018) and a background relay drains it — unset ⇒ log publisher |
-| `KAFKA_BROKERS` | `localhost:9092` | Comma-separated broker list, used when `EVENT_PUBLISHER=kafka` |
-| `OUTBOX_RELAY_INTERVAL` | `1s` | How long the outbox relay sleeps between empty passes (ADR-0018; only relevant with `DATABASE_URL` + `EVENT_PUBLISHER=kafka`) |
+| `DATABASE_URL` | **required** | Postgres DSN. Unset ⇒ the binary exits at boot naming the variable |
+| `KAFKA_BROKERS` | **required** | Comma-separated broker list; no default. Unset ⇒ boot error |
+| `EVENT_PUBLISHER` | *(unset = `kafka`)* | Only `kafka` is accepted (`log` was removed, ADR 0039). Events go through the transactional outbox (ADR-0018); the relay always runs and publishes the full Published Language to `warehouse.facility.events` and `warehouse.facility.analytics` |
+| `OUTBOX_RELAY_INTERVAL` | `1s` | How long the outbox relay sleeps between empty passes (ADR-0018) |
 | `OUTBOX_MAX_ATTEMPTS` | `20` | Outbox relay attempt cap (ADR-0036): a row that failed this many sends is excluded from the relay and logged at ERROR; re-arm with `UPDATE outbox_events SET attempts = 0 WHERE id = ...`. `0` = unlimited |
 | `HOUSEKEEPING_INTERVAL` | `1h` | Housekeeping sweeper interval (ADR-0026; `0` disables; only relevant with `DATABASE_URL`) |
 | `IDEMPOTENCY_KEY_TTL` | `24h` | How long an idempotency_keys row is kept before the sweeper deletes it (ADR-0026; `0` disables) |
@@ -250,8 +251,8 @@ migrate -source file://migrations -database "$DATABASE_URL" up
 | `ENVIRONMENT` | `local` | `deployment.environment.name` |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:5186` | Comma-separated browser origins allowed to call the API (the `web/` micro-frontend) |
 
-`cmd/mcp` reads `MCP_ADDR` (default `:8090`), `DATABASE_URL`,
-`MIGRATIONS_PATH` and `REPORTS_BASE_URL`.
+`cmd/mcp` reads `MCP_ADDR` (default `:8090`), `DATABASE_URL` (**required**,
+boot error when unset), `MIGRATIONS_PATH` and `REPORTS_BASE_URL`.
 
 See [Observability](#observability) for what each of the OTel variables
 actually changes.
@@ -268,25 +269,21 @@ docker run --rm -p 8080:8080 claudioed/facility-layout
 An additive analytical read side (ADR-0010) built from this service's own domain
 events, delivered on a **separate** Kafka topic `warehouse.facility.analytics`,
 projected into a **separate** analytical database, and served read-only. It is
-three processes with one writer; the OLTP `cmd/facility` binary is unchanged
-except that with `EVENT_PUBLISHER=kafka` it now fans events out to BOTH the
-integration topic and the analytics topic.
+three processes with one writer; the OLTP `cmd/facility` binary fans events
+out (through the outbox) to BOTH the integration topic and the analytics
+topic.
 
 ```sh
-docker compose up -d postgres
-# Kafka itself is NOT in docker-compose.yml: the fleet runs one shared
-# broker (in-cluster Bitnami via warehouse-infra) with externalAccess
-# exposed on localhost:9092, which is why KAFKA_BROKERS defaults there.
-# Point at that broker, or your own, for a local run.
+docker compose up -d --wait    # postgres:16 + Kafka on localhost:9092
 
 # OLTP service, fanning out to both warehouse.facility.events and .analytics
 export DATABASE_URL="postgres://facility:***@localhost:5432/facility?sslmode=disable"
-EVENT_PUBLISHER=kafka KAFKA_BROKERS=localhost:9092 go run ./cmd/facility
+KAFKA_BROKERS=localhost:9092 go run ./cmd/facility
 
 # Projector (the ONLY writer): consumes the analytics topic, runs migrations/analytics,
-# projects into the analytical database.
+# projects into the analytical database. All three variables are required.
 export ANALYTICS_DATABASE_URL="postgres://facility:***@localhost:5432/facility_analytics?sslmode=disable"
-KAFKA_BROKERS=localhost:9092 go run ./cmd/facility-projector    # admin/health on :8091
+KAFKA_BROKERS=localhost:9092 ANALYTICS_CONSUMER_GROUP=facility-analytics go run ./cmd/facility-projector    # admin/health on :8091
 
 # Reports (read-only reader): serves the report over REST.
 ANALYTICS_DATABASE_URL="$ANALYTICS_DATABASE_URL" go run ./cmd/facility-reports   # :8092
@@ -307,7 +304,9 @@ connection to `default_transaction_read_only=on` for defence in depth. See
 
 | Env var | Default | Meaning |
 |---|---|---|
-| `ANALYTICS_DATABASE_URL` | *(required for projector/reports)* | Analytical Postgres DSN (separate DB from `DATABASE_URL`) |
+| `ANALYTICS_DATABASE_URL` | **required** (projector, reports) | Analytical Postgres DSN (separate DB from `DATABASE_URL`) |
+| `KAFKA_BROKERS` | **required** (projector) | Brokers of the analytics topic; no default |
+| `ANALYTICS_CONSUMER_GROUP` | **required** (projector) | Stable consumer-group id; the deployed value is `facility-analytics` (a new group replays the whole topic) |
 | `ANALYTICS_MIGRATIONS_PATH` | `migrations/analytics` | Analytical golang-migrate SQL files (projector only) |
 | `ADMIN_ADDR` | `:8091` | Projector health endpoint |
 | `HTTP_ADDR` | `:8092` | Reports REST listen address (reader) |
@@ -363,7 +362,7 @@ the in-cluster Collector Service
 | `http.server.active_requests` | up/down counter | otelchi |
 | `facility.location_slot.registrations` | counter, attribute `outcome` | **this service's business metric** |
 | `go.*` (goroutines, GC, memory) | various | `contrib/instrumentation/runtime` |
-| `pgxpool_*` | various | otelpgx pool stats (only with `DATABASE_URL` set) |
+| `pgxpool_*` | various | otelpgx pool stats |
 
 `facility.location_slot.registrations` is recorded in the
 `RegisterLocationSlot` **use case**, not in the HTTP handler, so a slot
@@ -422,9 +421,8 @@ one. Every `201` carries a `Location` header that resolves.
 Every true resource-creation `POST` (`/sites`, `/sites/{siteCode}/zones`,
 `/sites/{siteCode}/structures`, `/zones/{zoneId}/aisles`,
 `/zones/{zoneId}/cross-aisles`, `/location-types`, `/placement-rules`,
-`/locations`) requires a caller-supplied `Idempotency-Key` header **when the
-service is running with `DATABASE_URL` set** (Postgres-backed
-`IdempotencyPool`; in-memory/no-database runs skip the check entirely). A
+`/locations`) requires a caller-supplied `Idempotency-Key` header, always
+(Postgres-backed `IdempotencyPool`; there is no database-less run). A
 retry with the same key and the same request body replays the original
 response verbatim instead of double-creating; the same key with a
 different body is rejected `422`. Missing the header on a protected route is
@@ -893,8 +891,9 @@ go tool cover -func=coverage.out | tail -1
 # integration tests (build-tagged; testcontainers boots its own Postgres/Kafka — needs only Docker)
 go test -tags=integration ./... -race -count=1
 
-# BDD acceptance suite (godog/Gherkin, over the real HTTP API)
-go test ./... -run TestFeatures -v
+# BDD acceptance suite (godog/Gherkin, over the real HTTP API; the godog
+# files live in features/, never at the repo root)
+go test ./features/ -run TestFeatures -v
 
 # architecture fitness tests (arch-go)
 go test ./internal/architecture/... -v
@@ -973,6 +972,7 @@ from inside the cluster).
 ```sh
 helm upgrade --install facility-layout ./charts/facility-layout \
   --set database.url="postgres://facility:***@postgres:5432/facility?sslmode=disable" \
+  --set kafka.brokers="kafka:9092" \
   --set mcp.enabled=true
 ```
 

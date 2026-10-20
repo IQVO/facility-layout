@@ -49,26 +49,25 @@ Only the default `OTEL_SERVICE_NAME` differs between binaries.
 | Variable | Default | Required | Meaning | Source |
 |---|---|---|---|---|
 | `HTTP_ADDR` | `:8080` | no | Listen address of the REST API. Also serves `/healthz` and `/readyz`. | `cmd/facility/main.go` |
-| `DATABASE_URL` | *(unset)* | no (yes in any real deployment) | OLTP Postgres DSN for the pgx pool (`MaxConns` 10, `statement_timeout` 5s, both fixed in `internal/adapters/outbound/postgres/pool.go`). **When unset, the binary uses in-memory repositories.** There is then no outbox, no sweeper and no idempotency store, and all data is lost on restart. | `cmd/facility/main.go` |
+| `DATABASE_URL` | *(none)* | **yes** | OLTP Postgres DSN for the pgx pool (`MaxConns` 10, `statement_timeout` 5s, both fixed in `internal/adapters/outbound/postgres/pool.go`). If unset, the binary exits at boot with `DATABASE_URL is required: this context runs on real Postgres` (ADR 0039). There is no in-memory mode. | `cmd/facility/config.go` |
 | `MIGRATIONS_DATABASE_URL` | value of `DATABASE_URL` | no | Direct (non-PgBouncer, session-mode) DSN used **only** by the golang-migrate step at boot. The step needs a session-scoped `pg_advisory_lock`, which PgBouncer transaction pooling breaks (ADR-0023). | `cmd/facility/main.go` |
 | `MIGRATIONS_PATH` | `migrations` | no | Directory of the OLTP SQL migrations, relative to the working directory. | `cmd/facility/main.go` |
-| `EVENT_PUBLISHER` | *(empty → log publisher)* | no | `kafka` turns on Kafka publishing. Any other value, including unset, logs events instead of publishing them. See the mode matrix below. | `cmd/facility/main.go` |
-| `KAFKA_BROKERS` | `localhost:9092` | no | Comma-separated bootstrap brokers for the integration publisher, analytics publisher and outbox relay sink. Read only when `EVENT_PUBLISHER=kafka`. | `cmd/facility/main.go` |
-| `OUTBOX_RELAY_INTERVAL` | `1s` | no | Sleep between empty passes of the outbox relay (ADR-0018). Zero, negative or malformed values fall back to `1s`. | `cmd/facility/main.go` |
-| `OUTBOX_MAX_ATTEMPTS` | `20` | no | Outbox relay attempt cap ([ADR-0036](../adr/0036-outbox-relay-attempt-cap.md)): a row that has failed this many sends is excluded from the relay's claims and logged once at ERROR (`outbox_id`, `topic`, `event_type`, `key`). It stays in `outbox_events` until re-armed (see [Runbook](./runbook.md#an-outbox-row-hit-the-attempt-cap)); later rows, including rows with the same key, overtake it. `0` = unlimited (one poison row blocks the relay forever). A malformed or negative value logs a WARN and uses `20`. Read only when the relay runs (`DATABASE_URL` + `EVENT_PUBLISHER=kafka`). | `cmd/facility/main.go`, `internal/adapters/outbound/postgres/outbox_relay.go` |
+| `EVENT_PUBLISHER` | *(unset = `kafka`)* | no | Only `kafka` (or unset) is accepted. `log` and any other value is a boot error naming the variable (ADR 0039); the log-only publisher no longer exists. | `cmd/facility/config.go` |
+| `KAFKA_BROKERS` | *(none)* | **yes** | Comma-separated bootstrap brokers for the outbox relay sink (integration and analytics topics). If unset, the binary exits at boot with `KAFKA_BROKERS is required: this context runs on real Kafka`. No localhost default. | `cmd/facility/config.go` |
+| `OUTBOX_RELAY_INTERVAL` | `1s` | no | Sleep between empty passes of the outbox relay (ADR-0018). Zero, negative or malformed values fall back to `1s`. The relay always runs. | `cmd/facility/main.go` |
+| `OUTBOX_MAX_ATTEMPTS` | `20` | no | Outbox relay attempt cap ([ADR-0036](../adr/0036-outbox-relay-attempt-cap.md)): a row that has failed this many sends is excluded from the relay's claims and logged once at ERROR (`outbox_id`, `topic`, `event_type`, `key`). It stays in `outbox_events` until re-armed (see [Runbook](./runbook.md#an-outbox-row-hit-the-attempt-cap)); later rows, including rows with the same key, overtake it. `0` = unlimited (one poison row blocks the relay forever). A malformed or negative value logs a WARN and uses `20`. | `cmd/facility/main.go`, `internal/adapters/outbound/postgres/outbox_relay.go` |
 | `HOUSEKEEPING_INTERVAL` | `1h` | no | How often the housekeeping sweeper wakes up (ADR-0026). `0` disables the sweeper. | `cmd/facility/main.go`, `internal/adapters/outbound/postgres/sweeper.go` |
 | `IDEMPOTENCY_KEY_TTL` | `24h` | no | Age after which `idempotency_keys` rows are deleted. This bounds how late a client retry still gets the cached response (ADR-0019). `0` disables this half of the sweep. | same |
 | `OUTBOX_RETENTION` | `168h` (7 days) | no | Age after which **published** `outbox_events` rows are deleted. Unpublished rows are never swept. `0` disables this half of the sweep. | same |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:5186` | no | Comma-separated browser origins allowed by the CORS middleware. The defaults are the warehouse-console shell's dev port and this service's MFE remote dev port. Allowed methods are GET/POST/PUT/DELETE. Allowed headers are `Content-Type`, `Authorization` and `Idempotency-Key`. | `internal/adapters/inbound/http/server.go` |
 
-Publisher mode matrix (`buildAdapters` in `cmd/facility/main.go`):
-
-| `DATABASE_URL` | `EVENT_PUBLISHER` | Publisher wired | Outbox relay |
-|---|---|---|---|
-| unset | unset / anything but `kafka` | log publisher | no |
-| unset | `kafka` | direct Kafka fan-out to both topics, no outbox | no |
-| set | unset / anything but `kafka` | log publisher | no |
-| set | `kafka` | transactional outbox, fanned out to `warehouse.facility.events` and `warehouse.facility.analytics` | yes |
+Wiring (`buildAdapters` in `cmd/facility/main.go`): there is exactly one,
+the transactional outbox, written in the same Postgres transaction as the
+aggregate and fanned out to `warehouse.facility.events` and
+`warehouse.facility.analytics` by the relay. Missing `DATABASE_URL` or
+`KAFKA_BROKERS` stops the process before it opens a connection or binds a
+listener, and every missing variable is reported in one error. `/readyz` is
+the drain gate plus a Postgres ping plus a Kafka broker metadata check.
 
 ## `facility-projector` (analytics writer)
 
@@ -76,7 +75,8 @@ Publisher mode matrix (`buildAdapters` in `cmd/facility/main.go`):
 |---|---|---|---|---|
 | `ADMIN_ADDR` | `:8091` | no | Listen address of the admin server (`/healthz`, `/readyz` only). | `cmd/facility-projector/main.go` |
 | `ANALYTICS_DATABASE_URL` | *(none)* | **yes** | Analytical Postgres DSN (pool `MaxConns` 5). If unset, the binary exits immediately with `ANALYTICS_DATABASE_URL is required`. The same DSN runs the analytical migrations, so it must be a direct, session-capable connection. | `cmd/facility-projector/main.go` |
-| `KAFKA_BROKERS` | `localhost:9092` | no | Comma-separated brokers for the `warehouse.facility.analytics` consumer (group `facility-analytics`) and its DLQ writer (`warehouse.facility.analytics.dlq`). | `cmd/facility-projector/main.go` |
+| `KAFKA_BROKERS` | *(none)* | **yes** | Comma-separated brokers for the `warehouse.facility.analytics` consumer and its DLQ writer (`warehouse.facility.analytics.dlq`). If unset, the binary exits with `KAFKA_BROKERS is required`. | `cmd/facility-projector/config.go` |
+| `ANALYTICS_CONSUMER_GROUP` | *(none)* | **yes** | Consumer-group id of the analytics consumer. No default in the binary; the chart sets `facility-analytics` (the group it has always used). Renaming it on a live system replays the whole topic. | `cmd/facility-projector/config.go` |
 | `ANALYTICS_MIGRATIONS_PATH` | `migrations/analytics` | no | Directory of the analytical schema migrations. The projector is the only binary that runs them. | `cmd/facility-projector/main.go` |
 
 ## `facility-reports` (analytics reader)
@@ -94,7 +94,7 @@ Publisher mode matrix (`buildAdapters` in `cmd/facility/main.go`):
 | Variable | Default | Required | Meaning | Source |
 |---|---|---|---|---|
 | `MCP_ADDR` | `:8090` | no | Listen address. The MCP Streamable HTTP endpoint is mounted at both `/` and `/mcp`, and `/healthz` answers liveness. | `cmd/mcp/main.go` |
-| `DATABASE_URL` | *(unset)* | no (yes in any real deployment) | OLTP Postgres DSN (same database as `facility`, read-only use cases only). **When unset, the binary uses its own empty in-memory store**, which is not shared with a separately running `facility` process. | `cmd/mcp/main.go` |
+| `DATABASE_URL` | *(none)* | **yes** | OLTP Postgres DSN (same database as `facility`, read-only use cases only). If unset, the binary exits at boot with `DATABASE_URL is required`. There is no in-memory store. | `cmd/mcp/main.go` |
 | `MIGRATIONS_DATABASE_URL` | value of `DATABASE_URL` | no | Direct DSN for the migration step. The MCP binary also runs the OLTP migrations at boot (ADR-0023). | `cmd/mcp/main.go` |
 | `MIGRATIONS_PATH` | `migrations` | no | Directory of the OLTP SQL migrations. | `cmd/mcp/main.go` |
 | `REPORTS_BASE_URL` | *(unset)* | no | Base URL of `facility-reports`, for example `http://facility-reports:8092`. When set, the catalog-growth report tool is registered and calls the reports REST API. When unset, that tool is not registered at all. | `cmd/mcp/main.go` |
@@ -108,15 +108,17 @@ Publisher mode matrix (`buildAdapters` in `cmd/facility/main.go`):
   follows the fifth attempt, so the real budget is 15s plus the duration of
   the attempts. The retry covers the Istio native-sidecar first-dial reset
   (ADR-0028).
-- **Fail-closed analytics.** `facility-projector` and `facility-reports`
-  refuse to start without `ANALYTICS_DATABASE_URL`. `facility` and `mcp`
-  instead fall back to in-memory storage when `DATABASE_URL` is empty. That
-  fallback is convenient locally and wrong in a cluster, so check the
-  `database url not configured; using in-memory adapters` log line after
-  every deploy.
-- **Kafka is only dialled when needed.** `facility` creates no Kafka writer
-  unless `EVENT_PUBLISHER=kafka`. Brokers are not pinged at boot. A
-  broker that cannot be reached shows up later as outbox relay errors (see
+- **Fail-closed everywhere (ADR 0039).** Every binary refuses to start
+  without its mandatory configuration and the error names the variable:
+  `facility` needs `DATABASE_URL` and `KAFKA_BROKERS`, `mcp` needs
+  `DATABASE_URL`, `facility-projector` needs `ANALYTICS_DATABASE_URL`,
+  `KAFKA_BROKERS` and `ANALYTICS_CONSUMER_GROUP`, `facility-reports` needs
+  `ANALYTICS_DATABASE_URL`. There is no in-memory fallback and no log-only
+  publisher.
+- **Kafka at boot.** Brokers are not pinged at boot. `/readyz` checks the
+  broker (metadata, cached for a few seconds, never a topic), so an
+  unreachable broker takes the pod out of rotation; the outbox keeps the
+  events and the relay publishes them when it is back (see
   [Troubleshooting](./troubleshooting.md)).
 
 See also: [Runbook](./runbook.md) for how the Helm chart sets these
@@ -126,7 +128,7 @@ control.
 ## How the Helm chart delivers `facility`'s variables
 
 `charts/facility-layout/templates/configmap.yaml` renders `config.*` (plus
-`kafka.brokers` when `kafka.enabled`) into a ConfigMap named after the
+`kafka.brokers`, always) into a ConfigMap named after the
 release: `HTTP_ADDR`, `MIGRATIONS_PATH`, `EVENT_PUBLISHER`,
 `OUTBOX_RELAY_INTERVAL`, `OUTBOX_MAX_ATTEMPTS` (`config.outboxMaxAttempts`,
 default `20`), `HOUSEKEEPING_INTERVAL`, `IDEMPOTENCY_KEY_TTL`,
@@ -136,4 +138,7 @@ reaches `cmd/facility`. Explicit `env` entries (the same values, plus the
 Secret-backed DSNs and the OTel variables) and `extraEnv` win over the
 ConfigMap for the same key. The projector, reports and MCP Deployments do not
 mount the ConfigMap; their variables are set explicitly in their own
-templates.
+templates. The chart refuses to render without `database.url` /
+`database.existingSecret` or `kafka.brokers`, refuses `config.eventPublisher`
+other than `kafka`, `kafka.enabled=false`, an `extraEnv` that sets
+`EVENT_PUBLISHER` or a `*_MODE`, and a `terminationGracePeriodSeconds` under 20.

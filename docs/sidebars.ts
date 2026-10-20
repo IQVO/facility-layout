@@ -167,6 +167,7 @@ const sidebars: SidebarsConfig = {
         'adr/0036-outbox-relay-attempt-cap',
         'adr/0037-site-role-and-siterolechanged-cloudevents',
         'adr/0038-outbox-trace-context',
+        'adr/0039-postgres-and-kafka-are-the-only-runtime',
       ],
     },
   ],

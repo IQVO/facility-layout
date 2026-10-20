@@ -47,6 +47,7 @@ jobs:
       - run: python3 scripts/harness/guide_lint.py
       - run: python3 scripts/harness/repo_lint.py
       - run: python3 scripts/harness/test_hook.py
+      - run: python3 scripts/harness/test_red_issue.py
       - run: python3 scripts/harness/test_repo_lint.py
 
 
@@ -123,18 +124,49 @@ jobs:
       - name: Run BDD (godog/Gherkin) acceptance tests
         run: go test ./... -run TestFeatures -v
 
-  # Property-based contract testing: boots the service with its in-memory
-  # adapters and generates valid AND invalid requests for every operation
-  # in apis/openapi.yaml, asserting response conformance (status codes,
-  # content types, response schemas; positive data accepted, negative data
-  # rejected). Catches spec/implementation drift the example-based suites
-  # (unit, httptest, BDD) cannot see. Same invocation as `make contract`.
+  # Property-based contract testing: boots the REAL cmd/facility and generates
+  # valid AND invalid requests for every operation in apis/openapi.yaml,
+  # asserting response conformance (status codes, content types, response
+  # schemas; positive data accepted, negative data rejected). Catches
+  # spec/implementation drift the example-based suites (unit, httptest, BDD)
+  # cannot see. Same invocation as scripts/contract-test.sh.
+  #
+  # The service has no in-memory mode (ADR 0039): the job runs against a
+  # Postgres AND a Kafka service container and the script waits for /readyz
+  # (Postgres ping + broker metadata). The broker is confluent-local (KRaft,
+  # single node, the image the integration tests use); its default
+  # PLAINTEXT_HOST listener advertises localhost:9092, which is the
+  # service-container port mapping below (the first produce would otherwise
+  # fail on the inter-broker address). No topic is pre-created: the broker
+  # auto-creates them like the cluster does.
   # ============================================================
   # CLASSIFICATION: CONTRACT TESTING (OpenAPI / Schemathesis)
   # ============================================================
   contract:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: facility
+          POSTGRES_PASSWORD: facility
+          POSTGRES_DB: facility
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      kafka:
+        image: confluentinc/confluent-local:7.6.1
+        ports: ["9092:9092"]
+        options: >-
+          --health-cmd "kafka-topics --bootstrap-server localhost:29092 --list"
+          --health-interval 5s
+          --health-timeout 10s
+          --health-retries 20
+          --health-start-period 10s
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
@@ -146,6 +178,9 @@ jobs:
       - name: Install Schemathesis (pinned)
         run: python3 -m pip install "schemathesis==4.28.0"
       - name: Contract tests (Schemathesis over apis/openapi.yaml)
+        env:
+          DATABASE_URL: "postgres://facility:facility@localhost:5432/facility?sslmode=disable"
+          KAFKA_BROKERS: "localhost:9092"
         run: ./scripts/contract-test.sh
 
   # The MCP eval gate as its own named check: the eval suites from
@@ -508,7 +543,7 @@ jobs:
           severity: 'CRITICAL,HIGH,MEDIUM'
           ignore-unfixed: true
       - name: Upload Trivy SARIF to Security tab
-        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'

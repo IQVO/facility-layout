@@ -16,16 +16,18 @@ paths:
 - Go 1.26, modules. Module path: `github.com/claudioed/facility-layout`.
 - chi (`github.com/go-chi/chi/v5`), pgx/v5 + pgxpool, golang-migrate SQL
   migrations.
-- Config via env (`DATABASE_URL`, `HTTP_ADDR` defaulting to `:8080`,
-  `ANALYTICS_DATABASE_URL`, `EVENT_PUBLISHER`). `docker-compose.yml` for
-  Postgres 16, matching the other repos' exact shape (service name
-  `postgres`, healthcheck, named volume).
+- Config via env (`DATABASE_URL` and `KAFKA_BROKERS` are mandatory: a boot
+  error names the missing variable, ADR 0039; `HTTP_ADDR` defaulting to
+  `:8080`, `ANALYTICS_DATABASE_URL`, `EVENT_PUBLISHER` which accepts only
+  `kafka`). `docker-compose.yml` for Postgres 16 and Kafka (confluent-local),
+  service names `postgres` and `kafka`, healthchecks, named volume.
 - Typed domain errors mapped to HTTP status in the adapter; RFC 7807
   `application/problem+json` for every error response from day one
   (ADR-0004) — never the old bespoke `{"error":...}` shape.
-- Table-driven tests: domain + application (in-memory adapter); one
-  httptest per endpoint; build-tagged Postgres integration test (skipped
-  without `DATABASE_URL`).
+- Table-driven tests: domain + application (in-memory test doubles); one
+  httptest per endpoint; build-tagged integration tests that boot their own
+  Postgres/Kafka through testcontainers (no skip gates), including
+  `TestRunOnRealPostgresAndKafka`, which boots the real `run()`.
 - gofmt/go vet clean; every package has a doc comment.
 - `.golangci.yml` — copied VERBATIM from `../inventory-storage/.golangci.yml`
   (same linters: errcheck, govet, staticcheck, unused, ineffassign,

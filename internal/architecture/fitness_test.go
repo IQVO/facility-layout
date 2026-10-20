@@ -194,17 +194,16 @@ var groupIDLiteralRE = regexp.MustCompile(`GroupID:\s*"[^"]+"`)
 // the single partition to only one of the two group members, silently
 // starving whichever process lost the race (fixed in wes-work-planning#67
 // by making the group id env-configurable). This test doesn't ban
-// long-lived named consumer groups outright (this repo's own
-// AnalyticsConsumerGroup constant, used by the analytics projector's
-// consumer, is a deliberate, correct exception: only one instance of that
-// consumer ever runs, so there's nothing to collide with) — it bans the
+// long-lived named consumer groups outright (the analytics projector's group is
+// a stable, shared name read from ANALYTICS_CONSUMER_GROUP, ADR 0039) — it
+// bans the
 // shape that caused the incident: a GroupID assigned directly from an
 // inline string literal rather than through a named symbol (const, var, or
 // function call) that a reviewer can trace back to its definition and
-// reasoning. This repo has no non-analytics Kafka consumer today, so this
-// test currently has nothing to flag — it is included for fleet
-// consistency and to catch any future consumer that reintroduces the
-// hardcoded-literal shape.
+// reasoning. The group id of every consumer in this repo comes from the
+// environment through such a symbol, so this test has nothing to flag — it
+// stays to catch any future consumer that reintroduces the hardcoded-literal
+// shape.
 func TestKafkaConsumerGroupNeverHardcodedInline(t *testing.T) {
 	for _, path := range goFilesUnder(t, "..", false) {
 		f, err := os.Open(path)

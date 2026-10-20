@@ -65,9 +65,9 @@ alerts below).
 
 Kafka trace propagation:
 
-- **Direct publishing** (no `DATABASE_URL`, `EVENT_PUBLISHER=kafka`) injects
-  the request's `traceparent` into the message headers.
-- **Outbox mode** (production) stores the writing transaction's W3C trace
+- **Direct publishing** no longer exists (ADR 0039). Every event goes through
+  the outbox:
+- **Outbox mode** stores the writing transaction's W3C trace
   context (`traceparent`, `tracestate`, `baggage`) in
   `outbox_events.headers` (migration `0010`), and the relay sends it as Kafka
   headers next to the CloudEvents `content-type`
@@ -90,8 +90,7 @@ OTel log bridge. Inside a span, every record also gets `trace_id` and
 |---|---|---|---|
 | `http request` | info, or error when status ≥ 500 | `method`, `path` (sanitized), `status`, `duration_ms`, `bytes`, `request_id` | facility, facility-reports (`RequestLogger`) |
 | `telemetry configured` | info | `service_name`, `service_version`, `environment`, `otlp_endpoint` | facility |
-| `database url not configured; using in-memory adapters` | info | none | facility, mcp |
-| `event publisher configured` | info | `publisher`, `mode` (`direct`/`outbox`), `integration_topic`, `analytics_topic`, `brokers` | facility |
+| `event publisher configured` | info | `publisher` (`kafka`), `mode` (`outbox`), `integration_topic`, `analytics_topic`, `brokers` | facility |
 | `retrying` / `succeeded after retry` | warn / info | `op`, `attempt`, `in`, `err` | boot retry, all binaries |
 | `outbox relay pass failed` | error | `error` | facility |
 | `outbox relay: row reached the attempt cap and is excluded from future claims; ...` | error | `outbox_id`, `topic`, `event_type`, `key`, `attempts`, `max_attempts`, `error` | facility relay, once per row when it reaches `OUTBOX_MAX_ATTEMPTS` ([ADR-0036](../adr/0036-outbox-relay-attempt-cap.md)) |

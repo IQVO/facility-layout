@@ -1,0 +1,111 @@
+# Mirror of what warehouse-infra sets for facility-layout
+# (helm-values/_platform.yaml + helm-values/facility-layout.yaml +
+# helm-values/kind-resources/facility-layout.yaml on origin/develop,
+# 2026-10-19), trimmed to the keys that matter for the real runtime.
+# tests/render_test.sh renders the chart with this file and asserts it still
+# works after ADR 0039: infra needs NO values change.
+replicaCount: 1
+config:
+  httpAddr: ":8080"
+  migrationsPath: "migrations"
+  eventPublisher: "kafka"
+kafka:
+  enabled: 'true'
+  brokers: kafka.warehouse-systems.svc.cluster.local:9092
+analytics:
+  enabled: true
+  database:
+    existingSecret: facility-layout-analytics-db
+  reports:
+    route:
+      enabled: true
+      path: /api/facility-layout/reports
+      parentRefs:
+        - name: warehouse-gateway
+          namespace: kong
+          sectionName: http
+    resources:
+      requests:
+        cpu: 25m
+  projector:
+    resources:
+      requests:
+        cpu: 25m
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 15
+  periodSeconds: 10
+  failureThreshold: 6
+readinessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  failureThreshold: 6
+database:
+  existingSecret: facility-layout-db
+extraEnv: []
+frontend:
+  enabled: true
+  image:
+    pullPolicy: IfNotPresent
+    repository: warehouse/facility-layout-frontend
+  resources:
+    requests:
+      cpu: 25m
+gatewayApi:
+  enabled: true
+  parentRefs:
+    - name: warehouse-gateway
+      namespace: kong
+      sectionName: http
+  hosts:
+    - path: /api/facility-layout
+      pathType: PathPrefix
+  stripPath: true
+image:
+  pullPolicy: IfNotPresent
+  repository: warehouse/facility-layout
+ingress:
+  annotations:
+    konghq.com/strip-path: 'true'
+  className: kong
+  enabled: false
+  hosts:
+    - host: ''
+      paths:
+        - path: /api/facility-layout
+          pathType: Prefix
+kongPlugins:
+  cors:
+    enabled: true
+    origin: http://localhost
+  opentelemetry:
+    enabled: true
+  prometheus:
+    enabled: true
+mcp:
+  enabled: true
+  route:
+    enabled: true
+    path: /api/mcp/facility-layout
+    parentRefs:
+      - name: warehouse-gateway
+        namespace: kong
+        sectionName: http
+  resources:
+    requests:
+      cpu: 25m
+pathCatalogue:
+  content: ''
+  enabled: false
+resources:
+  requests:
+    cpu: 25m
+service:
+  port: 80
+  targetPort: 8080
+  type: ClusterIP

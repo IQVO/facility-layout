@@ -15,6 +15,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"os"
@@ -26,7 +27,6 @@ import (
 
 	inboundmcp "github.com/claudioed/facility-layout/internal/adapters/inbound/mcp"
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/bootretry"
-	"github.com/claudioed/facility-layout/internal/adapters/outbound/memory"
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/postgres"
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/telemetry"
 	"github.com/claudioed/facility-layout/internal/application/ports"
@@ -45,6 +45,13 @@ func run() error {
 
 	logger := telemetry.NewLogger(os.Stdout, getenv("LOG_LEVEL", "info"), serviceName)
 	slog.SetDefault(logger)
+
+	// Fail fast, before telemetry, any connection and the listener: the MCP
+	// server reads the facility map from real Postgres (ADR 0039).
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		return errNoDatabase
+	}
 
 	// Same non-blocking telemetry setup as the HTTP service: an unreachable
 	// Collector degrades to dropped telemetry, never a server that won't start.
@@ -66,7 +73,6 @@ func run() error {
 	}()
 
 	httpAddr := getenv("MCP_ADDR", ":8090")
-	databaseURL := os.Getenv("DATABASE_URL")
 	// See buildAdapters' doc comment and ADR
 	// 0023-migrations-direct-postgres-connection.md (mirroring
 	// order-management's ADR-0029) for the full "why" (session-scoped
@@ -151,9 +157,9 @@ func healthz(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
 
-// adapterSet is the read-side outbound repos the MCP server needs, chosen at
-// startup: Postgres when DATABASE_URL is set, in-memory otherwise. It mirrors
-// cmd/facility's selection so both binaries read the same map.
+// adapterSet is the read-side outbound repos the MCP server needs: the same
+// Postgres repos cmd/facility writes, so both binaries read the same map.
+// There is no in-memory variant in the binary (ADR 0039).
 type adapterSet struct {
 	sites       ports.SiteRepo
 	zones       ports.ZoneRepo
@@ -163,9 +169,12 @@ type adapterSet struct {
 	crossAisles ports.CrossAisleRepo
 }
 
-// buildAdapters wires the Postgres repos when DATABASE_URL is set, or falls
-// back to the in-memory repos for local development without a database —
-// exactly as cmd/facility/main.go does.
+// errNoDatabase is the boot error of a missing DATABASE_URL: this binary reads
+// the facility map from real Postgres and has no other runtime.
+var errNoDatabase = errors.New("DATABASE_URL is required: this context runs on real Postgres")
+
+// buildAdapters wires the Postgres repos over databaseURL. An empty
+// databaseURL is a boot error: there is no fallback runtime.
 //
 // migrationsDatabaseURL is used ONLY for the golang-migrate step below —
 // the pgxpool opened just after it (and used for every subsequent request)
@@ -178,15 +187,7 @@ func buildAdapters(databaseURL, migrationsDatabaseURL, migrationsPath string, lo
 	noop := func() {}
 
 	if databaseURL == "" {
-		logger.Info("database url not configured; using in-memory adapters")
-		return adapterSet{
-			sites:       memory.NewSiteRepo(),
-			zones:       memory.NewZoneRepo(),
-			aisles:      memory.NewAisleRepo(),
-			slots:       memory.NewSlotRepo(),
-			structures:  memory.NewFixedStructureRepo(),
-			crossAisles: memory.NewCrossAisleRepo(),
-		}, noop, nil
+		return adapterSet{}, noop, errNoDatabase
 	}
 
 	// Retried, because in this fleet EVERY injected pod's first outbound TCP

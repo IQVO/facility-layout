@@ -19,11 +19,10 @@ To reach it locally:
 MCP:       {{ include "facility-layout.mcpFullname" . }} ({{ .Values.mcp.service.type }}, port {{ .Values.mcp.service.port }}, Streamable HTTP at /mcp, unauthenticated per ADR-0015)
 {{- end }}
 
-{{- if not (or .Values.database.url .Values.database.existingSecret) }}
-
-NOTE: no database.url / database.existingSecret was set — running with
-IN-MEMORY adapters (state is lost on pod restart).
-{{- end }}
+Postgres and Kafka are the only runtime (ADR 0039): database.url or
+database.existingSecret and kafka.brokers are mandatory, and the pods do not
+become Ready (GET /readyz) until Postgres answers and a Kafka broker answers a
+metadata request.
 
 Try the "draw the warehouse" endpoints once a layout is loaded:
   curl http://localhost:8080/sites/WH1/layout

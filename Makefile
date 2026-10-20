@@ -27,7 +27,9 @@ help: ## Print the available targets
 	@echo "  integration   go test -tags=integration ./... -race (testcontainers; needs only Docker)"
 	@echo "  bdd           go test ./... -run TestFeatures -v (godog acceptance suite)"
 	@echo "  contract      scripts/contract-test.sh (Schemathesis vs apis/openapi.yaml;"
-	@echo "                boots the service in-memory; needs st: pip install"
+	@echo "                boots the service against real Postgres + Kafka (set"
+	@echo "                DATABASE_URL and KAFKA_BROKERS; docker compose up -d --wait);"
+	@echo "                needs st: pip install"
 	@echo "                'schemathesis==4.28.0')"
 	@echo "  arch-test     go test ./internal/architecture/... -v (arch-go fitness tests)"
 	@echo "  mutation      gremlins unleash ./internal/domain (same subset/threshold as CI mutation-fast)"
@@ -134,3 +136,4 @@ guide-lint: ## lint agent guides: skills load, references resolve, context budge
 
 harness-test: ## unit-test the agent hooks (pre/post/stop)
 	python3 scripts/harness/test_hook.py
+	python3 scripts/harness/test_red_issue.py

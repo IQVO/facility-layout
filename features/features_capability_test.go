@@ -1,4 +1,4 @@
-package main_test
+package features_test
 
 // Step definitions for features/site_transfer_capability.feature (ADR-0035):
 // the published SiteCapabilityChanged snapshot is asserted from the domain

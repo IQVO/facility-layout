@@ -1,4 +1,4 @@
-package main_test
+package features_test
 
 // Step definitions for features/site_role.feature (ADR-0037): the published
 // SiteRegistered / SiteRoleChanged facts are asserted from the domain events
