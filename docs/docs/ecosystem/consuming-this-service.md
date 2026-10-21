@@ -8,8 +8,10 @@ description: How a downstream context integrates — synchronous REST, Kafka eve
 # Consuming this service
 
 :::info[Current status]
-Five services consume `facility-layout` today: `inventory-storage` over
-Kafka (with a REST fallback), `warehouse-planning` over Kafka,
+Ten services consume `facility-layout` today: `inventory-storage` over
+Kafka (with a REST fallback), `inbound-receiving`, `slotting-optimization`,
+`pick-face-replenishment`, `task-interleaving` and `warehouse-planning` over
+Kafka, `network-inventory-planning` over Kafka (`SiteCapabilityChanged`),
 `wes-work-planning` and `fulfillment-execution` over REST, and
 `warehouse-ops-agent` over MCP (plus the catalog-growth report REST). See the
 [Context map](./context-map.md) for the exact endpoints, events and switches
@@ -21,12 +23,14 @@ each one uses.
 | Need | Style | In use by |
 |---|---|---|
 | "Is this exact location valid, right now, before I accept this stow?" | **Synchronous REST** — `GET /locations/{locationCode}` or `/classification` | `inventory-storage` (`LOCATION_LOOKUP_MODE=http`), `fulfillment-execution` (role lookup) |
-| "Keep a local read model of the building's structure in sync" | **Event subscription** — `warehouse.facility.events` | `inventory-storage` (`LOCATION_LOOKUP_MODE=kafka`), `warehouse-planning` (storage-capacity tally) |
+| "Keep a local read model of the building's structure in sync" | **Event subscription** — `warehouse.facility.events` | `inventory-storage` (`LOCATION_LOOKUP_MODE=kafka`), `inbound-receiving` (dock doors), `slotting-optimization`, `pick-face-replenishment`, `task-interleaving`, `warehouse-planning` (storage-capacity tally), `network-inventory-planning` (site capability) |
 | "How far apart are these two locations?" | **Synchronous REST** — `GET /distance?from=&to=` | `wes-work-planning` |
 | "Let an agent explore the map" | **MCP** — `cmd/mcp`, Streamable HTTP | `warehouse-ops-agent` |
 
-Every current consumer defaults to a `permissive` mode, so none of them needs
-this service to be up in order to start.
+The two REST consumers (`wes-work-planning`, `fulfillment-execution`) keep a
+`permissive` default in their binaries, which never reaches the network, but
+`warehouse-infra` sets both to `http`, so in the cluster they do call this
+service. `inventory-storage` has no permissive mode any more (its ADR 0042).
 
 **MCP tool errors.** A failed tool call is an `isError` result whose text reads
 `<slug>: detail`; the slug is the same problem slug the REST API reports for
@@ -104,7 +108,7 @@ The events a consumer is most likely to care about:
 | `LocationSlotDecommissioned` | Stop offering that location for new work. |
 | `ZoneRegistered` | Learn a new zone, its temperature class and hazmat flag. |
 | `AisleRegistered` | Learn a corridor, its `sequenceHint` walk-order position and its `direction`. This is the travel-path input. |
-| `AisleGeometryUpdated`, `CrossAisleRegistered`, `LocationGeometryUpdated` | Keep a local copy of the travel geometry. |
+| `AisleGeometryUpdated`, `CrossAisleRegistered`, `LocationGeometryUpdated` | Keep a local copy of the travel geometry. No consumer applies the first two today; `task-interleaving` applies `LocationGeometryUpdated`. |
 | `FacilityLayoutImported` | Recognise a bulk load — useful for distinguishing a building bootstrap from ordinary drift. |
 | `SiteCapabilityChanged` (`com.warehouse.wms.facility-layout.site.SiteCapabilityChanged`) | Mirror which sites may donate (origin) or receive (destination) stock in an inter-warehouse transfer. A full last-write-wins snapshot (wire fields `site_code`, `transfer_origin_enabled`, `transfer_destination_enabled`, `capability_revision`, in **snake_case**, unlike every other event's camelCase payload; keep the highest revision, keyed by site code). Raised by `PUT /sites/{siteCode}/transfer-capability` once per real change, revision 1, 2, 3, … per site ([ADR-0035](../adr/0035-site-transfer-capability-command.md); see [Use cases](../ddd/use-cases.md#sitecapabilitychanged-raised-by-changesitetransfercapability)). network-inventory-planning's `site_capability` read model is the consumer. A site with no event yet is capable of nothing. |
 | `SiteRoleChanged` (`com.warehouse.wms.facility-layout.site.SiteRoleChanged`) | Learn a site's role in the fulfilment network (`siteCode`, `siteRole`, `previousSiteRole`, camelCase). `SiteRegistered` also carries `siteRole` (additive). A role is NOT a transfer permission: capability arrives only as `SiteCapabilityChanged` ([ADR-0037](../adr/0037-site-role-and-siterolechanged-cloudevents.md)). Sites classified by the one-time migration `0009` backfill have no `SiteRoleChanged`: read their role on `GET /sites`. The per-role default capability table is `GET /site-roles/transfer-defaults`; no consumer reads roles today. |
@@ -117,7 +121,11 @@ ignores the rest, and gates its readiness on the replay finishing
 `warehouse-planning` is the second: under a fixed consumer group it folds
 `LocationSlotRegistered` (Storage slots by location type, WorkCenter slots
 by activity) and `LocationSlotDecommissioned` into a capacity tally, deduping
-on the CloudEvents `id`.
+on the CloudEvents `id`. `inbound-receiving` keeps only Inbound and Both dock
+doors from `LocationSlotRegistered` (a decommission removes the row), and
+`slotting-optimization`, `pick-face-replenishment` and `task-interleaving`
+keep zone and slot copies (`task-interleaving` also applies
+`LocationGeometryUpdated`).
 
 ## Rules for a consumer
 
