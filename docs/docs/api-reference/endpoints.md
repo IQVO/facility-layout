@@ -154,7 +154,7 @@ guessing.
 | Method | Path | Operation | Returns |
 |---|---|---|---|
 | `GET` | `/healthz` | [Liveness probe](./rest/get-healthz.api.mdx) | `200` |
-| `GET` | `/readyz` | [Readiness probe](./rest/get-readyz.api.mdx) | `200`, `503` once draining (ADR-0020) |
+| `GET` | `/readyz` | [Readiness probe](./rest/get-readyz.api.mdx) | `200`, `503` once draining (ADR-0020) or `503` `dependency-unavailable` while Postgres or Kafka is unreachable (ADR 0039) |
 
 ## Coverage cross-check
 

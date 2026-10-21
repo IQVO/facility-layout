@@ -373,8 +373,13 @@ the Kafka adapters were a purely additive change.
 |---|---|---|---|
 | `inventory-storage` (`internal/adapters/outbound/facilitycache`, with `LOCATION_LOOKUP_MODE=kafka`) | `warehouse.facility.events` | process-unique group, replays from the first offset | `ZoneRegistered`, `LocationSlotRegistered`, `LocationSlotDecommissioned` — the rest are ignored ([ADR 0013](../adr/0013-first-published-language-consumer.md)) |
 | `warehouse-planning` (`internal/adapters/inbound/kafka/storage_capacity_consumer.go`, started when `KAFKA_BROKERS` is set) | `warehouse.facility.events` | `STORAGE_CAPACITY_CONSUMER_GROUP` (default `warehouse-planning-storage-capacity`) | `LocationSlotRegistered` (Storage and WorkCenter roles), `LocationSlotDecommissioned` — folded into a storage-position / station tally |
-| `network-inventory-planning` (`internal/adapters/inbound/kafka/consumers.go`, `SiteCapabilityConsumer`) | `warehouse.facility.events` | env-configured | `SiteCapabilityChanged` — upserted into its `site_capability` read model, last-write-wins on `capability_revision` |
+| `network-inventory-planning` (`internal/adapters/inbound/kafka/consumers.go`, `SiteCapabilityConsumer`) | `warehouse.facility.events` | env-configured (`SITE_CAPABILITY_CONSUMER_GROUP`) | `SiteCapabilityChanged` — upserted into its `site_capability` read model, last-write-wins on `capability_revision` |
+| `inbound-receiving` (`internal/adapters/inbound/kafka/dock_door_consumer.go`) | `warehouse.facility.events` | `DOCK_DOOR_CONSUMER_GROUP` (required; `inbound-receiving-dock-doors`) | `LocationSlotRegistered` (only `role=Dock` with `dockFlow` `Inbound` or `Both`), `LocationSlotDecommissioned` — kept in its `dock_doors` table |
+| `slotting-optimization`, `pick-face-replenishment` (`internal/adapters/inbound/kafka/layout_consumer.go`) | `warehouse.facility.events` | `slotting-optimization-layout`, `pick-face-replenishment-layout` | `ZoneRegistered`, `LocationSlotRegistered`, `LocationSlotDecommissioned` — local layout copies |
+| `task-interleaving` (`internal/adapters/inbound/kafka/layout_consumer.go`) | `warehouse.facility.events` | `task-interleaving-layout` | `ZoneRegistered`, `LocationSlotRegistered`, `LocationSlotDecommissioned`, `LocationGeometryUpdated` — local layout copy with positions |
 | this repository's `cmd/facility-projector` | `warehouse.facility.analytics` | `facility-analytics` (DLQ `warehouse.facility.analytics.dlq`) | The original eight events (`SiteRegistered` … `FacilityLayoutImported`); the geometry events and `SiteCapabilityChanged` are ignored |
 
-No other service consumes either topic today. The geometry, fixed-structure
-and cross-aisle events are Published Language with no consumer yet.
+No other service consumes either topic today. `AisleGeometryUpdated`,
+`FixedStructureRegistered` and `CrossAisleRegistered` are Published Language
+with no consumer yet (`LocationGeometryUpdated` is applied by
+`task-interleaving` only).
