@@ -120,8 +120,8 @@ gives every request a fresh `Idempotency-Key`; the header is `required: true`
 on the create operations in the spec. NUL characters are not generated
 (`--generation-allow-x00 false`): the service answers them with 400 (body) or
 404 (path) instead of the 500 a Postgres text parameter would give, pinned by
-unit and real-Postgres tests (ADR 0039). The old boot seeded nothing: the service
-started empty in memory and still starts empty, on a fresh database.
+unit and real-Postgres tests (ADR 0039). The service seeds nothing at boot:
+a fresh database starts empty.
 
 Six operations are excluded because their cross-field rules cannot be
 expressed in OpenAPI 3.0.3. The script names the test that covers each one:

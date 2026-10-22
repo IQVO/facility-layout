@@ -479,7 +479,7 @@ points at something that actually has a representation — a `Location` with no
 | `GET` | `/zones/{zoneId}/travel-graph` | The zone's travel graph: aisle/bay waypoints and metre-weighted edges |
 | `GET` | `/distance?from=&to=` | Shortest travel distance between two slots: `{metresM, estimated, route}` — routed over the zone's travel graph within a zone; across zones a straight-line estimate (`estimated: true`) only when both slots have position geometry, else `422 no-route-between-zones` |
 | `GET` | `/healthz` | Liveness |
-| `GET` | `/readyz` | Readiness (flips not-ready at the start of graceful shutdown, ADR-0020) |
+| `GET` | `/readyz` | Readiness (drain gate plus Postgres ping plus Kafka broker check; flips not-ready at the start of graceful shutdown, ADR-0020, ADR 0039) |
 
 Every route above, including `/healthz` and `/readyz`, is declared at the
 same path in `apis/openapi.yaml` (33 operations over 26 paths).

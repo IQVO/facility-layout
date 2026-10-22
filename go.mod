@@ -1,6 +1,6 @@
 module github.com/claudioed/facility-layout
 
-go 1.26.9
+go 1.26.10
 
 require (
 	github.com/arch-go/arch-go v1.7.0

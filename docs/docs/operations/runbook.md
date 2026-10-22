@@ -65,16 +65,30 @@ Source: `cmd/facility/main.go`, `cmd/facility-projector/main.go`, `cmd/facility-
 
 ### Readiness: what `/readyz` waits for
 
-`/readyz` does **not** check Postgres or Kafka. In `facility` and
-`facility-reports` it is backed by `inboundhttp.Readiness`. In
-`facility-projector` it is backed by an `atomic.Bool`. It returns
-`200 {"status":"ready"}` from the moment the listener is up until
-SIGTERM, and then `503 {"status":"not_ready"}` (ADR-0020).
-Dependency checks happen **before** the listener starts: migrations and a
+`/readyz` is the drain gate **and** a dependency check (ADR-0020, ADR 0039):
+
+| Binary | `/readyz` returns 200 while |
+|---|---|
+| `facility` | the process is not draining, Postgres answers a ping and a Kafka broker answers a topic-less metadata request (`cmd/facility/main.go:23`) |
+| `facility-projector` (on `admin`) | not draining, Postgres (analytical database) pings and a Kafka broker answers (`newReadiness`) |
+| `facility-reports` | not draining and the analytical Postgres pings (`cmd/facility-reports/main.go:94-99`) |
+| `mcp` | serves `/healthz` only, no `/readyz` |
+
+After SIGTERM it answers `503 {"status":"not_ready"}`; while a dependency is
+down it answers `503` `application/problem+json` of type
+`dependency-unavailable` whose `detail` names the failing dependencies
+(`internal/adapters/inbound/http/readiness.go`). The verdict is cached for a
+short TTL, and topics are never checked (a broker with no topic is Ready).
+`warehouse-infra` `helm-values/facility-layout.yaml` carries no
+`readinessProbe` override on `develop` (the old `/healthz` override went away
+with #123), so the chart default applies and the pod is routed traffic only
+while `/readyz` is 200.
+
+Dependency checks also run **before** the listener starts: migrations and a
 pool ping each run under boot retry (5 attempts with 1s, 2s, 4s and 8s
 backoff, 15s of waiting in total). The process exits non-zero if they still
-fail. So "the pod never becomes Ready" almost always means "the process is
-crash-looping on boot". Read the logs, not the probe.
+fail. So "the pod never becomes Ready" is either a crash-looping boot or a
+dependency that `/readyz` names: read the logs and `curl /readyz`.
 
 The startup probe allows 60s (2s × 30) before liveness takes over, well past
 the boot retry budget: 15s of backoff (1+2+4+8) plus the duration of each of

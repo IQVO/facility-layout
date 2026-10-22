@@ -92,13 +92,13 @@ sequenceDiagram
     FL-->>IS: zone hazmat and temperatureClass
 ```
 
-Source: `inventory-storage` `cmd/inventory/main.go` (`buildLocationLookup`),
+Source: `inventory-storage` `cmd/inventory/lookup.go`,
 `internal/adapters/outbound/facilitycache/consumer.go`,
 `internal/adapters/outbound/facilitylayout/client.go`; this repo
 `GetLocationClassification`, [ADR 0008](../adr/0008-location-classification-read-endpoint.md),
 [ADR 0013](../adr/0013-first-published-language-consumer.md).
-Omitted: `permissive` mode (the default — no check at all) and the
-inventory-storage stow command's own events.
+Omitted: the inventory-storage stow command's own events. The former
+`permissive` mode (no check at all) was removed by inventory-storage's ADR 0042.
 
 ## 3. Retiring a slot
 
@@ -127,8 +127,8 @@ sequenceDiagram
 Source: `internal/application/usecases/decommission_location_slot.go`,
 `register_location_slot.go` (`ErrDuplicateLocationCode`),
 [ADR 0005](../adr/0005-one-way-decommission.md); `fulfillment-execution`
-`internal/adapters/outbound/facilitylayout/client.go` (opt-in
-`LOCATION_ROLE_MODE=http`). Omitted: the analytics copy and the
+`internal/adapters/outbound/facilitylayout/client.go` (`LOCATION_ROLE_MODE=http`,
+set in `warehouse-infra`). Omitted: the analytics copy and the
 `409 concurrent-modification` branch.
 
 ## 4. Travel distance for planning and for the ops agent

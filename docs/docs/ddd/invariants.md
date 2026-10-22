@@ -205,10 +205,10 @@ See [Bulk import](../api-reference/bulk-import.md) and
 | Layer | Mechanism |
 |---|---|
 | Domain | Table-driven unit tests per aggregate, both paths |
-| Application | Use-case tests against the in-memory adapters |
+| Application | Use-case tests against the in-memory test doubles |
 | HTTP | One `httptest` per endpoint, asserting status **and** RFC 7807 body |
 | End-to-end | godog/Gherkin scenarios over the real HTTP API in `features/` |
-| Persistence | Build-tagged Postgres integration tests (skipped without `DATABASE_URL`) |
+| Persistence | Build-tagged integration tests that boot a throwaway testcontainers Postgres (and Kafka) and never skip (`internal/adapters/outbound/postgres/integration_test.go:34-37`) |
 | Architecture | `arch-go` fitness test — the domain may not import the application layer |
 
 The combined statement coverage gate across `internal/domain/...` and
