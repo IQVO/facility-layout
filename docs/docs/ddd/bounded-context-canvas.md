@@ -97,10 +97,11 @@ flowchart LR
         out0["inventory-storage"]:::ctx
         out1["warehouse-planning"]:::ctx
         out2["inbound-receiving (dock<br/>doors copy)"]:::ctx
-        out3["slotting-optimization<br/>(layout copy)"]:::ctx
+        out3["slotting-optimization,<br/>pick-face-replenishment<br/>(layout copies)"]:::ctx
         out4["network-inventory-planning"]:::ctx
         out5["own cmd/facility-projector"]:::self
         out6["no consumer yet"]:::none
+        out7["task-interleaving<br/>(layout copy + geometry)"]:::ctx
     end
     BC ==>|"evt - Kafka<br/>warehouse.facility.events<br/>ZoneRegistered,<br/>LocationSlotRegistered,<br/>LocationSlotDecommissioned"| out0
     BC ==>|"evt - Kafka<br/>warehouse.facility.events<br/>LocationSlotRegistered,<br/>LocationSlotDecommissioned"| out1
@@ -108,7 +109,8 @@ flowchart LR
     BC ==>|"evt - Kafka<br/>warehouse.facility.events<br/>ZoneRegistered,<br/>LocationSlotRegistered,<br/>LocationSlotDecommissioned"| out3
     BC ==>|"evt - Kafka<br/>warehouse.facility.events<br/>SiteCapabilityChanged"| out4
     BC ==>|"evt - Kafka<br/>warehouse.facility.analytics<br/>analytics copy of the domain<br/>events"| out5
-    BC ==>|"evt - Kafka<br/>warehouse.facility.events<br/>SiteRegistered,<br/>AisleRegistered,<br/>LocationTypeRegistered,<br/>PlacementRuleDefined,<br/>FacilityLayoutImported,<br/>LocationGeometryUpdated,<br/>AisleGeometryUpdated,<br/>FixedStructureRegistered,<br/>CrossAisleRegistered"| out6
+    BC ==>|"evt - Kafka<br/>warehouse.facility.events<br/>SiteRegistered,<br/>AisleRegistered,<br/>LocationTypeRegistered,<br/>PlacementRuleDefined,<br/>FacilityLayoutImported,<br/>AisleGeometryUpdated,<br/>FixedStructureRegistered,<br/>CrossAisleRegistered"| out6
+    BC ==>|"evt - Kafka<br/>warehouse.facility.events<br/>ZoneRegistered,<br/>LocationSlotRegistered,<br/>LocationSlotDecommissioned,<br/>LocationGeometryUpdated"| out7
     linkStyle 0 stroke:#e8590c,stroke-width:2.5px
     linkStyle 1 stroke:#e8590c,stroke-width:2.5px
     linkStyle 2 stroke:#e8590c,stroke-width:2.5px
@@ -116,6 +118,7 @@ flowchart LR
     linkStyle 4 stroke:#e8590c,stroke-width:2.5px
     linkStyle 5 stroke:#e8590c,stroke-width:2.5px
     linkStyle 6 stroke:#e8590c,stroke-width:2.5px
+    linkStyle 7 stroke:#e8590c,stroke-width:2.5px
 ```
 
 Source: the Inbound Communication and Outbound Communication tables of this
@@ -197,13 +200,14 @@ Every domain event goes to **both** topics
 
 | Collaborator | Message | Type | Channel | Relationship |
 |---|---|---|---|---|
-| `inventory-storage` (`facilitycache`), `slotting-optimization` (layout copy) | ZoneRegistered | Event | Kafka `warehouse.facility.events` — `com.warehouse.wms.facility-layout.zone.ZoneRegistered` | OHS + PL (U) → Conformist + ACL (D) |
-| `inventory-storage`, `warehouse-planning`, `inbound-receiving` (dock-door copy), `slotting-optimization` (layout copy) | LocationSlotRegistered | Event | Kafka `warehouse.facility.events` — `com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered` | OHS + PL (U) → Conformist + ACL (D) |
-| `inventory-storage`, `warehouse-planning`, `inbound-receiving` (dock-door copy), `slotting-optimization` (layout copy) | LocationSlotDecommissioned | Event | Kafka `warehouse.facility.events` — `com.warehouse.wms.facility-layout.locationslot.LocationSlotDecommissioned` | OHS + PL (U) → Conformist + ACL (D) |
+| `inventory-storage` (`facilitycache`), `slotting-optimization`, `pick-face-replenishment`, `task-interleaving` (layout copies) | ZoneRegistered | Event | Kafka `warehouse.facility.events` — `com.warehouse.wms.facility-layout.zone.ZoneRegistered` | OHS + PL (U) → Conformist + ACL (D) |
+| `inventory-storage`, `warehouse-planning`, `inbound-receiving` (dock-door copy), `slotting-optimization`, `pick-face-replenishment`, `task-interleaving` (layout copies) | LocationSlotRegistered | Event | Kafka `warehouse.facility.events` — `com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered` | OHS + PL (U) → Conformist + ACL (D) |
+| `inventory-storage`, `warehouse-planning`, `inbound-receiving` (dock-door copy), `slotting-optimization`, `pick-face-replenishment`, `task-interleaving` (layout copies) | LocationSlotDecommissioned | Event | Kafka `warehouse.facility.events` — `com.warehouse.wms.facility-layout.locationslot.LocationSlotDecommissioned` | OHS + PL (U) → Conformist + ACL (D) |
+| `task-interleaving` (layout copy) | LocationGeometryUpdated | Event | Kafka `warehouse.facility.events` — `com.warehouse.wms.facility-layout.locationslot.LocationGeometryUpdated` | OHS + PL (U) → Conformist + ACL (D) |
 | `network-inventory-planning` (`SiteCapabilityConsumer`) | SiteCapabilityChanged | Event | Kafka `warehouse.facility.events` — `com.warehouse.wms.facility-layout.site.SiteCapabilityChanged` (snake_case payload, ADR 0035) | OHS + PL (U) → Conformist + ACL (D) |
 | own `cmd/facility-projector` | SiteRegistered, ZoneRegistered, AisleRegistered, LocationTypeRegistered, PlacementRuleDefined, LocationSlotRegistered, LocationSlotDecommissioned, FacilityLayoutImported | Event | Kafka `warehouse.facility.analytics` — same `type` strings, `dataschema` `urn:warehouse:facility-layout:analytics:<EventName>:v1` | same context |
 | no consumer yet | SiteRegistered, AisleRegistered, LocationTypeRegistered, PlacementRuleDefined, FacilityLayoutImported | Event | Kafka `warehouse.facility.events` — `...site.SiteRegistered`, `...aisle.AisleRegistered`, `...locationtype.LocationTypeRegistered`, `...placementrule.PlacementRuleDefined`, `...locationslot.FacilityLayoutImported` | OHS + PL |
-| no consumer yet | LocationGeometryUpdated, AisleGeometryUpdated, FixedStructureRegistered, CrossAisleRegistered | Event | Kafka `warehouse.facility.events` — `...locationslot.LocationGeometryUpdated`, `...aisle.AisleGeometryUpdated`, `...structure.FixedStructureRegistered`, `...crossaisle.CrossAisleRegistered` | OHS + PL |
+| no consumer yet | AisleGeometryUpdated, FixedStructureRegistered, CrossAisleRegistered | Event | Kafka `warehouse.facility.events` — `...aisle.AisleGeometryUpdated`, `...structure.FixedStructureRegistered`, `...crossaisle.CrossAisleRegistered` | OHS + PL |
 
 This context sends **no** command or query to any other context: there is
 no outbound REST/MCP client in `internal/adapters/outbound/`.
@@ -253,9 +257,10 @@ Top terms:
 
 ## Assumptions
 
-- Consumers tolerate this service being down: every synchronous consumer
-  defaults to a `permissive` mode, and `inventory-storage` can run from its
-  Kafka-fed cache.
+- Consumers tolerate this service being down: the Kafka consumers keep local
+  copies, and the two REST callers (`wes-work-planning`, `fulfillment-execution`)
+  wrap the call in a circuit breaker and fall back to their `permissive`
+  behaviour. `inventory-storage` can run from its Kafka-fed cache.
 - A building's layout changes slowly (hundreds to thousands of writes per
   day, mostly during commissioning), so per-day analytics buckets and
   single-row optimistic concurrency on `location_slots` only
@@ -277,7 +282,8 @@ Top terms:
 ## Open Questions
 
 - Should the travel graph connect zones with a routed path rather than a
-  straight-line estimate? (planned, [ADR 0017](../adr/0017-geometry-and-travel-graph.md))
+  straight-line estimate? (open, [ADR 0017](../adr/0017-geometry-and-travel-graph.md);
+  `estimate_travel_distance.go:38-41`)
 - Should cross-aisles carry their own geometry? Today every cross-aisle edge
   is estimated from the zone's bay pitch (`travel.crossAisleDistance`).
 - Should `FixedStructure` obstacles constrain the travel graph? The domain
@@ -285,6 +291,7 @@ Top terms:
 - There is no use case that sets `UnderMaintenance`, decommissions a Site,
   Zone, Aisle or CrossAisle, or deletes a placement rule — the methods exist
   on the aggregates but nothing exposes them.
-- Ten of the fourteen event types have no external consumer. Is the
-  geometry Published Language worth its contract cost before a WES consumer
-  exists?
+- Nine of the fourteen event types have no external consumer. Is the
+  geometry Published Language worth its contract cost? Only
+  `task-interleaving` consumes one geometry event (`LocationGeometryUpdated`);
+  `wes-work-planning` still reads distance over REST.

@@ -459,9 +459,10 @@ flowchart LR
 
     subgraph Outbound["Outbound adapters"]
         PG["outbound/postgres<br/>repos, UnitOfWork,<br/>OutboxPublisher, OutboxRelay, Sweeper"]
-        MEM["outbound/memory<br/>repos, SystemClock"]
+        MEM["outbound/memory<br/>repos (test doubles only)"]
+        SYS["outbound/system<br/>wall Clock"]
         KF["outbound/kafka<br/>Publisher, AnalyticsPublisher,<br/>FanOut, RelaySink"]
-        EV["outbound/events<br/>log and buffered publishers"]
+        EV["outbound/events<br/>log and buffered publishers<br/>(test doubles only)"]
         TEL["outbound/telemetry<br/>LocationMetrics"]
         AS["outbound/analyticsstore<br/>projection and report repos"]
     end
@@ -480,13 +481,13 @@ flowchart LR
     PUB -.implemented by.-> PG
     PUB -.implemented by.-> KF
     PUB -.implemented by.-> EV
-    CLK -.implemented by.-> MEM
+    CLK -.implemented by.-> SYS
     MET -.implemented by.-> TEL
     KIN --> AS
 ```
 
 Source: `internal/application/ports/ports.go`, `cmd/facility/main.go`
-(`buildAdapters`, `memoryAdapters`, `outboxAdapters`), `cmd/mcp/main.go`,
+(`buildAdapters`, `outboxAdapters`), `cmd/mcp/main.go`,
 `cmd/facility-projector/main.go`, `internal/adapters/**`. The analytics
 consumer writes through `internal/analytics/report` ports implemented by
 `outbound/analyticsstore` and never touches the OLTP application layer
