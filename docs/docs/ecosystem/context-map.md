@@ -15,11 +15,17 @@ This page is this bounded context's slice of the fleet map and is part of the
 
 :::info[Current state, verified against each repository's `develop`]
 `facility-layout` has **no outbound dependency** on any other service: it
-calls no one and consumes no other context's events. It is upstream of six
-backend contexts — `inventory-storage`, `warehouse-planning`,
-`wes-work-planning`, `fulfillment-execution`, `warehouse-ops-agent` and
-`network-inventory-planning` — and of its own browser micro-frontend. Every consumer that calls it synchronously
-defaults to a `permissive` mode, so none of them needs this service to start.
+calls no one and consumes no other context's events. It is upstream of ten
+backend contexts — `inventory-storage`, `inbound-receiving`,
+`slotting-optimization`, `pick-face-replenishment`, `task-interleaving`,
+`warehouse-planning`, `wes-work-planning`, `fulfillment-execution`,
+`warehouse-ops-agent` and `network-inventory-planning` — and of its own
+browser micro-frontend. Consumers that call it synchronously keep a
+`permissive` default in their binaries (`wes-work-planning`,
+`fulfillment-execution`), but `warehouse-infra` switches both to `http` on
+`develop`, so in the cluster those two edges are live. `inventory-storage` no
+longer has a permissive mode (its ADR 0042): `LOCATION_LOOKUP_MODE` is `kafka`
+or `http`.
 :::
 
 ## The map
@@ -32,7 +38,11 @@ flowchart LR
     WP["wes-work-planning<br/>wes · Core"]
     FE["fulfillment-execution<br/>wes · Core"]
     OA["warehouse-ops-agent<br/>wes"]
-    NIP["network-inventory-planning<br/>wms"]
+    NIP["network-inventory-planning<br/>wes"]
+    IR["inbound-receiving<br/>wms · Supporting"]
+    SO["slotting-optimization<br/>wms · Supporting"]
+    PFR["pick-face-replenishment<br/>wms · Supporting"]
+    TI["task-interleaving<br/>wes"]
     WF["workforce-management<br/>Supporting<br/>Separate Ways"]
     PJ["facility-projector and facility-reports<br/>own analytics read side"]
 
@@ -40,7 +50,11 @@ flowchart LR
     FL -.->|"U OHS+PL to D CF<br/>REST GET /locations/code/classification<br/>rollback path"| IS
     FL -->|"U OHS+PL to D CF+ACL<br/>Kafka warehouse.facility.events<br/>LocationSlotRegistered, LocationSlotDecommissioned"| WPL
     FL -->|"U OHS+PL to D CF<br/>REST GET /distance"| WP
-    FL -.->|"U OHS+PL to D CF<br/>REST GET /locations/code<br/>opt-in role lookup"| FE
+    FL -->|"U OHS+PL to D CF<br/>REST GET /locations/code<br/>role lookup"| FE
+    FL -->|"U OHS+PL to D CF+ACL<br/>Kafka warehouse.facility.events<br/>LocationSlotRegistered, LocationSlotDecommissioned<br/>(dock doors)"| IR
+    FL -->|"U OHS+PL to D CF+ACL<br/>Kafka warehouse.facility.events<br/>ZoneRegistered, LocationSlotRegistered,<br/>LocationSlotDecommissioned"| SO
+    FL -->|"U OHS+PL to D CF+ACL<br/>Kafka warehouse.facility.events<br/>ZoneRegistered, LocationSlotRegistered,<br/>LocationSlotDecommissioned"| PFR
+    FL -->|"U OHS+PL to D CF+ACL<br/>Kafka warehouse.facility.events<br/>ZoneRegistered, LocationSlotRegistered,<br/>LocationSlotDecommissioned, LocationGeometryUpdated"| TI
     FL -->|"U OHS+PL to D CF<br/>MCP list_sites, get_site_layout,<br/>get_zone_grid, estimate_travel_distance<br/>plus REST /reports/catalog-growth"| OA
     FL -->|"U OHS+PL to D CF+ACL<br/>Kafka warehouse.facility.events<br/>SiteCapabilityChanged"| NIP
     FL -->|"same context<br/>Kafka warehouse.facility.analytics"| PJ
@@ -70,19 +84,27 @@ below), e2e test harnesses, and the `.dlq` topics.
 | 1 | `inventory-storage` | U: OHS + PL · D: Conformist + ACL (local location-classification cache) | Kafka `warehouse.facility.events` — `com.warehouse.wms.facility-layout.zone.ZoneRegistered`, `com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered`, `com.warehouse.wms.facility-layout.locationslot.LocationSlotDecommissioned` | **Live** when `LOCATION_LOOKUP_MODE=kafka` (process-unique group, replay from the first offset, readiness gated on catch-up) | `inventory-storage`: `internal/adapters/outbound/facilitycache/consumer.go`; this repo: [ADR 0013](../adr/0013-first-published-language-consumer.md) |
 | 2 | `inventory-storage` | U: OHS + PL · D: Conformist | REST `GET /locations/{locationCode}/classification` | **Wired, rollback path** (`LOCATION_LOOKUP_MODE=http` + `FACILITY_LAYOUT_BASE_URL`) | `inventory-storage`: `internal/adapters/outbound/facilitylayout/client.go`; [ADR 0008](../adr/0008-location-classification-read-endpoint.md) |
 | 3 | `warehouse-planning` | U: OHS + PL · D: Conformist + ACL (hand-mirrored payload folded into a position/station tally) | Kafka `warehouse.facility.events` — `com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered`, `com.warehouse.wms.facility-layout.locationslot.LocationSlotDecommissioned` | **Live** whenever `KAFKA_BROKERS` is set (group `STORAGE_CAPACITY_CONSUMER_GROUP`, default `warehouse-planning-storage-capacity`) | `warehouse-planning`: `internal/adapters/inbound/kafka/storage_capacity_consumer.go`, `cmd/api/main.go` |
-| 4 | `wes-work-planning` | U: OHS + PL · D: Conformist | REST `GET /distance?from=&to=` → `metresM`, `estimated`, `route` | **Live** (`TRAVEL_DISTANCE_MODE=http` + `FACILITY_LAYOUT_BASE_URL`) | `wes-work-planning`: `internal/adapters/outbound/traveldistance/client.go` |
-| 5 | `fulfillment-execution` | U: OHS + PL · D: Conformist | REST `GET /locations/{locationCode}` — the slot's `role` | **Wired, opt-in** (`LOCATION_ROLE_MODE=http` + `FACILITY_LAYOUT_BASE_URL`; default `permissive`) | `fulfillment-execution`: `internal/adapters/outbound/facilitylayout/client.go`; [ADR 0016](../adr/0016-functional-location-roles.md) |
+| 4 | `wes-work-planning` | U: OHS + PL · D: Conformist | REST `GET /distance?from=&to=` → `metresM`, `estimated`, `route` | **Live** (`TRAVEL_DISTANCE_MODE=http` + `FACILITY_LAYOUT_BASE_URL`, both set in `warehouse-infra` `helm-values/wes-work-planning.yaml`; the binary default is `permissive`) | `wes-work-planning`: `internal/adapters/outbound/traveldistance/client.go` |
+| 5 | `fulfillment-execution` | U: OHS + PL · D: Conformist | REST `GET /locations/{locationCode}` — the slot's `role` | **Live** (`LOCATION_ROLE_MODE=http` + `FACILITY_LAYOUT_BASE_URL`, set in `warehouse-infra` `helm-values/fulfillment-execution.yaml` since 2026-10-17; the binary default is still `permissive`, and an unknown location passes) | `fulfillment-execution`: `internal/adapters/outbound/facilitylayout/client.go`; [ADR 0016](../adr/0016-functional-location-roles.md) |
 | 6 | `warehouse-ops-agent` | U: OHS + PL · D: Conformist | MCP (Streamable HTTP) tools `list_sites`, `get_site_layout`, `get_zone_grid`, `estimate_travel_distance`; REST `GET /reports/catalog-growth` (+ `/freshness`) on `cmd/facility-reports` | **Live** (`FACILITY_LAYOUT_MCP_ENDPOINT`, `FACILITY_LAYOUT_REPORTS_REST_URL`) | `warehouse-ops-agent`: `internal/adapters/outbound/mcpclient/facility_layout.go`, `internal/config/config.go` |
 | 7 | own analytics read side | same bounded context, not a context relationship | Kafka `warehouse.facility.analytics`, group `facility-analytics` | **Live** | this repo: `internal/adapters/inbound/kafka/analytics_consumer.go`; [ADR 0010](../adr/0010-analytical-data-product.md) |
 | 8 | `workforce-management` | **Separate Ways** | — | **Deliberately absent** — it stops at the process-path boundary and never links an associate to a location | no client or consumer in its code |
-| 9 | `network-inventory-planning` | U: OHS + PL · D: Conformist + ACL (hand-mirrored snake_case payload upserted into its `site_capability` read model, last-write-wins on `capability_revision`) | Kafka `warehouse.facility.events` — `com.warehouse.wms.facility-layout.site.SiteCapabilityChanged`, raised by `PUT /sites/{siteCode}/transfer-capability` ([ADR 0035](../adr/0035-site-transfer-capability-command.md)) | **Live** when its `KAFKA_BROKERS` and `SITE_CAPABILITY_CONSUMER_GROUP` are set | `network-inventory-planning`: `internal/adapters/inbound/kafka/consumers.go` (`SiteCapabilityConsumer`) |
+| 9 | `network-inventory-planning` | U: OHS + PL · D: Conformist + ACL (hand-mirrored snake_case payload upserted into its `site_capability` read model, last-write-wins on `capability_revision`) | Kafka `warehouse.facility.events` — `com.warehouse.wms.facility-layout.site.SiteCapabilityChanged`, raised by `PUT /sites/{siteCode}/transfer-capability` ([ADR 0035](../adr/0035-site-transfer-capability-command.md)) | **Live** when its `KAFKA_BROKERS` and `SITE_CAPABILITY_CONSUMER_GROUP` are set (`warehouse-infra` sets `network-inventory-planning-site-capability`) | `network-inventory-planning`: `internal/adapters/inbound/kafka/consumers.go` (`SiteCapabilityConsumer`) |
+| 10 | `inbound-receiving` | U: OHS + PL · D: Conformist + ACL (local `dock_doors` copy) | Kafka `warehouse.facility.events` — `...locationslot.LocationSlotRegistered` (only `role=Dock` with `dockFlow` `Inbound` or `Both` is kept) and `...LocationSlotDecommissioned` | **Live**, always on (`DOCK_DOOR_CONSUMER_GROUP` required; `warehouse-infra` sets `inbound-receiving-dock-doors`) | `inbound-receiving`: `internal/adapters/inbound/kafka/dock_door_consumer.go` |
+| 11 | `slotting-optimization` | U: OHS + PL · D: Conformist + ACL (local layout copy) | Kafka `warehouse.facility.events` — `...zone.ZoneRegistered`, `...LocationSlotRegistered`, `...LocationSlotDecommissioned` | **Live** (`layoutMode: kafka`, group `slotting-optimization-layout` in `warehouse-infra`) | `slotting-optimization`: `internal/adapters/inbound/kafka/layout_consumer.go` |
+| 12 | `pick-face-replenishment` | U: OHS + PL · D: Conformist + ACL (local layout copy) | Kafka `warehouse.facility.events` — `...zone.ZoneRegistered`, `...LocationSlotRegistered`, `...LocationSlotDecommissioned` | **Live** (group `pick-face-replenishment-layout` in `warehouse-infra`) | `pick-face-replenishment`: `internal/adapters/inbound/kafka/layout_consumer.go` |
+| 13 | `task-interleaving` | U: OHS + PL · D: Conformist + ACL (local layout copy) | Kafka `warehouse.facility.events` — `...zone.ZoneRegistered`, `...LocationSlotRegistered`, `...LocationSlotDecommissioned`, `...LocationGeometryUpdated` | **Live** (group `task-interleaving-layout` in `warehouse-infra`) | `task-interleaving`: `internal/adapters/inbound/kafka/layout_consumer.go` |
 | — | `order-management`, `process-path-management`, `labor-performance`, `network-fulfillment`, `product-master` | no relationship | — | **Absent** — no client of this context's REST/MCP surface and no consumer of its topics on `develop`; `product-master` (SKU master data, the third `wms` context) neither calls this service nor consumes `warehouse.facility.events`, and this service consumes nothing from it | org-wide code search for `FACILITY_LAYOUT` and `warehouse.facility.events` |
 | — | anything **this** context calls | — | — | **Deliberately absent** — `facility-layout` has no outbound adapter to another service, ever | `internal/adapters/outbound/` holds only Postgres, memory, Kafka publishers, telemetry, boot-retry and analytics-store adapters |
 
-On `warehouse.facility.events`, ten of the fourteen event types have no
+On `warehouse.facility.events`, nine of the fourteen event types have no
 external consumer today: `SiteRegistered`, `SiteRoleChanged`,
 `AisleRegistered`, `LocationTypeRegistered`, `PlacementRuleDefined`,
-`FacilityLayoutImported` and the four ADR 0017 geometry events.
+`FacilityLayoutImported`, `AisleGeometryUpdated`, `FixedStructureRegistered`
+and `CrossAisleRegistered`. The consumed five are `ZoneRegistered`,
+`LocationSlotRegistered`, `LocationSlotDecommissioned`,
+`LocationGeometryUpdated` (task-interleaving) and `SiteCapabilityChanged`
+(network-inventory-planning).
 
 ## The console: a live, browser-facing client that is not a context
 
@@ -111,18 +133,24 @@ category of consumer as any other REST client.
 Lifecycle screen — it has no order reference in its own aggregates. Its role
 in the console is limited to `facility-mfe`'s own screens over its own data.
 
-## What is planned, and not yet built
+## What is not built (open)
 
-- **Event-driven travel input for `wes-work-planning`.** It reads distance
-  synchronously today. Consuming `AisleRegistered`, `AisleGeometryUpdated`
-  and `CrossAisleRegistered` to keep a local travel graph is a design option,
-  not code.
-- **Routed cross-zone travel.** The travel graph is per zone. Across zones,
-  `/distance` and `estimate_travel_distance` return a straight-line
+Nothing on this page is "planned" in the sense of a scheduled change; these
+two are the open edges, verified against `develop` of the owning repos:
+
+- **Event-driven travel input for `wes-work-planning`.** Open. It still reads
+  distance synchronously (`cmd/wes/repositories.go`, `TRAVEL_DISTANCE_MODE=http`)
+  and no code on its `develop` consumes `AisleRegistered`,
+  `AisleGeometryUpdated` or `CrossAisleRegistered`. Partly overtaken:
+  `task-interleaving` keeps a local layout copy from `warehouse.facility.events`
+  including `LocationGeometryUpdated` (row 13), but it does not build a travel
+  graph.
+- **Routed cross-zone travel.** Open. The travel graph is per zone. Across
+  zones, `/distance` and `estimate_travel_distance` return a straight-line
   (beeline) estimate flagged `estimated: true` when **both** slots carry
   recorded position geometry, and refuse (`422 no-route-between-zones`)
-  otherwise. A routed path across zones does not exist yet
-  ([ADR 0017](../adr/0017-geometry-and-travel-graph.md)).
+  otherwise (`internal/application/usecases/estimate_travel_distance.go:38-41`;
+  [ADR 0017](../adr/0017-geometry-and-travel-graph.md)).
 
 ## The strategic relationship, in context-mapping vocabulary
 
@@ -151,12 +179,14 @@ Two design choices exist to make that language *publishable*:
 ### Conformist (and ACL), downstream
 
 The consumers are **Conformists**: they accept this context's model rather
-than negotiating a shared one. The two event consumers additionally keep an
+than negotiating a shared one. The event consumers additionally keep an
 **anti-corruption layer** of their own — `inventory-storage` folds the events
 into a zone/location classification cache keyed the way its stow check needs
 (the SKU side of that check comes from its local copy of `product-master`'s
-classification, not from here), and
-`warehouse-planning` folds them into a capacity tally — so neither adopts
+classification, not from here), `inbound-receiving` into a dock-door table,
+`slotting-optimization`, `pick-face-replenishment` and `task-interleaving`
+into their own layout copies, and
+`warehouse-planning` folds them into a capacity tally — so none adopts
 `LocationSlot` as an internal type. That is the right pattern precisely
 *because* this is a Generic Subdomain: there is nothing to differentiate by
 modelling location differently.

@@ -35,8 +35,8 @@ graph LR
 
     subgraph Outbound["Driven adapters"]
         PG["outbound/postgres<br/>pgxpool + migrations"]
-        MEM["outbound/memory<br/>thread-safe in-memory"]
-        EV["outbound/events<br/>log · buffered"]
+        MEM["outbound/memory<br/>in-memory (test doubles only)"]
+        EV["outbound/events<br/>log · buffered (test doubles only)"]
         KF["outbound/kafka<br/>integration + analytics publishers"]
     end
 
@@ -78,8 +78,8 @@ internal/
     inbound/mcp/              MCP tools, resource template and prompt over the read use cases
     inbound/kafka/            analytics topic consumer (projector only)
     outbound/postgres/        pgxpool repos, golang-migrate runner, UnitOfWork, transactional outbox (publisher + relay), housekeeping sweeper
-    outbound/memory/          thread-safe in-memory repos for tests and local runs
-    outbound/events/          log + buffered publishers
+    outbound/memory/          thread-safe in-memory repos: test doubles only, never imported by cmd/** (ADR 0039)
+    outbound/events/          log + buffered publishers: test doubles only
     outbound/kafka/           integration (warehouse.facility.events) + analytics publishers, FanOut, RelaySink, DLQ writer
     outbound/analyticsstore/  analytical-database projection and report queries
     outbound/telemetry/       OpenTelemetry setup and the LocationMetrics recorder

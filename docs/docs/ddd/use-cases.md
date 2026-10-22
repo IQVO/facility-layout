@@ -13,10 +13,11 @@ scheduled use cases: facility-layout consumes no topic in its OLTP path. The
 only background work (outbox relay, housekeeping sweeper, analytics
 projection) lives in adapters, not in use cases.
 
-Writes run inside `atomically(ctx, UnitOfWork, …)`. With Postgres plus
-Kafka, each write saves the aggregate and enqueues its event(s) into
-`outbox_events` in one transaction (ADR-0018). Without a unit of work
-(in-memory mode) the two steps run back to back. Every event below is
+Writes run inside `atomically(ctx, UnitOfWork, …)`. Each write saves the
+aggregate and enqueues its event(s) into `outbox_events` in one transaction
+(ADR-0018). The `UnitOfWork` field is nil only in unit tests on in-memory test
+doubles, where the two steps run back to back; no binary builds a use case that
+way (Postgres and Kafka are the only runtime, ADR 0039). Every event below is
 published to **both** `warehouse.facility.events` and
 `warehouse.facility.analytics` with the CloudEvents type
 `com.warehouse.wms.facility-layout.<entity>.<EventName>` (ADR-0024).
