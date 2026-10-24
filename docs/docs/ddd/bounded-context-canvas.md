@@ -291,7 +291,7 @@ Top terms:
 - There is no use case that sets `UnderMaintenance`, decommissions a Site,
   Zone, Aisle or CrossAisle, or deletes a placement rule — the methods exist
   on the aggregates but nothing exposes them.
-- Nine of the fourteen event types have no external consumer. Is the
+- Nine of the fifteen event types have no external consumer. Is the
   geometry Published Language worth its contract cost? Only
   `task-interleaving` consumes one geometry event (`LocationGeometryUpdated`);
   `wes-work-planning` still reads distance over REST.

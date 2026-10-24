@@ -92,7 +92,7 @@ cmd/facility-projector/       analytics projector (the only analytical-DB writer
 cmd/facility-reports/         analytics reader (serves /reports/catalog-growth)
 internal/
   domain/                     pure business logic; imports nothing but stdlib and itself
-    shared/                   LocationCode, Capacity, geometry values, enums, the 14 events
+    shared/                   LocationCode, Capacity, geometry values, enums, the 15 events
     site/  zone/  aisle/      the structural aggregates (aisle/ also holds CrossAisle)
     placement/                LocationType, LocationRole, PlacementRule, RuleSet evaluation
     slot/                     LocationSlot — the coded leaf aggregate — and its functional attributes
@@ -132,7 +132,7 @@ into its sibling, or if `ports` grows a concrete type.
 | **Aisle** | A physical corridor scoped to a Zone. Carries a `SequenceHint` (walk-order position — the concrete travel-distance input the WES tier needs) and a `Direction` (OneWay/TwoWay). |
 | **LocationType** | A reusable classification of slot shape/kind (`PalletRack`, `Shelf`, `ToteWall`, `BulkFloor`, `Staging`, `Amnesty`) with a default capacity envelope and a `LocationRole`. |
 | **LocationRole** | What a location is *for* (ADR-0016): `Storage` (default), `Dock`, `Yard`, `WorkCenter`, `Drop`, `Staging`, `QC`, `Consolidation`, `Shipping`. Capacity is required only for `Storage`/`Staging`/`Drop`/`Consolidation`. A `Dock` slot carries a `dockFlow` (`Inbound`/`Outbound`/`Both`); a `WorkCenter` slot carries `activities` (`Pack`, `Sort`, `QC`, `VAS`, `Deconsolidate`, `Receive`, `Kit`). |
-| **LocationSlot** | The coded leaf aggregate. Its identity **is** its `LocationCode`. Has a LocationType (and so a role), a capacity envelope, optional physical geometry, and a Status (`Active`/`UnderMaintenance`/`Decommissioned`). |
+| **LocationSlot** | The coded leaf aggregate. Its identity **is** its `LocationCode`. Has a LocationType (and so a role), a capacity envelope, optional physical geometry, an optional handling unit (`EACH`/`CASE`/`PALLET`, ADR-0040), and a Status (`Active`/`UnderMaintenance`/`Decommissioned`). |
 | **CrossAisle / FixedStructure** | Physical geometry (ADR-0017): a walkable connection between two aisles of a zone, and a wall/column/office/conveyor footprint on a site. Together with aisle centrelines they form each zone's **travel graph**. |
 | **PlacementRule** | Declares which LocationTypes are legal in which Zones. The mechanism that prevents "ambient product in the frozen zone" — enforced once, at registration time. |
 | **Facility layout** | The readable, drawable projection of the whole structure: zones → aisles → slots, shaped for a UI to render directly. |
@@ -168,10 +168,10 @@ case that sets it.
 `SiteRegistered`, `SiteCapabilityChanged`, `SiteRoleChanged`, `ZoneRegistered`,
 `AisleRegistered`, `LocationTypeRegistered`, `PlacementRuleDefined`,
 `LocationSlotRegistered`, `LocationSlotDecommissioned`, `FacilityLayoutImported`,
-`LocationGeometryUpdated`, `AisleGeometryUpdated`,
-`FixedStructureRegistered`, `CrossAisleRegistered`.
+`LocationSlotHandlingUnitDeclared`, `LocationGeometryUpdated`,
+`AisleGeometryUpdated`, `FixedStructureRegistered`, `CrossAisleRegistered`.
 
-All fourteen are published (through the transactional outbox) to
+All fifteen are published (through the transactional outbox) to
 `warehouse.facility.events` (specified in `apis/asyncapi.yaml`) and to
 `warehouse.facility.analytics`. `inventory-storage` consumes
 `ZoneRegistered`, `LocationSlotRegistered` and `LocationSlotDecommissioned`
@@ -455,6 +455,7 @@ are deliberately excluded. See
 | `POST` | `/locations/{locationCode}/decommission` | DecommissionLocationSlot | `204` |
 | `POST` | `/locations/import` | ImportFacilityLayout (bulk, partial success) | `200` |
 | `PUT` | `/locations/{locationCode}/geometry` | SetLocationGeometry (position, dimensions, pick sequence) | `200` |
+| `PUT` | `/locations/{locationCode}/handling-unit` | DeclareLocationHandlingUnit (`EACH`/`CASE`/`PALLET`, ADR-0040) | `200` |
 | `PUT` | `/zones/{zoneId}/aisles/{aisleCode}/geometry` | SetAisleGeometry (travel centreline) | `200` |
 | `POST` | `/zones/{zoneId}/cross-aisles` | RegisterCrossAisle | `201` |
 | `GET` | `/zones/{zoneId}/cross-aisles` | List a zone's cross-aisles | `200` |
@@ -838,7 +839,7 @@ Content-Type: application/problem+json
 `apis/openapi.yaml` (OpenAPI 3.0.3) documents every route with full
 request/response schemas, a shared `Problem` component, and real
 domain-grounded examples. `apis/asyncapi.yaml` (AsyncAPI 2.6.0) specifies the
-`warehouse.facility.events` topic, its CloudEvents 1.0 envelope (ADR-0024) and all fourteen messages. The
+`warehouse.facility.events` topic, its CloudEvents 1.0 envelope (ADR-0024) and all fifteen messages. The
 OpenAPI document is linted in CI:
 
 ```sh

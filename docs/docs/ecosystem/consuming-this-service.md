@@ -105,6 +105,7 @@ The events a consumer is most likely to care about:
 | Event | Consumer reaction |
 |---|---|
 | `LocationSlotRegistered` | Add the location to the local map as usable. Payload carries `zoneId`, `aisleId` and `role` already, so no code parsing is needed. |
+| `LocationSlotHandlingUnitDeclared` | Update the bin's handling unit (`EACH`/`CASE`/`PALLET`, last write wins per `locationCode`); `LocationSlotRegistered` carries the same optional `handlingUnit`. `inventory-storage` stows a sealed case only in a `CASE`/`PALLET` bin ([ADR-0040](../adr/0040-slot-handling-unit.md)). |
 | `LocationSlotDecommissioned` | Stop offering that location for new work. |
 | `ZoneRegistered` | Learn a new zone, its temperature class and hazmat flag. |
 | `AisleRegistered` | Learn a corridor, its `sequenceHint` walk-order position and its `direction`. This is the travel-path input. |
