@@ -51,6 +51,9 @@ func TestDeclareLocationHandlingUnit(t *testing.T) {
 		}
 	})
 
+}
+
+func TestDeclareLocationHandlingUnitRefusals(t *testing.T) {
 	t.Run("rejects an unknown unit before touching the slot", func(t *testing.T) {
 		h := newHarness(t)
 		h.seedAmbientAisle()
@@ -118,6 +121,9 @@ func TestRegisterLocationSlotWithHandlingUnit(t *testing.T) {
 		}
 	})
 
+}
+
+func TestRegisterLocationSlotRefusesUnknownHandlingUnit(t *testing.T) {
 	t.Run("an unknown unit refuses the registration and registers nothing", func(t *testing.T) {
 		h := newHarness(t)
 		h.seedAmbientAisle()

@@ -230,12 +230,18 @@ func NewRouter(s *Server, logger *slog.Logger, opts ...RouterOption) http.Handle
 		// POST /locations/{locationCode}/decommission acts on an
 		// EXISTING caller-supplied resource, not a creation — excluded.
 		r.Post("/{locationCode}/decommission", s.handleDecommissionLocationSlot)
-		r.Put("/{locationCode}/geometry", s.handleSetLocationGeometry)
-		// PUT is naturally idempotent (same body, same state), like geometry.
-		r.Put("/{locationCode}/handling-unit", s.handleDeclareLocationHandlingUnit)
+		s.mountSlotUpdates(r)
 	})
 
 	return r
+}
+
+// mountSlotUpdates mounts the PUT updates on an existing slot: geometry
+// (ADR-0017) and handling unit (ADR-0040). PUTs are naturally idempotent
+// (same body, same state), so neither takes an Idempotency-Key.
+func (s *Server) mountSlotUpdates(r chi.Router) {
+	r.Put("/{locationCode}/geometry", s.handleSetLocationGeometry)
+	r.Put("/{locationCode}/handling-unit", s.handleDeclareLocationHandlingUnit)
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {

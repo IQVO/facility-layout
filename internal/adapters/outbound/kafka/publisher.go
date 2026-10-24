@@ -222,6 +222,9 @@ const ImportSubject = "layout-import"
 // non-empty key, and TestPublisher_KeysAreAggregateIdentityNotEventType
 // rejects an event-type key for every golden case, so add one with the event.
 func aggregateKey(event shared.DomainEvent) string {
+	if code, ok := locationSlotKey(event); ok {
+		return code
+	}
 	switch e := event.(type) {
 	case shared.SiteRegistered:
 		return e.SiteCode
@@ -237,14 +240,6 @@ func aggregateKey(event shared.DomainEvent) string {
 		return e.LocationType
 	case shared.PlacementRuleDefined:
 		return e.RuleID
-	case shared.LocationSlotRegistered:
-		return e.LocationCode
-	case shared.LocationSlotDecommissioned:
-		return e.LocationCode
-	case shared.LocationSlotHandlingUnitDeclared:
-		return e.LocationCode
-	case shared.LocationGeometryUpdated:
-		return e.LocationCode
 	case shared.AisleGeometryUpdated:
 		return e.AisleID
 	case shared.FixedStructureRegistered:
@@ -254,6 +249,24 @@ func aggregateKey(event shared.DomainEvent) string {
 		return e.ZoneID + "/" + e.FromAisle + "-" + e.ToAisle + "@" + e.AtBay
 	default:
 		return event.EventType()
+	}
+}
+
+// locationSlotKey returns the LocationCode of every event raised by a
+// LocationSlot (registration, decommission, handling unit, geometry), so all
+// of one location's events share a partition (ADR-0032).
+func locationSlotKey(event shared.DomainEvent) (string, bool) {
+	switch e := event.(type) {
+	case shared.LocationSlotRegistered:
+		return e.LocationCode, true
+	case shared.LocationSlotDecommissioned:
+		return e.LocationCode, true
+	case shared.LocationSlotHandlingUnitDeclared:
+		return e.LocationCode, true
+	case shared.LocationGeometryUpdated:
+		return e.LocationCode, true
+	default:
+		return "", false
 	}
 }
 
