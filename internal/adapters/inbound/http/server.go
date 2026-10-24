@@ -78,6 +78,7 @@ type Server struct {
 	GetSiteLayout                *usecases.GetSiteLayout
 	GetZoneGrid                  *usecases.GetZoneGrid
 	SetLocationGeometry          *usecases.SetLocationGeometry
+	DeclareLocationHandlingUnit  *usecases.DeclareLocationHandlingUnit
 	SetAisleGeometry             *usecases.SetAisleGeometry
 	RegisterFixedStructure       *usecases.RegisterFixedStructure
 	ListFixedStructures          *usecases.ListFixedStructures
@@ -229,10 +230,18 @@ func NewRouter(s *Server, logger *slog.Logger, opts ...RouterOption) http.Handle
 		// POST /locations/{locationCode}/decommission acts on an
 		// EXISTING caller-supplied resource, not a creation — excluded.
 		r.Post("/{locationCode}/decommission", s.handleDecommissionLocationSlot)
-		r.Put("/{locationCode}/geometry", s.handleSetLocationGeometry)
+		s.mountSlotUpdates(r)
 	})
 
 	return r
+}
+
+// mountSlotUpdates mounts the PUT updates on an existing slot: geometry
+// (ADR-0017) and handling unit (ADR-0040). PUTs are naturally idempotent
+// (same body, same state), so neither takes an Idempotency-Key.
+func (s *Server) mountSlotUpdates(r chi.Router) {
+	r.Put("/{locationCode}/geometry", s.handleSetLocationGeometry)
+	r.Put("/{locationCode}/handling-unit", s.handleDeclareLocationHandlingUnit)
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
@@ -599,7 +608,7 @@ func (s *Server) handleRegisterLocationSlot(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	registered, err := s.RegisterLocationSlot.Execute(r.Context(), code, req.LocationType, override, req.DockFlow, req.Activities)
+	registered, err := s.RegisterLocationSlot.ExecuteWithHandlingUnit(r.Context(), code, req.LocationType, override, req.DockFlow, req.Activities, req.HandlingUnit)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -745,6 +754,26 @@ func (s *Server) handleSetLocationGeometry(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	updated, err := s.SetLocationGeometry.Execute(r.Context(), code, position, dimensions, req.PickSequence)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toLocationSlotResponse(updated))
+}
+
+// handleDeclareLocationHandlingUnit sets or changes a slot's handling unit
+// (ADR-0040) and returns the updated slot.
+func (s *Server) handleDeclareLocationHandlingUnit(w http.ResponseWriter, r *http.Request) {
+	code, err := shared.ParseLocationCode(chi.URLParam(r, "locationCode"))
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	var req declareHandlingUnitRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	updated, err := s.DeclareLocationHandlingUnit.Execute(r.Context(), code, req.HandlingUnit)
 	if err != nil {
 		writeError(w, r, err)
 		return

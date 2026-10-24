@@ -78,10 +78,11 @@ func newTestUseCases() *inboundhttp.Server {
 		GetSiteLayout: &usecases.GetSiteLayout{Sites: sites, Zones: zones, Aisles: aisles, Slots: slots, Structures: structures},
 		GetZoneGrid:   &usecases.GetZoneGrid{Zones: zones, Aisles: aisles, Slots: slots},
 
-		SetLocationGeometry:    &usecases.SetLocationGeometry{Slots: slots, Events: publisher, Clock: clock},
-		SetAisleGeometry:       &usecases.SetAisleGeometry{Aisles: aisles, Events: publisher, Clock: clock},
-		RegisterFixedStructure: &usecases.RegisterFixedStructure{Sites: sites, Structures: structures, Events: publisher, Clock: clock},
-		ListFixedStructures:    &usecases.ListFixedStructures{Sites: sites, Structures: structures},
+		SetLocationGeometry:         &usecases.SetLocationGeometry{Slots: slots, Events: publisher, Clock: clock},
+		DeclareLocationHandlingUnit: &usecases.DeclareLocationHandlingUnit{Slots: slots, Events: publisher, Clock: clock},
+		SetAisleGeometry:            &usecases.SetAisleGeometry{Aisles: aisles, Events: publisher, Clock: clock},
+		RegisterFixedStructure:      &usecases.RegisterFixedStructure{Sites: sites, Structures: structures, Events: publisher, Clock: clock},
+		ListFixedStructures:         &usecases.ListFixedStructures{Sites: sites, Structures: structures},
 
 		RegisterCrossAisle: &usecases.RegisterCrossAisle{
 			Zones: zones, Aisles: aisles, CrossAisles: crossAisles, Events: publisher, Clock: clock,

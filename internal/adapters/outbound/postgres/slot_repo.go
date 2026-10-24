@@ -28,7 +28,7 @@ func NewSlotRepo(pool *pgxpool.Pool) *SlotRepo {
 
 const slotColumns = `code, site_segment, area_segment, zone_segment, aisle_segment,
 	bay_segment, level_segment, position_segment, location_type, role, dock_flow, activities,
-	max_weight_kg, max_volume_m3, status, x_m, y_m, z_m, width_m, depth_m, height_m, pick_sequence, version`
+	max_weight_kg, max_volume_m3, status, x_m, y_m, z_m, width_m, depth_m, height_m, pick_sequence, version, handling_unit`
 
 // Save upserts the slot, version-guarded against a concurrent writer
 // (ADR-0025, optimistic concurrency): on an existing row it only applies
@@ -48,9 +48,9 @@ func (r *SlotRepo) Save(ctx context.Context, s *slot.LocationSlot) error {
 			bay_segment, level_segment, position_segment,
 			zone_id, aisle_id, location_type, role, dock_flow, activities,
 			max_weight_kg, max_volume_m3, status,
-			x_m, y_m, z_m, width_m, depth_m, height_m, pick_sequence, version
+			x_m, y_m, z_m, width_m, depth_m, height_m, pick_sequence, version, handling_unit
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, 1)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, 1, $26)
 		ON CONFLICT (code) DO UPDATE SET
 			location_type = EXCLUDED.location_type,
 			role = EXCLUDED.role,
@@ -66,6 +66,7 @@ func (r *SlotRepo) Save(ctx context.Context, s *slot.LocationSlot) error {
 			depth_m = EXCLUDED.depth_m,
 			height_m = EXCLUDED.height_m,
 			pick_sequence = EXCLUDED.pick_sequence,
+			handling_unit = EXCLUDED.handling_unit,
 			version = location_slots.version + 1
 		WHERE location_slots.version = $25
 	`,
@@ -76,7 +77,7 @@ func (r *SlotRepo) Save(ctx context.Context, s *slot.LocationSlot) error {
 		nullableFloat(s.Capacity()), nullableVolume(s.Capacity()), string(s.Status()),
 		nullablePositionX(position), nullablePositionY(position), nullablePositionZ(position),
 		nullableDimensionWidth(dimensions), nullableDimensionDepth(dimensions), nullableDimensionHeight(dimensions),
-		s.PickSequence(), s.Version())
+		s.PickSequence(), s.Version(), nullableHandlingUnit(s.HandlingUnit()))
 	if err != nil {
 		return err
 	}
@@ -138,6 +139,16 @@ type scanner interface {
 	Scan(dest ...any) error
 }
 
+// nullableHandlingUnit maps the optional handling unit to its nullable column:
+// NULL when none was ever recorded (ADR-0040).
+func nullableHandlingUnit(unit shared.HandlingUnit) *string {
+	if unit == "" {
+		return nil
+	}
+	v := string(unit)
+	return &v
+}
+
 func scanSlot(row scanner) (*slot.LocationSlot, error) {
 	var raw, site, area, zoneSeg, aisleSeg, bay, level, position, locationType, role, status string
 	var dockFlow *string
@@ -146,10 +157,11 @@ func scanSlot(row scanner) (*slot.LocationSlot, error) {
 	var xM, yM, zM, widthM, depthM, heightM *float64
 	var pickSequence *int
 	var version int
+	var handlingUnit *string
 
 	if err := row.Scan(&raw, &site, &area, &zoneSeg, &aisleSeg, &bay, &level, &position,
 		&locationType, &role, &dockFlow, &activities, &maxWeightKg, &maxVolumeM3, &status,
-		&xM, &yM, &zM, &widthM, &depthM, &heightM, &pickSequence, &version); err != nil {
+		&xM, &yM, &zM, &widthM, &depthM, &heightM, &pickSequence, &version, &handlingUnit); err != nil {
 		return nil, err
 	}
 
@@ -177,7 +189,15 @@ func scanSlot(row scanner) (*slot.LocationSlot, error) {
 	if err != nil {
 		return nil, err
 	}
-	return slot.RehydrateLocationSlot(code, locationType, locationRole, functional, capacity, st, position3D, dimensions, pickSequence, version), nil
+	rehydrated := slot.RehydrateLocationSlot(code, locationType, locationRole, functional, capacity, st, position3D, dimensions, pickSequence, version)
+	if handlingUnit != nil {
+		unit, err := shared.ParseHandlingUnit(*handlingUnit)
+		if err != nil {
+			return nil, err
+		}
+		rehydrated.WithPersistedHandlingUnit(unit)
+	}
+	return rehydrated, nil
 }
 
 // nullableDockFlow returns functional's DockFlow as a pointer, or nil when

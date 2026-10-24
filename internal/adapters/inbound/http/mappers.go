@@ -161,6 +161,7 @@ func toLocationSlotResponse(s *slot.LocationSlot) locationSlotResponse {
 		Capacity:     toCapacityResponse(s.Capacity()),
 		Status:       string(s.Status()),
 		PickSequence: s.PickSequence(),
+		HandlingUnit: string(s.HandlingUnit()),
 	}
 	if position := s.Position(); !position.IsZero() {
 		p := toPoint3DResponse(position)

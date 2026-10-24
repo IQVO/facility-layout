@@ -96,6 +96,7 @@ field is removed; `dataschema` replaces it.
 | `com.warehouse.wms.facility-layout.placementrule.PlacementRuleDefined` | `ruleId` | `ruleId` |
 | `com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered` | `locationCode` | `locationCode` |
 | `com.warehouse.wms.facility-layout.locationslot.LocationSlotDecommissioned` | `locationCode` | `locationCode` |
+| `com.warehouse.wms.facility-layout.locationslot.LocationSlotHandlingUnitDeclared` | `locationCode` | `locationCode` (ADR 0040) |
 | `com.warehouse.wms.facility-layout.locationslot.LocationGeometryUpdated` | `locationCode` | event type (unchanged) |
 | `com.warehouse.wms.facility-layout.locationslot.FacilityLayoutImported` | `layout-import` (a batch, no single aggregate) | event type (unchanged) |
 | `com.warehouse.wms.facility-layout.structure.FixedStructureRegistered` | `structureId` | event type (unchanged) |

@@ -79,6 +79,13 @@ type registerLocationSlotRequest struct {
 	DockFlow         string           `json:"dockFlow,omitempty"`
 	Activities       []string         `json:"activities,omitempty"`
 	CapacityOverride *capacityRequest `json:"capacityOverride,omitempty"`
+	HandlingUnit     string           `json:"handlingUnit,omitempty"`
+}
+
+// declareHandlingUnitRequest is the body of PUT /locations/{code}/handling-unit
+// (ADR-0040): the handling unit is required there, validated by the domain.
+type declareHandlingUnitRequest struct {
+	HandlingUnit string `json:"handlingUnit"`
 }
 
 type importRowRequest struct {
@@ -270,6 +277,7 @@ type locationSlotResponse struct {
 	Position     *point3DResponse    `json:"position,omitempty"`
 	Dimensions   *dimensionsResponse `json:"dimensions,omitempty"`
 	PickSequence *int                `json:"pickSequence,omitempty"`
+	HandlingUnit string              `json:"handlingUnit,omitempty"`
 }
 
 // point3DResponse mirrors point3DRequest for a slot/structure position.

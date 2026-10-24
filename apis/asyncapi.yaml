@@ -172,6 +172,7 @@ channels:
           - $ref: '#/components/messages/locationSlotRegistered'
           - $ref: '#/components/messages/locationSlotDecommissioned'
           - $ref: '#/components/messages/facilityLayoutImported'
+          - $ref: '#/components/messages/locationSlotHandlingUnitDeclared'
           - $ref: '#/components/messages/locationGeometryUpdated'
           - $ref: '#/components/messages/aisleGeometryUpdated'
           - $ref: '#/components/messages/fixedStructureRegistered'
@@ -212,6 +213,7 @@ channels:
           - $ref: '#/components/messages/locationSlotRegistered'
           - $ref: '#/components/messages/locationSlotDecommissioned'
           - $ref: '#/components/messages/facilityLayoutImported'
+          - $ref: '#/components/messages/locationSlotHandlingUnitDeclared'
           - $ref: '#/components/messages/locationGeometryUpdated'
           - $ref: '#/components/messages/aisleGeometryUpdated'
           - $ref: '#/components/messages/fixedStructureRegistered'
@@ -638,6 +640,62 @@ components:
                           capacity (Dock, Yard, WorkCenter, QC, Shipping).
                       maxVolumeM3:
                         type: number
+                      handlingUnit:
+                        type: string
+                        enum: [EACH, CASE, PALLET]
+                        description: >
+                          OPTIONAL (ADR-0040). The unit of handling the slot
+                          accepts. Omitted when none was recorded at
+                          registration (every slot registered before the
+                          field existed); a later value arrives as
+                          `LocationSlotHandlingUnitDeclared`.
+                        example: CASE
+
+    locationSlotHandlingUnitDeclared:
+      name: LocationSlotHandlingUnitDeclared
+      contentType: application/cloudevents+json
+      title: Location slot handling unit declared
+      tags: [{ name: locationslot }]
+      summary: A slot's handling unit (EACH, CASE or PALLET) was set or changed.
+      description: >
+        Raised by `DeclareLocationHandlingUnit` (ADR-0040), i.e.
+        `PUT /locations/{locationCode}/handling-unit`. The slot is identified
+        by `locationCode`, exactly as in `LocationSlotRegistered`. CloudEvents
+        `subject` and Kafka key: `locationCode` (same partition as that
+        location's `LocationSlotRegistered`). **Consumed live** by
+        inventory-storage's facility cache, which uses the handling unit to
+        decide whether a sealed case may be stowed in the bin. Last write
+        wins per `locationCode` (same partition, so ordered).
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/cloudEvent'
+          - type: object
+            properties:
+              type:
+                const: com.warehouse.wms.facility-layout.locationslot.LocationSlotHandlingUnitDeclared
+              dataschema:
+                const: urn:warehouse:facility-layout:events:LocationSlotHandlingUnitDeclared:v1
+              data:
+                allOf:
+                  - $ref: '#/components/schemas/eventDataBase'
+                  - type: object
+                    required: [locationCode, handlingUnit, declaredAt]
+                    properties:
+                      locationCode:
+                        type: string
+                        description: >
+                          The full coded location, e.g.
+                          `WH1-STOR-AMB-A07-03-02-B`.
+                        example: WH1-STOR-AMB-A07-03-02-B
+                      handlingUnit:
+                        type: string
+                        enum: [EACH, CASE, PALLET]
+                        example: CASE
+                      declaredAt:
+                        type: string
+                        format: date-time
+                        description: When the unit was declared (equals `occurredAt`).
+                        example: '2026-10-24T12:00:00Z'
 
     locationSlotDecommissioned:
       name: LocationSlotDecommissioned

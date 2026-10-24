@@ -97,7 +97,7 @@ below), e2e test harnesses, and the `.dlq` topics.
 | — | `order-management`, `process-path-management`, `labor-performance`, `network-fulfillment`, `product-master` | no relationship | — | **Absent** — no client of this context's REST/MCP surface and no consumer of its topics on `develop`; `product-master` (SKU master data, the third `wms` context) neither calls this service nor consumes `warehouse.facility.events`, and this service consumes nothing from it | org-wide code search for `FACILITY_LAYOUT` and `warehouse.facility.events` |
 | — | anything **this** context calls | — | — | **Deliberately absent** — `facility-layout` has no outbound adapter to another service, ever | `internal/adapters/outbound/` holds only Postgres, memory, Kafka publishers, telemetry, boot-retry and analytics-store adapters |
 
-On `warehouse.facility.events`, nine of the fourteen event types have no
+On `warehouse.facility.events`, nine of the fifteen event types have no
 external consumer today: `SiteRegistered`, `SiteRoleChanged`,
 `AisleRegistered`, `LocationTypeRegistered`, `PlacementRuleDefined`,
 `FacilityLayoutImported`, `AisleGeometryUpdated`, `FixedStructureRegistered`
@@ -158,7 +158,7 @@ two are the open edges, verified against `develop` of the owning repos:
 
 This service defines an **Open Host Service**: a stable, general-purpose
 protocol any number of consumers may use, rather than a bilateral contract
-negotiated per consumer. Its **Published Language** is the fourteen past-tense
+negotiated per consumer. Its **Published Language** is the fifteen past-tense
 [domain events](../ddd/domain-events.md) (CloudEvents 1.0,
 `com.warehouse.wms.facility-layout.<entity>.<EventName>`) plus the REST and
 MCP surfaces, expressed in its own vocabulary (`LocationCode`, `Zone`,

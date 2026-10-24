@@ -206,6 +206,9 @@ type LocationSlotRegistered struct {
 	Activities   []string
 	MaxWeightKg  float64
 	MaxVolumeM3  float64
+	// HandlingUnit is OPTIONAL (ADR-0040): "" when none was recorded at
+	// registration, which keeps the wire payload byte-identical to before.
+	HandlingUnit HandlingUnit
 }
 
 // NewLocationSlotRegistered builds a LocationSlotRegistered event. Role,
@@ -224,6 +227,35 @@ func NewLocationSlotRegistered(occurredAt time.Time, code LocationCode, location
 		Activities:   activities,
 		MaxWeightKg:  capacity.MaxWeightKg(),
 		MaxVolumeM3:  capacity.MaxVolumeM3(),
+	}
+}
+
+// WithHandlingUnit returns a copy of the event carrying the slot's optional
+// handling unit (ADR-0040). Kept out of the constructor so the existing
+// constructor signature — and every caller of it — is unchanged.
+func (e LocationSlotRegistered) WithHandlingUnit(unit HandlingUnit) LocationSlotRegistered {
+	e.HandlingUnit = unit
+	return e
+}
+
+// LocationSlotHandlingUnitDeclared: a slot's handling unit (EACH/CASE/PALLET)
+// was set or changed after registration (ADR-0040). Identified by the same
+// LocationCode as LocationSlotRegistered.
+type LocationSlotHandlingUnitDeclared struct {
+	base
+	LocationCode string
+	HandlingUnit HandlingUnit
+	DeclaredAt   time.Time
+}
+
+// NewLocationSlotHandlingUnitDeclared builds a LocationSlotHandlingUnitDeclared
+// event; DeclaredAt equals the occurrence instant.
+func NewLocationSlotHandlingUnitDeclared(occurredAt time.Time, code LocationCode, unit HandlingUnit) LocationSlotHandlingUnitDeclared {
+	return LocationSlotHandlingUnitDeclared{
+		base:         newBase("locationslot", "LocationSlotHandlingUnitDeclared", occurredAt),
+		LocationCode: code.String(),
+		HandlingUnit: unit,
+		DeclaredAt:   occurredAt,
 	}
 }
 

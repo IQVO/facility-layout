@@ -60,7 +60,15 @@ type RegisterLocationSlot struct {
 // Every attempt — accepted or refused — is counted against the metrics
 // port before the result is returned.
 func (uc *RegisterLocationSlot) Execute(ctx context.Context, code shared.LocationCode, locationTypeName string, capacityOverride shared.Capacity, dockFlow string, activityNames []string) (*slot.LocationSlot, error) {
-	registered, err := uc.register(ctx, code, locationTypeName, capacityOverride, dockFlow, activityNames)
+	return uc.ExecuteWithHandlingUnit(ctx, code, locationTypeName, capacityOverride, dockFlow, activityNames, "")
+}
+
+// ExecuteWithHandlingUnit is Execute plus the OPTIONAL handling unit
+// (EACH/CASE/PALLET, ADR-0040) recorded at registration. An empty
+// handlingUnit means none recorded; any other value must parse, else the
+// attempt is refused (and counted) with shared.ErrUnknownHandlingUnit.
+func (uc *RegisterLocationSlot) ExecuteWithHandlingUnit(ctx context.Context, code shared.LocationCode, locationTypeName string, capacityOverride shared.Capacity, dockFlow string, activityNames []string, handlingUnit string) (*slot.LocationSlot, error) {
+	registered, err := uc.register(ctx, code, locationTypeName, capacityOverride, dockFlow, activityNames, handlingUnit)
 	if uc.Metrics != nil {
 		uc.Metrics.LocationSlotRegistered(ctx, registrationOutcome(err))
 	}
@@ -82,7 +90,15 @@ func registrationOutcome(err error) string {
 
 // register is Execute's decision logic, kept separate so the outcome of the
 // whole attempt can be observed in one place.
-func (uc *RegisterLocationSlot) register(ctx context.Context, code shared.LocationCode, locationTypeName string, capacityOverride shared.Capacity, dockFlow string, activityNames []string) (*slot.LocationSlot, error) {
+func (uc *RegisterLocationSlot) register(ctx context.Context, code shared.LocationCode, locationTypeName string, capacityOverride shared.Capacity, dockFlow string, activityNames []string, handlingUnitName string) (*slot.LocationSlot, error) {
+	var handlingUnit shared.HandlingUnit
+	if handlingUnitName != "" {
+		parsed, err := shared.ParseHandlingUnit(handlingUnitName)
+		if err != nil {
+			return nil, err
+		}
+		handlingUnit = parsed
+	}
 	existing, err := uc.Slots.FindByCode(ctx, code)
 	if err != nil {
 		return nil, err
@@ -118,6 +134,11 @@ func (uc *RegisterLocationSlot) register(ctx context.Context, code shared.Locati
 	if err != nil {
 		return nil, err
 	}
+	if handlingUnit != "" {
+		if err := s.DeclareHandlingUnit(handlingUnit); err != nil {
+			return nil, err
+		}
+	}
 	err = atomically(ctx, uc.UnitOfWork, func(ctx context.Context) error {
 		if err := uc.Slots.Save(ctx, s); err != nil {
 			return err
@@ -126,7 +147,7 @@ func (uc *RegisterLocationSlot) register(ctx context.Context, code shared.Locati
 		event := shared.NewLocationSlotRegistered(
 			uc.Clock.Now(), s.Code(), s.LocationType(), string(s.Role()),
 			string(f.DockFlow()), activityStrings(f.Activities()), s.Capacity(),
-		)
+		).WithHandlingUnit(s.HandlingUnit())
 		return uc.Events.Publish(ctx, event)
 	})
 	if err != nil {
