@@ -8,7 +8,7 @@ It owns whether a coded location **exists, is active, and is legal for a
 given kind of storage unit**. It does NOT own occupancy or stock — that
 stays in `inventory-storage`'s `Bin`/`StockUnit` aggregates.
 
-Domain source of truth: `/Users/claudioed/docs/amazon-fulfillment-ddd.md`
+Domain source of truth: `/Users/claudioed/docs/fulfillment-reference-ddd.md`
 and `/Users/claudioed/warehouse-systems-ddd.md`. Honor that ubiquitous
 language everywhere. Module `github.com/claudioed/facility-layout`, Go 1.26.
 

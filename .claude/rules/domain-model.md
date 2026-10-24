@@ -139,7 +139,7 @@ com.warehouse.<subdomain>.facility-layout.<entity>.<EventName>
 ```
 
 This service's **subdomain segment is `wms`** (shared with inventory-storage and product-master) — "bin-accurate location" is
-already classified WMS-tier in `amazon-fulfillment-ddd.md` ("Inventory &
+already classified WMS-tier in `fulfillment-reference-ddd.md` ("Inventory &
 Slotting" Core subdomain references bin-accurate location as WMS's Open
 Host Service), and this service is the generalized, multi-consumer version
 of that concern. Entity segments: `site`, `zone`, `aisle`, `locationtype`,
