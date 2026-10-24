@@ -89,6 +89,7 @@ var errorCategories = []errorCategory{
 	{shared.ErrInvalidMaxVolume, http.StatusUnprocessableEntity, problemInfo{"invalid-max-volume", "Capacity max volume must be greater than zero"}},
 	{shared.ErrUnknownTemperatureClass, http.StatusUnprocessableEntity, problemInfo{"unknown-temperature-class", "Unknown temperature class"}},
 	{shared.ErrUnknownDirection, http.StatusUnprocessableEntity, problemInfo{"unknown-direction", "Unknown aisle direction"}},
+	{shared.ErrUnknownHandlingUnit, http.StatusUnprocessableEntity, problemInfo{"unknown-handling-unit", "Handling unit must be one of EACH, CASE, PALLET"}},
 	{shared.ErrUnknownStatus, http.StatusUnprocessableEntity, problemInfo{"unknown-status", "Unknown lifecycle status"}},
 	{shared.ErrInvalidZ, http.StatusUnprocessableEntity, problemInfo{"invalid-z", "Z coordinate must not be negative"}},
 	{shared.ErrInvalidDimensions, http.StatusUnprocessableEntity, problemInfo{"invalid-dimensions", "Width, depth, and height must all be greater than zero"}},

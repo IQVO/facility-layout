@@ -308,10 +308,11 @@ func newServer(a adapterSet, clock ports.Clock, locationMetrics ports.LocationMe
 		GetSiteLayout: &usecases.GetSiteLayout{Sites: a.sites, Zones: a.zones, Aisles: a.aisles, Slots: a.slots, Structures: a.structures},
 		GetZoneGrid:   &usecases.GetZoneGrid{Zones: a.zones, Aisles: a.aisles, Slots: a.slots},
 
-		SetLocationGeometry:    &usecases.SetLocationGeometry{Slots: a.slots, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork},
-		SetAisleGeometry:       &usecases.SetAisleGeometry{Aisles: a.aisles, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork},
-		RegisterFixedStructure: &usecases.RegisterFixedStructure{Sites: a.sites, Structures: a.structures, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork},
-		ListFixedStructures:    &usecases.ListFixedStructures{Sites: a.sites, Structures: a.structures},
+		SetLocationGeometry:         &usecases.SetLocationGeometry{Slots: a.slots, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork},
+		DeclareLocationHandlingUnit: &usecases.DeclareLocationHandlingUnit{Slots: a.slots, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork},
+		SetAisleGeometry:            &usecases.SetAisleGeometry{Aisles: a.aisles, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork},
+		RegisterFixedStructure:      &usecases.RegisterFixedStructure{Sites: a.sites, Structures: a.structures, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork},
+		ListFixedStructures:         &usecases.ListFixedStructures{Sites: a.sites, Structures: a.structures},
 
 		RegisterCrossAisle: &usecases.RegisterCrossAisle{
 			Zones: a.zones, Aisles: a.aisles, CrossAisles: a.crossAisles, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork,

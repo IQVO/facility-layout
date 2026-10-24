@@ -241,6 +241,8 @@ func aggregateKey(event shared.DomainEvent) string {
 		return e.LocationCode
 	case shared.LocationSlotDecommissioned:
 		return e.LocationCode
+	case shared.LocationSlotHandlingUnitDeclared:
+		return e.LocationCode
 	case shared.LocationGeometryUpdated:
 		return e.LocationCode
 	case shared.AisleGeometryUpdated:

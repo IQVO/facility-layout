@@ -56,6 +56,9 @@ type LocationSlot struct {
 	position     shared.Point3D
 	dimensions   shared.Dimensions
 	pickSequence *int
+	// handlingUnit is the OPTIONAL unit of handling this slot accepts
+	// (ADR-0040); the zero value means none was ever recorded.
+	handlingUnit shared.HandlingUnit
 	// version is the optimistic-concurrency token (ADR-0025): inert
 	// infrastructure metadata exactly like the aggregate's own id, never
 	// read by business logic. NewLocationSlot starts it at 1;
@@ -200,6 +203,35 @@ func (s *LocationSlot) Dimensions() shared.Dimensions { return s.dimensions }
 // SequenceHint plus the slot's bay/level/position segments instead
 // (ADR-0017).
 func (s *LocationSlot) PickSequence() *int { return s.pickSequence }
+
+// HandlingUnit returns the unit of handling the slot accepts (EACH, CASE or
+// PALLET), or "" when none was ever recorded (ADR-0040).
+func (s *LocationSlot) HandlingUnit() shared.HandlingUnit { return s.handlingUnit }
+
+// DeclareHandlingUnit records (or changes) the unit of handling the slot
+// accepts. Rejected on a Decommissioned slot — a retired location's facts are
+// frozen — and for any value other than EACH/CASE/PALLET (ADR-0040). The
+// decommission check comes first so a retired slot never reports a value
+// error for a request it could not honour anyway.
+func (s *LocationSlot) DeclareHandlingUnit(unit shared.HandlingUnit) error {
+	if s.status == shared.Decommissioned {
+		return ErrSlotDecommissioned
+	}
+	if _, err := shared.ParseHandlingUnit(string(unit)); err != nil {
+		return err
+	}
+	s.handlingUnit = unit
+	return nil
+}
+
+// WithPersistedHandlingUnit restores the handling unit read from storage
+// onto a rehydrated slot without re-running the invariants, exactly like
+// RehydrateLocationSlot itself. "" means none recorded. Persistence adapters
+// only.
+func (s *LocationSlot) WithPersistedHandlingUnit(unit shared.HandlingUnit) *LocationSlot {
+	s.handlingUnit = unit
+	return s
+}
 
 // Version returns the slot's optimistic-concurrency version (ADR-0025).
 // Infrastructure metadata only: domain logic never branches on it; the

@@ -73,3 +73,31 @@ func ParseStatus(value string) (Status, error) {
 		return "", ErrUnknownStatus
 	}
 }
+
+// HandlingUnit is the unit of handling a storage slot (a "bin" downstream)
+// accepts: a single each, a whole case, or a whole pallet. It is OPTIONAL on
+// a LocationSlot — the zero value ("") means no handling unit was ever
+// recorded, which is every slot registered before ADR-0040 and keeps
+// today's behaviour. Downstream inventory-storage refuses to stow a sealed
+// case into a bin that is not CASE or PALLET.
+type HandlingUnit string
+
+const (
+	// HandlingUnitEach is a bin that takes loose eaches.
+	HandlingUnitEach HandlingUnit = "EACH"
+	// HandlingUnitCase is a bin that takes whole cases.
+	HandlingUnitCase HandlingUnit = "CASE"
+	// HandlingUnitPallet is a bin that takes whole pallets.
+	HandlingUnitPallet HandlingUnit = "PALLET"
+)
+
+// ParseHandlingUnit validates and converts the string form. The empty string
+// is NOT valid here: "absent" is represented by not calling the parser.
+func ParseHandlingUnit(value string) (HandlingUnit, error) {
+	switch HandlingUnit(value) {
+	case HandlingUnitEach, HandlingUnitCase, HandlingUnitPallet:
+		return HandlingUnit(value), nil
+	default:
+		return "", ErrUnknownHandlingUnit
+	}
+}
