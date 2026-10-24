@@ -119,15 +119,16 @@ func (w *world) start() {
 		GetSiteLayout: &usecases.GetSiteLayout{Sites: sites, Zones: zones, Aisles: aisles, Slots: slots},
 		GetZoneGrid:   &usecases.GetZoneGrid{Zones: zones, Aisles: aisles, Slots: slots},
 
-		ListLocationsByRole:    &usecases.ListLocationsByRole{Sites: sites, Zones: zones, Slots: slots},
-		SetLocationGeometry:    &usecases.SetLocationGeometry{Slots: slots, Events: publisher, Clock: clock},
-		SetAisleGeometry:       &usecases.SetAisleGeometry{Aisles: aisles, Events: publisher, Clock: clock},
-		RegisterFixedStructure: &usecases.RegisterFixedStructure{Sites: sites, Structures: structures, Events: publisher, Clock: clock},
-		ListFixedStructures:    &usecases.ListFixedStructures{Sites: sites, Structures: structures},
-		RegisterCrossAisle:     &usecases.RegisterCrossAisle{Zones: zones, Aisles: aisles, CrossAisles: crossAisles, Events: publisher, Clock: clock},
-		ListCrossAisles:        &usecases.ListCrossAisles{Zones: zones, CrossAisles: crossAisles},
-		GetZoneTravelGraph:     &usecases.GetZoneTravelGraph{Zones: zones, Aisles: aisles, Slots: slots, CrossAisles: crossAisles},
-		EstimateTravelDistance: &usecases.EstimateTravelDistance{Zones: zones, Aisles: aisles, Slots: slots, CrossAisles: crossAisles},
+		ListLocationsByRole:         &usecases.ListLocationsByRole{Sites: sites, Zones: zones, Slots: slots},
+		SetLocationGeometry:         &usecases.SetLocationGeometry{Slots: slots, Events: publisher, Clock: clock},
+		DeclareLocationHandlingUnit: &usecases.DeclareLocationHandlingUnit{Slots: slots, Events: publisher, Clock: clock},
+		SetAisleGeometry:            &usecases.SetAisleGeometry{Aisles: aisles, Events: publisher, Clock: clock},
+		RegisterFixedStructure:      &usecases.RegisterFixedStructure{Sites: sites, Structures: structures, Events: publisher, Clock: clock},
+		ListFixedStructures:         &usecases.ListFixedStructures{Sites: sites, Structures: structures},
+		RegisterCrossAisle:          &usecases.RegisterCrossAisle{Zones: zones, Aisles: aisles, CrossAisles: crossAisles, Events: publisher, Clock: clock},
+		ListCrossAisles:             &usecases.ListCrossAisles{Zones: zones, CrossAisles: crossAisles},
+		GetZoneTravelGraph:          &usecases.GetZoneTravelGraph{Zones: zones, Aisles: aisles, Slots: slots, CrossAisles: crossAisles},
+		EstimateTravelDistance:      &usecases.EstimateTravelDistance{Zones: zones, Aisles: aisles, Slots: slots, CrossAisles: crossAisles},
 	}
 
 	w.server = httptest.NewServer(inboundhttp.NewRouter(s, slog.New(slog.NewTextHandler(io.Discard, nil))))
