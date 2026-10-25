@@ -67,7 +67,7 @@ grep -q 'name: facility-layout-frontend' <<<"$enabled_render" || fail "frontend 
 
 # D14 (2026-10-12): every config.* value is rendered into the chart ConfigMap,
 # and the api Deployment -- the only workload that reads those variables
-# (OUTBOX_RELAY_INTERVAL, OUTBOX_MAX_ATTEMPTS, HOUSEKEEPING_INTERVAL,
+# (OUTBOX_RELAY_INTERVAL, OUTBOX_MAX_ATTEMPTS, HOUSEKEEPING_INTERVAL, SITE_CAPABILITY_HEARTBEAT_INTERVAL,
 # IDEMPOTENCY_KEY_TTL, OUTBOX_RETENTION, ...) -- must mount it with envFrom, or
 # the values silently do nothing.
 configmap_name="$(awk '/^  name:/ {print $2; exit}' <<<"$configmap")"
@@ -77,6 +77,13 @@ grep -A3 'envFrom:' <<<"$api_deployment" | grep -q "name: $configmap_name" || fa
 tuned="$(render --set config.outboxRelayInterval=7s --set config.outboxMaxAttempts=5 --show-only templates/configmap.yaml)"
 grep -q 'OUTBOX_RELAY_INTERVAL: "7s"' <<<"$tuned" || fail "config.outboxRelayInterval is not rendered into the ConfigMap"
 grep -q 'OUTBOX_MAX_ATTEMPTS: "5"' <<<"$tuned" || fail "config.outboxMaxAttempts is not rendered into the ConfigMap"
+# ADR 0041: the site capability heartbeat defaults to 5m (half of NIP's 10 minute
+# freshness window) with no infra value required, is tunable, and "0s" disables it.
+grep -q 'SITE_CAPABILITY_HEARTBEAT_INTERVAL: "5m"' <<<"$configmap" || fail "SITE_CAPABILITY_HEARTBEAT_INTERVAL must default to 5m (ADR 0041)"
+beat_tuned="$(render --set config.siteCapabilityHeartbeatInterval=90s --show-only templates/configmap.yaml)"
+grep -q 'SITE_CAPABILITY_HEARTBEAT_INTERVAL: "90s"' <<<"$beat_tuned" || fail "config.siteCapabilityHeartbeatInterval is not rendered into the ConfigMap"
+beat_off="$(render --set config.siteCapabilityHeartbeatInterval=0s --show-only templates/configmap.yaml)"
+grep -q 'SITE_CAPABILITY_HEARTBEAT_INTERVAL: "0s"' <<<"$beat_off" || fail "config.siteCapabilityHeartbeatInterval=0s must render so the heartbeat can be disabled"
 # D12 (2026-10-12, ADR 0036): the outbox relay attempt cap defaults to 20.
 grep -q 'OUTBOX_MAX_ATTEMPTS: "20"' <<<"$configmap" || fail "OUTBOX_MAX_ATTEMPTS must default to 20 (ADR 0036)"
 

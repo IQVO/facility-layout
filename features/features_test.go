@@ -64,6 +64,10 @@ type world struct {
 	server    *httptest.Server
 	aisles    *memory.AisleRepo
 	publisher *events.BufferedPublisher
+	// clock and heartbeat drive the ADR-0041 capability heartbeat, which has
+	// no HTTP surface: the scenario advances the clock and runs one pass.
+	clock     *memory.FixedClock
+	heartbeat *usecases.PublishSiteCapabilityHeartbeats
 
 	status  int
 	body    []byte
@@ -134,6 +138,10 @@ func (w *world) start() {
 	w.server = httptest.NewServer(inboundhttp.NewRouter(s, slog.New(slog.NewTextHandler(io.Discard, nil))))
 	w.aisles = aisles
 	w.publisher = publisher
+	w.clock = clock
+	w.heartbeat = &usecases.PublishSiteCapabilityHeartbeats{
+		Sites: sites, Due: sites, Events: publisher, Clock: clock, Interval: 5 * time.Minute,
+	}
 	w.status = 0
 	w.body = nil
 	w.headers = nil

@@ -6,6 +6,7 @@ package site
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/claudioed/facility-layout/internal/domain/shared"
 )
@@ -64,6 +65,9 @@ type Site struct {
 	status             shared.Status
 	capability         TransferCapability
 	capabilityRevision int64
+	// capabilityHeartbeatAt is when the last SiteCapabilityChanged
+	// heartbeat (ADR-0041) was raised for this site; zero means none yet.
+	capabilityHeartbeatAt time.Time
 	// version is optimistic-concurrency metadata (ADR-0025, extended to
 	// Site by ADR-0035): the persisted row version this aggregate was
 	// loaded at. Never read by business logic.
@@ -95,8 +99,8 @@ func NewSiteWithRole(code, name string, role Role) (*Site, error) {
 
 // RehydrateSite rebuilds a Site from persisted state without re-running the
 // registration invariants. Only persistence adapters may call it.
-func RehydrateSite(code, name string, role Role, status shared.Status, capability TransferCapability, capabilityRevision int64, version int) *Site {
-	return &Site{
+func RehydrateSite(code, name string, role Role, status shared.Status, capability TransferCapability, capabilityRevision int64, version int, opts ...RehydrateOption) *Site {
+	s := &Site{
 		code:               code,
 		name:               name,
 		role:               role,
@@ -105,6 +109,19 @@ func RehydrateSite(code, name string, role Role, status shared.Status, capabilit
 		capabilityRevision: capabilityRevision,
 		version:            version,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
+// RehydrateOption restores optional persisted state in RehydrateSite.
+type RehydrateOption func(*Site)
+
+// CapabilityHeartbeatAt restores when the site's last capability heartbeat
+// was raised (ADR-0041); the zero time means none yet.
+func CapabilityHeartbeatAt(t time.Time) RehydrateOption {
+	return func(s *Site) { s.capabilityHeartbeatAt = t }
 }
 
 func validateSiteCode(code string) error {

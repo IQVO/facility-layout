@@ -129,7 +129,12 @@ publishes none.
 A site's transfer capability changed
 ([ADR 0035](../adr/0035-site-transfer-capability-command.md)). A full
 last-write-wins snapshot raised by `PUT /sites/{siteCode}/transfer-capability`
-(use case `ChangeSiteTransferCapability`) once per real change. Its fields are
+(use case `ChangeSiteTransferCapability`) once per real change, and re-emitted
+by the periodic freshness heartbeat
+([ADR 0041](../adr/0041-site-capability-heartbeat.md), use case
+`PublishSiteCapabilityHeartbeats`) with the current values, a new CloudEvents
+`id`, a fresh `time` (the consumers' `as_of`) and the revision advanced by one.
+Its fields are
 **snake_case**, unlike every other payload here: recasing them would be a
 breaking `.v2` for network-inventory-planning, so ADR 0035 keeps them.
 
@@ -138,7 +143,7 @@ breaking `.v2` for network-inventory-planning, so ADR 0035 keeps them.
 | `site_code` | string |
 | `transfer_origin_enabled` | boolean — the site may donate stock |
 | `transfer_destination_enabled` | boolean — the site may receive stock |
-| `capability_revision` | integer — 1 on the first change, +1 per later change of the same site; keep the highest |
+| `capability_revision` | integer — 1 on the first change, +1 per later event of the same site, change or heartbeat (ADR 0041); keep the highest |
 
 ### ZoneRegistered
 
@@ -346,6 +351,7 @@ Source: `internal/domain/shared/events.go`,
 |---|---|
 | `RegisterSite` | `SiteRegistered` |
 | `ChangeSiteTransferCapability` | `SiteCapabilityChanged` (only when the snapshot changed or was never published) |
+| `PublishSiteCapabilityHeartbeats` (timer, not a route) | `SiteCapabilityChanged` heartbeat per active declared site every `SITE_CAPABILITY_HEARTBEAT_INTERVAL` ([ADR 0041](../adr/0041-site-capability-heartbeat.md)) |
 | `ChangeSiteRole` | `SiteRoleChanged` (only when the role changed) |
 | `RegisterZone` | `ZoneRegistered` |
 | `RegisterAisle` | `AisleRegistered` |
