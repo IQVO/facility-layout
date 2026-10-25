@@ -97,6 +97,7 @@ OTel log bridge. Inside a span, every record also gets `trace_id` and
 | `invalid integer env var, using default` | warn | `key`, `value`, `default`, `error` | facility, at boot, when `OUTBOX_MAX_ATTEMPTS` is malformed or negative |
 | `outbox relay published events` | **debug** | `count` | facility |
 | `housekeeping sweep` / `housekeeping sweep failed` | info / error | `idempotency_keys_deleted`, `outbox_events_deleted`, `error` | facility |
+| `site capability heartbeat` / `site capability heartbeat failed` / `site capability heartbeat disabled` | info / error / info | `published`, `skipped`, `error`, `env` | facility ([ADR-0041](../adr/0041-site-capability-heartbeat.md)) |
 | `analytics consumer starting` | info | `topic`, `group`, `brokers` | facility-projector |
 | `analytics: exhausted retries, sending to dead-letter topic` | error | `topic`, `dlq_topic`, `attempts`, `error` | facility-projector |
 | `analytics: message is not a valid CloudEvent, sending to dead-letter topic` | warn | `topic`, `partition`, `offset`, `error` | facility-projector |

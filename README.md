@@ -243,6 +243,7 @@ migrate -source file://migrations -database "$DATABASE_URL" up
 | `HOUSEKEEPING_INTERVAL` | `1h` | Housekeeping sweeper interval (ADR-0026; `0` disables; only relevant with `DATABASE_URL`) |
 | `IDEMPOTENCY_KEY_TTL` | `24h` | How long an idempotency_keys row is kept before the sweeper deletes it (ADR-0026; `0` disables) |
 | `OUTBOX_RETENTION` | `168h` | How long a PUBLISHED outbox_events row is kept before the sweeper deletes it (ADR-0026; `0` disables) |
+| `SITE_CAPABILITY_HEARTBEAT_INTERVAL` | `5m` | Site capability heartbeat (ADR-0041): re-publishes the current `SiteCapabilityChanged` of every declared site with a fresh time and `capability_revision` + 1 so downstream freshness windows hold; `0` disables |
 | `MIGRATIONS_PATH` | `migrations` | Directory of golang-migrate SQL files |
 | `LOG_LEVEL` | `info` | `debug`/`info`/`warn`/`error`, case-insensitive |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `localhost:4317` | OTel Collector, `host:port` or a full URL |

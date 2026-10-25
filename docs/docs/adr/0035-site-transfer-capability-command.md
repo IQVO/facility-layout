@@ -13,7 +13,11 @@ description: "ADR 0035 — PUT /sites/{siteCode}/transfer-capability sets a site
 **Accepted** (2026-10-12, gap-fix wave decisions D1 and D2). Extends
 [ADR 0025](./0025-optimistic-concurrency-version-column.md)'s version guard
 to the `Site` aggregate. Implements the `SiteCapabilityChanged` contract that
-`apis/asyncapi.yaml` already declared.
+`apis/asyncapi.yaml` already declared. **Amended by
+[ADR 0041](./0041-site-capability-heartbeat.md):** a periodic heartbeat also
+re-publishes the current snapshot (revision + 1) so consumers' freshness
+windows hold; the PUT's idempotent no-op below is unchanged, but the revision
+is no longer a count of capability changes.
 
 ## Context
 

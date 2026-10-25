@@ -198,6 +198,13 @@ config:
   housekeepingInterval: "1h"
   idempotencyKeyTTL: "24h"
   outboxRetention: "168h"
+  # Site capability heartbeat (ADR 0041): how often the CURRENT
+  # SiteCapabilityChanged of every site with a declared transfer capability is
+  # re-published (fresh time, revision + 1) so network-inventory-planning's
+  # 10 minute freshness window holds while nothing changes. Keep it at or
+  # below half of that window. Rendered as SITE_CAPABILITY_HEARTBEAT_INTERVAL;
+  # "0s" disables the heartbeat.
+  siteCapabilityHeartbeatInterval: "5m"
 
 # OpenTelemetry. The service pushes traces, metrics and logs over OTLP/gRPC
 # to a Collector; nothing is scraped from the pod. A Collector that is down

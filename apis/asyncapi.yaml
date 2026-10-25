@@ -431,9 +431,22 @@ components:
         compare `capability_revision` and retain the latest complete snapshot;
         they must not infer either capability from facility topology.
         Raised by `PUT /sites/{siteCode}/transfer-capability` through the
-        transactional outbox, once per real change; `capability_revision`
-        starts at 1 and increases by exactly one per change of the same
-        site (ADR-0035). The payload stays snake_case although every other
+        transactional outbox, once per real change (ADR-0035), AND re-emitted
+        periodically as a freshness HEARTBEAT (ADR-0041). A heartbeat is this
+        same event type: the CURRENT values, a new CloudEvents `id`, the same
+        key and subject, a fresh `time`, and `capability_revision` advanced by
+        one. It is raised every `SITE_CAPABILITY_HEARTBEAT_INTERVAL` (chart
+        `config.siteCapabilityHeartbeatInterval`, default 5m; 0 disables it)
+        for every ACTIVE site that has declared a capability, so a consumer
+        with a freshness window (network-inventory-planning treats a fact
+        older than 10 minutes as stale) keeps a fact it has no reason to
+        change. The CloudEvents `time` is the as_of watermark: it is the
+        moment of emission, for a change and for a heartbeat alike.
+        `capability_revision` starts at 1 and increases by exactly one per
+        event of the same site, change or heartbeat, so consumers must not
+        read a revision step as a capability change: compare the values. A
+        PUT of the value a site already holds is still a no-op and raises
+        nothing (ADR-0035). The payload stays snake_case although every other
         facility-layout payload is camelCase: recasing it would be a
         breaking `.v2` for network-inventory-planning (ADR-0035, decision D2).
       payload:
@@ -461,7 +474,12 @@ components:
                       capability_revision:
                         type: integer
                         format: int64
-                        description: Monotonically increasing revision for last-write-wins consumers.
+                        description: >
+                          Monotonically increasing revision for last-write-wins consumers.
+                          Advances by exactly one per event of the site, whether it
+                          carries a changed capability or is a freshness heartbeat
+                          (ADR-0041); a consumer that only accepts a strictly greater
+                          revision therefore also refreshes its as_of on a heartbeat.
 
     zoneRegistered:
       name: ZoneRegistered
