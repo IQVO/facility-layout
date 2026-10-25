@@ -159,12 +159,8 @@ func run(ctx context.Context) error {
 	sweeperDone := startBackground(sigCtx, logger, sweeper, "housekeeping sweeper running", errCh)
 	defer func() { <-sweeperDone }()
 
-	// The site capability heartbeat (ADR 0041) re-publishes every declared
-	// site capability through the outbox so downstream freshness windows
-	// hold while nothing changes. SITE_CAPABILITY_HEARTBEAT_INTERVAL=0
-	// disables it.
-	heartbeatDone := startBackground(sigCtx, logger, capabilityHeartbeat(adapters, system.Clock{}, cfg.siteCapabilityHeartbeatInterval, logger),
-		"site capability heartbeat running", errCh)
+	// The site capability heartbeat (ADR 0041); interval 0 disables it.
+	heartbeatDone := startBackground(sigCtx, logger, capabilityHeartbeat(adapters, system.Clock{}, cfg.siteCapabilityHeartbeatInterval, logger), "site capability heartbeat running", errCh)
 	defer func() { <-heartbeatDone }()
 
 	select {
