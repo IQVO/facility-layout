@@ -84,9 +84,12 @@ empty or contains characters other than `[A-Z0-9]`.
   Zone and returns the Zone's `Hazmat`/`TemperatureClass` attributes as a
   cheap, denormalized read. This is the concrete Published Language
   realization of this context's Open Host Service role: `inventory-storage`
-  consumes it synchronously at stow time to enforce hazmat/temperature
-  placement rules on classified SKUs, without duplicating Zone data
-  (ADR-0008).
+  reads it at stow time (synchronously only on its `LOCATION_LOOKUP_MODE=http`
+  rollback path; normally from its Kafka-fed cache of this context's events)
+  to enforce hazmat/temperature placement rules on classified SKUs, without
+  duplicating Zone data (ADR-0008). The SKU classification itself is owned by
+  `product-master`, not by `inventory-storage` (which keeps a local copy fed by
+  `ProductClassified`); this context has no relationship with `product-master`.
 
 ## Aggregates & invariants (enforce in domain, unit-tested)
 
@@ -115,15 +118,16 @@ empty or contains characters other than `[A-Z0-9]`.
 
 ## Domain events (past tense)
 
-SiteRegistered, ZoneRegistered, AisleRegistered, LocationTypeRegistered,
+SiteRegistered, SiteCapabilityChanged, SiteRoleChanged, ZoneRegistered,
+AisleRegistered, LocationTypeRegistered,
 PlacementRuleDefined, LocationSlotRegistered, LocationSlotDecommissioned,
 FacilityLayoutImported (emitted once per bulk import call, carrying a
 count of slots imported — individual `LocationSlotRegistered` events also
 fire per-slot within that same import), and the ADR-0017 geometry events
 LocationGeometryUpdated, AisleGeometryUpdated, FixedStructureRegistered,
-CrossAisleRegistered — twelve in all, published to
-`warehouse.facility.events` (`apis/asyncapi.yaml`) when
-`EVENT_PUBLISHER=kafka`.
+CrossAisleRegistered — fourteen in all, published to
+`warehouse.facility.events` (`apis/asyncapi.yaml`), always, through the
+transactional outbox (ADR 0039).
 
 CloudEvents `type` convention (IDENTICAL to the other fleet
 services — reverse-DNS, lowercase except the final PascalCase event name,
@@ -134,8 +138,8 @@ e.g. workforce-management's `shiftplan`):
 com.warehouse.<subdomain>.facility-layout.<entity>.<EventName>
 ```
 
-This service's **subdomain segment is `wms`** — "bin-accurate location" is
-already classified WMS-tier in `amazon-fulfillment-ddd.md` ("Inventory &
+This service's **subdomain segment is `wms`** (shared with inventory-storage and product-master) — "bin-accurate location" is
+already classified WMS-tier in `fulfillment-reference-ddd.md` ("Inventory &
 Slotting" Core subdomain references bin-accurate location as WMS's Open
 Host Service), and this service is the generalized, multi-consumer version
 of that concern. Entity segments: `site`, `zone`, `aisle`, `locationtype`,
@@ -176,8 +180,10 @@ On the wire this `type` is the `type` attribute of a mandatory CloudEvents
 12. SetLocationGeometry / SetAisleGeometry / RegisterCrossAisle /
     RegisterFixedStructure -> the ADR-0017 geometry writes
 13. GetZoneTravelGraph(zoneRef) / EstimateTravelDistance(from, to) -> the
-    travel graph and shortest same-zone distance (read models, ADR-0017)
+    travel graph and shortest same-zone distance; across zones a
+    straight-line estimate only when both slots have position geometry
+    (read models, ADR-0017)
 
 Plus single-resource/list reads (`GetSite`, `ListSites`, `GetZone`, …,
-`GetLocationClassification`, `ListFixedStructures`) — 30 use-case structs
+`GetLocationClassification`, `ListFixedStructures`) — 31 use-case structs
 in `internal/application/usecases/`.

@@ -1,8 +1,10 @@
-// Package main_test hosts the godog (Cucumber for Go) acceptance suite. It
-// drives the REAL chi router over HTTP — the same wiring the service uses in
-// production, but with the in-memory outbound adapters — so every scenario in
-// features/*.feature is a true black-box test of the REST API.
-package main_test
+// Package features_test hosts the godog (Cucumber for Go) acceptance suite. It
+// drives the REAL chi router over HTTP — the same use-case wiring the service
+// uses in production — but with the in-memory outbound adapters, which are
+// TEST DOUBLES (the shipped binaries never import them, ADR 0039), so every
+// scenario in the *.feature files next to it is a true black-box test of the
+// REST API.
+package features_test
 
 import (
 	"bytes"
@@ -14,6 +16,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -27,14 +30,25 @@ import (
 	"github.com/claudioed/facility-layout/internal/application/usecases"
 )
 
-// TestFeatures runs every Gherkin feature under features/ against a freshly
+// TestFeatures runs every Gherkin feature in this directory against a freshly
 // wired HTTP server.
+//
+// Scenarios tagged @known-bug describe the CORRECT behaviour from
+// apis/openapi.yaml for a defect the suite found; they are excluded from the
+// run until the defect is fixed (the tag is then deleted), so the suite never
+// encodes the bug as expected behaviour. BDD_TAGS overrides the filter, e.g.
+// BDD_TAGS=@known-bug runs only those scenarios and watches them fail.
 func TestFeatures(t *testing.T) {
+	tags := os.Getenv("BDD_TAGS")
+	if tags == "" {
+		tags = "~@known-bug"
+	}
 	suite := godog.TestSuite{
 		ScenarioInitializer: InitializeScenario,
 		Options: &godog.Options{
 			Format:   "pretty",
-			Paths:    []string{"features"},
+			Paths:    []string{"."},
+			Tags:     tags,
 			Strict:   true,
 			TestingT: t,
 		},
@@ -65,25 +79,32 @@ func (w *world) start() {
 	slots := memory.NewSlotRepo()
 	locationTypes := memory.NewLocationTypeRepo()
 	rules := memory.NewPlacementRuleRepo()
+	structures := memory.NewFixedStructureRepo()
+	crossAisles := memory.NewCrossAisleRepo()
 	publisher := events.NewBufferedPublisher()
 	clock := memory.NewFixedClock(time.Date(2026, 8, 22, 9, 0, 0, 0, time.UTC))
 
 	s := &inboundhttp.Server{
-		RegisterSite:         &usecases.RegisterSite{Sites: sites, Events: publisher, Clock: clock},
-		GetSite:              &usecases.GetSite{Sites: sites},
-		ListSites:            &usecases.ListSites{Sites: sites},
-		RegisterZone:         &usecases.RegisterZone{Sites: sites, Zones: zones, Events: publisher, Clock: clock},
-		GetZone:              &usecases.GetZone{Zones: zones},
-		ListZones:            &usecases.ListZones{Sites: sites, Zones: zones},
-		RegisterAisle:        &usecases.RegisterAisle{Zones: zones, Aisles: aisles, Events: publisher, Clock: clock},
-		GetAisle:             &usecases.GetAisle{Aisles: aisles},
-		ListAisles:           &usecases.ListAisles{Zones: zones, Aisles: aisles},
-		RegisterLocationType: &usecases.RegisterLocationType{LocationTypes: locationTypes, Events: publisher, Clock: clock},
-		GetLocationType:      &usecases.GetLocationType{LocationTypes: locationTypes},
-		ListLocationTypes:    &usecases.ListLocationTypes{LocationTypes: locationTypes},
-		DefinePlacementRule:  &usecases.DefinePlacementRule{LocationTypes: locationTypes, Rules: rules, Events: publisher, Clock: clock},
-		GetPlacementRule:     &usecases.GetPlacementRule{Rules: rules},
-		ListPlacementRules:   &usecases.ListPlacementRules{Rules: rules},
+		RegisterSite: &usecases.RegisterSite{Sites: sites, Events: publisher, Clock: clock},
+		GetSite:      &usecases.GetSite{Sites: sites},
+		ListSites:    &usecases.ListSites{Sites: sites},
+		ChangeSiteTransferCapability: &usecases.ChangeSiteTransferCapability{
+			Sites: sites, Events: publisher, Clock: clock,
+		},
+		ChangeSiteRole:               &usecases.ChangeSiteRole{Sites: sites, Events: publisher, Clock: clock},
+		ListSiteRoleTransferDefaults: &usecases.ListSiteRoleTransferDefaults{},
+		RegisterZone:                 &usecases.RegisterZone{Sites: sites, Zones: zones, Events: publisher, Clock: clock},
+		GetZone:                      &usecases.GetZone{Zones: zones},
+		ListZones:                    &usecases.ListZones{Sites: sites, Zones: zones},
+		RegisterAisle:                &usecases.RegisterAisle{Zones: zones, Aisles: aisles, Events: publisher, Clock: clock},
+		GetAisle:                     &usecases.GetAisle{Aisles: aisles},
+		ListAisles:                   &usecases.ListAisles{Zones: zones, Aisles: aisles},
+		RegisterLocationType:         &usecases.RegisterLocationType{LocationTypes: locationTypes, Events: publisher, Clock: clock},
+		GetLocationType:              &usecases.GetLocationType{LocationTypes: locationTypes},
+		ListLocationTypes:            &usecases.ListLocationTypes{LocationTypes: locationTypes},
+		DefinePlacementRule:          &usecases.DefinePlacementRule{LocationTypes: locationTypes, Rules: rules, Events: publisher, Clock: clock},
+		GetPlacementRule:             &usecases.GetPlacementRule{Rules: rules},
+		ListPlacementRules:           &usecases.ListPlacementRules{Rules: rules},
 		RegisterLocationSlot: &usecases.RegisterLocationSlot{
 			Sites: sites, Zones: zones, Aisles: aisles, Slots: slots,
 			LocationTypes: locationTypes, Rules: rules, Events: publisher, Clock: clock,
@@ -97,6 +118,17 @@ func (w *world) start() {
 		},
 		GetSiteLayout: &usecases.GetSiteLayout{Sites: sites, Zones: zones, Aisles: aisles, Slots: slots},
 		GetZoneGrid:   &usecases.GetZoneGrid{Zones: zones, Aisles: aisles, Slots: slots},
+
+		ListLocationsByRole:         &usecases.ListLocationsByRole{Sites: sites, Zones: zones, Slots: slots},
+		SetLocationGeometry:         &usecases.SetLocationGeometry{Slots: slots, Events: publisher, Clock: clock},
+		DeclareLocationHandlingUnit: &usecases.DeclareLocationHandlingUnit{Slots: slots, Events: publisher, Clock: clock},
+		SetAisleGeometry:            &usecases.SetAisleGeometry{Aisles: aisles, Events: publisher, Clock: clock},
+		RegisterFixedStructure:      &usecases.RegisterFixedStructure{Sites: sites, Structures: structures, Events: publisher, Clock: clock},
+		ListFixedStructures:         &usecases.ListFixedStructures{Sites: sites, Structures: structures},
+		RegisterCrossAisle:          &usecases.RegisterCrossAisle{Zones: zones, Aisles: aisles, CrossAisles: crossAisles, Events: publisher, Clock: clock},
+		ListCrossAisles:             &usecases.ListCrossAisles{Zones: zones, CrossAisles: crossAisles},
+		GetZoneTravelGraph:          &usecases.GetZoneTravelGraph{Zones: zones, Aisles: aisles, Slots: slots, CrossAisles: crossAisles},
+		EstimateTravelDistance:      &usecases.EstimateTravelDistance{Zones: zones, Aisles: aisles, Slots: slots, CrossAisles: crossAisles},
 	}
 
 	w.server = httptest.NewServer(inboundhttp.NewRouter(s, slog.New(slog.NewTextHandler(io.Discard, nil))))
@@ -936,5 +968,8 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^the listed aisles are "([^"]*)"$`, w.theListedAislesAre)
 	sc.Step(`^the listed location types are "([^"]*)"$`, w.theListedLocationTypesAre)
 	sc.Step(`^the listed placement rules are "([^"]*)"$`, w.theListedPlacementRulesAre)
+	w.registerWave2Steps(sc)
+	w.registerCapabilitySteps(sc)
+	w.registerSiteRoleSteps(sc)
 	sc.Step(`^the classification reports hazmat (true|false) and temperature class "([^"]*)"$`, w.theClassificationReports)
 }

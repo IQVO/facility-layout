@@ -15,6 +15,7 @@ The topic, the "publish the whole Published Language" decision and the
 aggregate-id key still stand. The flat `Envelope` described below
 (`event_id`/`event_type`/`occurred_at`/`source`/`data`) was removed:
 every message is now a CloudEvents 1.0 event (Superseded by ADR-0024).
+Outbox-path trace propagation amended by [ADR-0038](./0038-outbox-trace-context.md).
 
 ## Context
 
@@ -44,7 +45,10 @@ The forces:
   enriched event, an OHS publishes its **whole** Published Language. Every one
   of the eight domain events is part of the contract, so the publisher must
   emit all of them, not a curated subset.
-- **The events already self-serialize.** Each event carries JSON struct tags
+- **The events already self-serialize.** *(Amended 2026-10: the JSON shape now
+  lives in adapter DTOs — `cloudevents.WireData` — and the domain events carry
+  no struct tags; the wire bytes are unchanged and pinned by golden files.)*
+  Each event carries JSON struct tags
   and a stable `EventType()` (the CloudEvents-style
   `com.warehouse.wms.facility-layout.<entity>.<Event>`). The envelope can carry
   the event's own JSON verbatim as `data`; no per-event marshalling switch is

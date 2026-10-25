@@ -11,6 +11,10 @@ Six core modelling elements make up this context. Four are structural
 aggregates in a strict hierarchy; two describe placement legality. Two more —
 `CrossAisle` and `FixedStructure` — describe physical geometry for the travel
 graph and the floor plan ([ADR 0017](../adr/0017-geometry-and-travel-graph.md)).
+Each of the eight has its own repository port. The per-aggregate
+[Aggregate Design Canvas](./aggregate-design-canvas.md) adds state
+diagrams, handled commands, created events and throughput estimates; the
+[class diagrams](./class-diagram.md) show every type.
 
 ```mermaid
 graph TD
@@ -41,11 +45,11 @@ The root of the hierarchy: a physical facility or building.
 | | |
 |---|---|
 | **Identity** | `SiteCode` — non-empty, `[A-Z0-9]` only, unique |
-| **State** | `code`, `name`, `status` |
+| **State** | `code`, `name`, `role` (`Role`: one of 15 network roles or `UNSPECIFIED`, [ADR 0037](../adr/0037-site-role-and-siterolechanged-cloudevents.md); `ChangeRole` never touches capability), `status`, `capability` (`TransferCapability` value object: origin/destination enabled), `capabilityRevision` (0 = never published), `version` (optimistic-concurrency token, [ADR 0035](../adr/0035-site-transfer-capability-command.md)) |
 | **Constructor** | `NewSite(code, name string) (*Site, error)` |
-| **Rehydration** | `RehydrateSite(code, name string, status shared.Status) *Site` |
-| **Behaviour** | `Decommission() error` |
-| **Errors** | `ErrEmptySiteCode`, `ErrInvalidSiteCode`, `ErrEmptySiteName`, `ErrAlreadyDecommissioned` |
+| **Rehydration** | `RehydrateSite(code, name string, status shared.Status, capability TransferCapability, capabilityRevision int64, version int) *Site` |
+| **Behaviour** | `Decommission() error`, `ChangeTransferCapability(TransferCapability) (changed bool, err error)` — the first change and every real change advance `capabilityRevision` by exactly one; an identical snapshot is a no-op |
+| **Errors** | `ErrEmptySiteCode`, `ErrInvalidSiteCode`, `ErrEmptySiteName`, `ErrAlreadyDecommissioned`, `ErrSiteDecommissioned` |
 
 Uniqueness is enforced at the application/repository layer, not inside the
 aggregate: a single aggregate cannot see its siblings, so it cannot police a
@@ -165,7 +169,7 @@ LocationCode.**
 | | |
 |---|---|
 | **Identity** | `shared.LocationCode` — globally unique |
-| **State** | `code`, `locationType`, `role`, `functional` (`dockFlow` / `activities`), `capacity`, `status`, optional `position`, `dimensions`, `pickSequence` |
+| **State** | `code`, `locationType`, `role`, `functional` (`dockFlow` / `activities`), `capacity`, `status`, optional `position`, `dimensions`, `pickSequence`, and `version` (optimistic-concurrency token, [ADR 0025](../adr/0025-optimistic-concurrency-version-column.md)) |
 | **Constructor** | `NewLocationSlot(code, locationType, capacityOverride, functional, attrs, rules) (*LocationSlot, error)` |
 | **Behaviour** | `Decommission() error`, `SetGeometry(position, dimensions) error`, `SetPickSequence(int) error` |
 | **Errors** | `ErrMissingLocationCode`, `ErrMissingLocationType`, `ErrZoneMismatch`, `ErrAlreadyDecommissioned`, `ErrSlotDecommissioned`, `ErrNegativePickSequence`, `placement.ErrPlacementRuleViolated` |

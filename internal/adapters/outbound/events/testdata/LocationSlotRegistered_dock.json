@@ -1,0 +1,1 @@
+{"eventName":"LocationSlotRegistered","eventType":"com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered","occurredAt":"2026-02-03T04:05:06Z","locationCode":"WH1-STOR-AMB-A07-03-02-B","aisleId":"WH1-STOR-AMB-A07","zoneId":"WH1-STOR-AMB","locationType":"Dock","role":"Dock","dockFlow":"Inbound","activities":["Receiving","Putaway"]}

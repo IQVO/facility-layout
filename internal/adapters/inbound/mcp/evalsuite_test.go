@@ -66,6 +66,7 @@ func initializeMCPEvalScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^the tool call succeeds$`, w.callSucceeded)
 	sc.Step(`^the tool call does not succeed silently$`, w.callDidNotSucceedSilently)
 	sc.Step(`^the tool call reports a problem mentioning "([^"]*)"$`, w.callErroredMentioning)
+	sc.Step(`^the tool call fails with the error slug "([^"]*)"$`, w.callFailedWithSlug)
 	sc.Step(`^the structured result field "([^"]*)" is "([^"]*)"$`, w.fieldIsString)
 	sc.Step(`^the structured result field "([^"]*)" is (\d+)$`, w.fieldIsNumber)
 	sc.Step(`^the structured result field "([^"]*)" is (\d+\.\d+)$`, w.fieldIsDecimal)
@@ -135,6 +136,21 @@ func (w *mcpEvalWorld) callErroredMentioning(fragment string) error {
 	}
 	if !containsFold(w.h.lastCallContent, fragment) && w.h.lastCallErr != nil && !containsFold(w.h.lastCallErr.Error(), fragment) {
 		return fmt.Errorf("expected the tool error to mention %q, got %q / %v", fragment, w.h.lastCallContent, w.h.lastCallErr)
+	}
+	return nil
+}
+
+// callFailedWithSlug asserts the tool returned an isError result whose text
+// starts with "<slug>: " (the fleet tool-error convention, ADR-0033).
+func (w *mcpEvalWorld) callFailedWithSlug(slug string) error {
+	if w.h.lastCallErr != nil {
+		return fmt.Errorf("expected a tool-level error result, got a protocol error: %w", w.h.lastCallErr)
+	}
+	if w.h.lastCallResult == nil || !w.h.lastCallResult.IsError {
+		return fmt.Errorf("expected a tool error, got success: %s", w.h.lastCallContent)
+	}
+	if !strings.HasPrefix(w.h.lastCallContent, slug+": ") {
+		return fmt.Errorf("tool error %q does not start with %q", w.h.lastCallContent, slug+": ")
 	}
 	return nil
 }

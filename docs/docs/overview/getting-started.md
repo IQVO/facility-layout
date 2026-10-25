@@ -2,31 +2,25 @@
 id: getting-started
 title: Getting started
 sidebar_label: Getting started
-description: Run facility-layout locally, with or without Postgres, and walk the full site → zone → aisle → slot → layout example.
+description: Run facility-layout locally on Postgres and Kafka, and walk the full site → zone → aisle → slot → layout example.
 ---
 
 # Getting started
 
-`facility-layout` is a single Go binary. It runs with no database at all
-(in-memory adapters, log-only event publishing) or against Postgres 16.
+`facility-layout` runs on real Postgres 16 and real Kafka, and on nothing
+else ([ADR 0039](../adr/0039-postgres-and-kafka-are-the-only-runtime.md)):
+there is no in-memory mode and no log-only publisher. Without `DATABASE_URL`
+and `KAFKA_BROKERS` the binary exits at boot with an error that names the
+variable.
 
-## Run it with no database
-
-```bash
-go run ./cmd/facility
-# facility-layout 2026/08/22 09:00:00 DATABASE_URL not set; using in-memory adapters
-# facility-layout 2026/08/22 09:00:00 listening on :8080
-```
-
-This is the fastest way to explore the API. Everything is in process; the
-event publisher writes to the log.
-
-## Run it with Postgres
+## Run it
 
 ```bash
-docker compose up -d postgres
-export DATABASE_URL="postgres://facility:facility@localhost:5432/facility?sslmode=disable"
+docker compose up -d --wait    # postgres:16 + Kafka (confluent-local) on localhost:9092
+export DATABASE_URL="postgres://facility:***@localhost:5432/facility?sslmode=disable"
+export KAFKA_BROKERS="localhost:9092"
 go run ./cmd/facility          # migrations run automatically at startup
+# {"time":"...","level":"INFO","msg":"http server listening","addr":":8080"}
 ```
 
 Migrations can also be applied standalone with `golang-migrate`:
@@ -40,8 +34,20 @@ migrate -source file://migrations -database "$DATABASE_URL" up
 | Env var | Default | Meaning |
 |---|---|---|
 | `HTTP_ADDR` | `:8080` | Listen address |
-| `DATABASE_URL` | *(unset)* | Postgres DSN. Unset ⇒ in-memory adapters + log-only event publishing |
+| `DATABASE_URL` | **required** | Postgres DSN. Unset ⇒ boot error naming the variable |
+| `MIGRATIONS_DATABASE_URL` | `DATABASE_URL` | Direct (non-PgBouncer) DSN used only for migrations ([ADR 0023](../adr/0023-migrations-direct-postgres-connection.md)) |
 | `MIGRATIONS_PATH` | `migrations` | Directory of golang-migrate SQL files |
+| `EVENT_PUBLISHER` | *(unset = `kafka`)* | Only `kafka` is accepted; events go through the transactional outbox to `warehouse.facility.events` and `warehouse.facility.analytics`. `log` is a boot error |
+| `KAFKA_BROKERS` | **required** | Comma-separated broker list; no default. Unset ⇒ boot error |
+| `OUTBOX_RELAY_INTERVAL` | `1s` | Outbox relay idle sleep |
+| `OUTBOX_MAX_ATTEMPTS` | `20` | Outbox relay attempt cap ([ADR 0036](../adr/0036-outbox-relay-attempt-cap.md)); `0` = unlimited |
+| `HOUSEKEEPING_INTERVAL` / `IDEMPOTENCY_KEY_TTL` / `OUTBOX_RETENTION` | `1h` / `24h` / `168h` | Housekeeping sweeper ([ADR 0026](../adr/0026-housekeeping-sweeper.md)); `0` disables |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:5186` | Browser origins allowed to call the API |
+| `LOG_LEVEL`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME`, `SERVICE_VERSION`, `ENVIRONMENT` | `info`, `localhost:4317`, `facility-layout`, `dev`, `local` | Logging and OpenTelemetry |
+
+The MCP server (`go run ./cmd/mcp`) listens on `MCP_ADDR` (default `:8090`);
+the analytics projector and reports binaries are described in the
+repository README.
 
 ## Container
 
@@ -54,7 +60,10 @@ docker run --rm -p 8080:8080 claudioed/facility-layout
 
 Each step below is a real request against a running instance. The full
 responses are shown in [Drawing the warehouse](../api-reference/drawing-the-warehouse.md)
-and in the repository README.
+and in the repository README. Every resource-creation `POST`
+also needs a fresh `-H "Idempotency-Key: $(uuidgen)"` header, or it is
+rejected with `400 idempotency-key-required`
+([ADR 0019](../adr/0019-idempotency-key-middleware.md)).
 
 ```bash
 # 1 — the site

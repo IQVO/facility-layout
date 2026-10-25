@@ -133,11 +133,14 @@ var _ ReportsClient = (*ReportsRESTClient)(nil)
 // --- get_facility_catalog_growth_report tool ----------------------------------
 
 // CatalogGrowthToolInput is the tool's argument set (untrusted, from a model).
+// Scope and Granularity carry omitempty so the SDK-inferred input schema
+// leaves them out of "required" (gap fix D16; enforced by
+// internal/architecture TestMCPOptionalToolInputsCarryOmitempty).
 type CatalogGrowthToolInput struct {
 	From        string `json:"from" jsonschema:"start of the window, inclusive, RFC3339 (required)"`
 	To          string `json:"to" jsonschema:"end of the window, exclusive, RFC3339 (required)"`
-	Scope       string `json:"scope" jsonschema:"optional exact-match scope filter: a site code (e.g. WH1), a zone id (e.g. WH1-STOR-AMB), or empty for the catalog-wide scope"`
-	Granularity string `json:"granularity" jsonschema:"time bucket granularity; only 'day' is supported"`
+	Scope       string `json:"scope,omitempty" jsonschema:"optional exact-match scope filter: a site code (e.g. WH1), a zone id (e.g. WH1-STOR-AMB), or omit for every scope"`
+	Granularity string `json:"granularity,omitempty" jsonschema:"optional time bucket granularity; only 'day' is supported (the default)"`
 }
 
 // getCatalogGrowthReport is the tool handler: it validates the required window,
@@ -151,10 +154,10 @@ func (d Deps) getCatalogGrowthReport(ctx context.Context, in CatalogGrowthToolIn
 // It validates from/to and forwards the filters.
 func GetCatalogGrowthReportForTest(ctx context.Context, client ReportsClient, in CatalogGrowthToolInput) (CatalogGrowthReportView, error) {
 	if client == nil {
-		return CatalogGrowthReportView{}, fmt.Errorf("reports client not configured")
+		return CatalogGrowthReportView{}, toolError(slugInternalError, "reports client not configured")
 	}
 	if in.From == "" || in.To == "" {
-		return CatalogGrowthReportView{}, fmt.Errorf("from and to are required (RFC3339)")
+		return CatalogGrowthReportView{}, toolError(slugInvalidReportQuery, "from and to are required (RFC3339)")
 	}
 	q := CatalogGrowthQuery{}
 	q.From = in.From
@@ -174,7 +177,7 @@ func (d Deps) registerReportTool(server *mcp.Server) {
 	readOnly := true
 	addTool(server, &mcp.Tool{
 		Name:        "get_facility_catalog_growth_report",
-		Description: "Return the facility-layout 'Layout Catalog Growth & Change' report (slots registered/decommissioned, zones/aisles/location-types registered, placement rules defined, and bulk-import row tallies) for a time window, bucketed by day and optionally filtered by scope (a site code, a zone id, or the catalog-wide scope). Reads via the facility-reports REST service.",
+		Description: "Return the facility-layout 'Layout Catalog Growth & Change' report (slots registered/decommissioned, zones/aisles/location-types registered, placement rules defined, and bulk-import row tallies) for a time window, bucketed by day and optionally filtered by scope (a site code, a zone id, or the catalog-wide scope). Reads via the facility-reports REST service. " + toolErrorShape,
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: readOnly},
 	}, d.getCatalogGrowthReport)
 }

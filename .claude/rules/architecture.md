@@ -18,17 +18,20 @@ cmd/facility-reports/             read-only analytics reports API
 cmd/mcp/                          MCP server composition root
 internal/
   domain/
-    site/ zone/ aisle/ slot/ placement/ shared/
+    site/ zone/ aisle/ slot/ placement/ structure/ travel/ shared/
   application/
     ports/                        OUT interfaces (repos, EventPublisher, Clock, LocationMetrics)
     usecases/                     one struct per use case
   adapters/
     inbound/http/                 chi handlers, DTOs, error mapping
-    inbound/mcp/                  MCP tools/resources/prompts
+    inbound/mcp/                  MCP tools/resources/prompts; every tool error is
+                                  `<slug>: detail` (REST problem slug, unmapped =
+                                  `internal-error`; errors.go, ADR-0033)
     inbound/kafka/                analytics projector's consumer (FirstOffset replay)
     outbound/postgres/            pgxpool repos + migrations
-    outbound/memory/              in-memory repos for tests/local
-    outbound/events/              log/outbox publisher (default when EVENT_PUBLISHER unset)
+    outbound/memory/              in-memory repos: TEST DOUBLES only, never imported by cmd/** (ADR 0039)
+    outbound/system/              the wall clock and id source the binaries use
+    outbound/events/              log + buffered publishers (test doubles)
     kafka/cloudevents/            the ONLY CloudEvents 1.0 helper (New/Decode/ContentTypeHeader)
     outbound/kafka/               integration + analytics publishers (CloudEvents only)
     outbound/analyticsstore/      analytics read-side Postgres repos
@@ -58,7 +61,9 @@ docs/                              Docusaurus site (ADRs, ecosystem, API referen
   API). It has NO inbound dependency on any other fleet service and never
   will. Its live downstream **Conformists**: `inventory-storage` (consumes
   `ZoneRegistered`/`LocationSlotRegistered`/`LocationSlotDecommissioned`
-  from `warehouse.facility.events`), `wes-work-planning` (`GET /distance`),
+  from `warehouse.facility.events`), `warehouse-planning` (consumes
+  `LocationSlotRegistered`/`LocationSlotDecommissioned` from the same topic
+  for its storage-capacity tally), `wes-work-planning` (`GET /distance`),
   `fulfillment-execution` (`GET /locations/{code}` for the slot's `role`),
   and `warehouse-ops-agent` (MCP tools + the catalog-growth report). This
   service never reaches into their aggregates, and none of them get write

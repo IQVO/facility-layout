@@ -23,7 +23,9 @@ duplicated. It is an **Open Host Service** with a **Published Language** (its
 domain events on the `warehouse.facility.events` Kafka topic, plus its REST
 API). It depends on no other service. Its downstream **Conformists** today:
 `inventory-storage` (consumes the Kafka topic to validate stows),
-`wes-work-planning` (`GET /distance`), `fulfillment-execution`
+`warehouse-planning` (consumes slot registrations/decommissions for its
+storage-capacity tally), `wes-work-planning` (`GET /distance`),
+`fulfillment-execution`
 (`GET /locations/{code}` for a location's role), and `warehouse-ops-agent`
 (the MCP tools and the catalog-growth report).
 
@@ -34,10 +36,26 @@ API). It depends on no other service. Its downstream **Conformists** today:
 Full documentation is published at
 **<https://iqvo.github.io/facility-layout/>** — business context and
 ubiquitous language, the DDD model (subdomain classification, aggregates,
-invariants, domain events), an interactive API reference generated from
+invariants, domain events) plus a ddd-crew DDD artifact pack (Core Domain
+Chart, Bounded Context Canvas, Aggregate Design Canvas, EventStorming, domain
+message flow, UML class/sequence and ER diagrams — source in
+[`docs/docs/ddd/`](docs/docs/ddd/ddd-artifacts.md)), an interactive API reference generated from
 `apis/openapi.yaml`, the ecosystem context map, and the Architecture Decision
 Records. The site source lives in [`docs/`](docs/) and deploys to GitHub Pages
-via `.github/workflows/docs.yml`.
+via `.github/workflows/docs.yml`, which also builds (without publishing) on
+every pull request that touches `docs/`.
+
+Page map (source under `docs/docs/`):
+
+| Area | Pages |
+|---|---|
+| Overview | [Introduction](docs/docs/overview/index.md), [Getting started / quickstart](docs/docs/overview/getting-started.md), [Hexagonal architecture](docs/docs/ddd/hexagonal-architecture.md) |
+| Operations | [Configuration (env vars per binary)](docs/docs/operations/configuration.md), [Runbook](docs/docs/operations/runbook.md), [Observability](docs/docs/operations/observability.md), [Troubleshooting](docs/docs/operations/troubleshooting.md) |
+| Development | [Testing](docs/docs/development/testing.md) |
+| Ecosystem | [Context map](docs/docs/ecosystem/context-map.md), [Consuming this service (integration)](docs/docs/ecosystem/consuming-this-service.md) |
+| DDD | [Use cases](docs/docs/ddd/use-cases.md), [Subdomain classification](docs/docs/ddd/subdomain-classification.md), [Aggregates](docs/docs/ddd/aggregates.md), [Domain events](docs/docs/ddd/domain-events.md), [DDD artifact pack](docs/docs/ddd/ddd-artifacts.md) |
+| MCP & analytics | [MCP governance charter](docs/docs/mcp/governance-charter.md), [Catalog growth report](docs/docs/analytics/catalog-growth-report.md) |
+| Decisions | [ADR index](docs/docs/adr/index.md) |
 
 ---
 
@@ -74,7 +92,7 @@ cmd/facility-projector/       analytics projector (the only analytical-DB writer
 cmd/facility-reports/         analytics reader (serves /reports/catalog-growth)
 internal/
   domain/                     pure business logic; imports nothing but stdlib and itself
-    shared/                   LocationCode, Capacity, geometry values, enums, the 12 events
+    shared/                   LocationCode, Capacity, geometry values, enums, the 15 events
     site/  zone/  aisle/      the structural aggregates (aisle/ also holds CrossAisle)
     placement/                LocationType, LocationRole, PlacementRule, RuleSet evaluation
     slot/                     LocationSlot — the coded leaf aggregate — and its functional attributes
@@ -87,9 +105,10 @@ internal/
     inbound/http/             chi handlers, DTOs, RFC 7807 error mapping, SVG rendering
     inbound/mcp/              MCP tools, resource template and prompt
     inbound/kafka/            analytics topic consumer (projector)
-    outbound/postgres/        pgxpool repos + golang-migrate migrations + events outbox
-    outbound/memory/          thread-safe in-memory repos for tests and local runs
-    outbound/events/          log + buffered publishers
+    outbound/postgres/        pgxpool repos, golang-migrate runner, UnitOfWork, transactional outbox + relay, sweeper
+    outbound/memory/          thread-safe in-memory repos: TEST DOUBLES only, never imported by cmd/** (ADR 0039)
+    outbound/system/          the wall clock and id source the binaries use
+    outbound/events/          log + buffered publishers (test doubles)
     outbound/kafka/           integration + analytics topic publishers
     outbound/analyticsstore/  analytical DB projection and report queries
     outbound/telemetry/       OpenTelemetry wiring
@@ -113,7 +132,7 @@ into its sibling, or if `ports` grows a concrete type.
 | **Aisle** | A physical corridor scoped to a Zone. Carries a `SequenceHint` (walk-order position — the concrete travel-distance input the WES tier needs) and a `Direction` (OneWay/TwoWay). |
 | **LocationType** | A reusable classification of slot shape/kind (`PalletRack`, `Shelf`, `ToteWall`, `BulkFloor`, `Staging`, `Amnesty`) with a default capacity envelope and a `LocationRole`. |
 | **LocationRole** | What a location is *for* (ADR-0016): `Storage` (default), `Dock`, `Yard`, `WorkCenter`, `Drop`, `Staging`, `QC`, `Consolidation`, `Shipping`. Capacity is required only for `Storage`/`Staging`/`Drop`/`Consolidation`. A `Dock` slot carries a `dockFlow` (`Inbound`/`Outbound`/`Both`); a `WorkCenter` slot carries `activities` (`Pack`, `Sort`, `QC`, `VAS`, `Deconsolidate`, `Receive`, `Kit`). |
-| **LocationSlot** | The coded leaf aggregate. Its identity **is** its `LocationCode`. Has a LocationType (and so a role), a capacity envelope, optional physical geometry, and a Status (`Active`/`UnderMaintenance`/`Decommissioned`). |
+| **LocationSlot** | The coded leaf aggregate. Its identity **is** its `LocationCode`. Has a LocationType (and so a role), a capacity envelope, optional physical geometry, an optional handling unit (`EACH`/`CASE`/`PALLET`, ADR-0040), and a Status (`Active`/`UnderMaintenance`/`Decommissioned`). |
 | **CrossAisle / FixedStructure** | Physical geometry (ADR-0017): a walkable connection between two aisles of a zone, and a wall/column/office/conveyor footprint on a site. Together with aisle centrelines they form each zone's **travel graph**. |
 | **PlacementRule** | Declares which LocationTypes are legal in which Zones. The mechanism that prevents "ambient product in the frozen zone" — enforced once, at registration time. |
 | **Facility layout** | The readable, drawable projection of the whole structure: zones → aisles → slots, shaped for a UI to render directly. |
@@ -146,24 +165,27 @@ case that sets it.
 
 ## Domain events (Published Language)
 
-`SiteRegistered`, `ZoneRegistered`, `AisleRegistered`,
-`LocationTypeRegistered`, `PlacementRuleDefined`, `LocationSlotRegistered`,
-`LocationSlotDecommissioned`, `FacilityLayoutImported`,
-`LocationGeometryUpdated`, `AisleGeometryUpdated`,
-`FixedStructureRegistered`, `CrossAisleRegistered`.
+`SiteRegistered`, `SiteCapabilityChanged`, `SiteRoleChanged`, `ZoneRegistered`,
+`AisleRegistered`, `LocationTypeRegistered`, `PlacementRuleDefined`,
+`LocationSlotRegistered`, `LocationSlotDecommissioned`, `FacilityLayoutImported`,
+`LocationSlotHandlingUnitDeclared`, `LocationGeometryUpdated`,
+`AisleGeometryUpdated`, `FixedStructureRegistered`, `CrossAisleRegistered`.
 
-With `EVENT_PUBLISHER=kafka` all twelve are published to
+All fifteen are published (through the transactional outbox) to
 `warehouse.facility.events` (specified in `apis/asyncapi.yaml`) and to
 `warehouse.facility.analytics`. `inventory-storage` consumes
 `ZoneRegistered`, `LocationSlotRegistered` and `LocationSlotDecommissioned`
-from the integration topic.
+from the integration topic; `warehouse-planning` consumes
+`LocationSlotRegistered` and `LocationSlotDecommissioned`,
+`slotting-optimization` consumes all three of the slot/zone events, and
+`network-inventory-planning` consumes `SiteCapabilityChanged`.
 
 Every Kafka message (integration and analytics topics) is a **CloudEvents 1.0**
 event in structured content mode — mandatory, no other envelope
 ([ADR-0024](docs/docs/adr/0024-cloudevents-mandatory-envelope.md)):
 `source=/warehouse/facility-layout`, `subject`=aggregate id,
 `dataschema=urn:warehouse:facility-layout:<events|analytics>:<EventName>:v1`,
-`data`=the domain event's own JSON, Kafka header
+`data`=the event's JSON wire DTO (adapter-owned, same field names as the Published Language; domain events carry no struct tags), Kafka header
 `content-type: application/cloudevents+json; charset=UTF-8`.
 
 CloudEvents `type` convention, identical to the other warehouse-systems services:
@@ -172,7 +194,8 @@ CloudEvents `type` convention, identical to the other warehouse-systems services
 com.warehouse.<subdomain>.facility-layout.<entity>.<EventName>
 ```
 
-This service's subdomain segment is `wms`. Examples:
+This service's subdomain segment is `wms` (shared with `inventory-storage`
+and `product-master`; every other fleet context uses `wes`). Examples:
 
 ```
 com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered
@@ -184,21 +207,21 @@ com.warehouse.wms.facility-layout.placementrule.PlacementRuleDefined
 
 ## Running it
 
-### Local, no database (in-memory adapters)
+### Postgres and Kafka are the only runtime
+
+There is no in-memory mode and no log-only publisher
+([ADR 0039](docs/docs/adr/0039-postgres-and-kafka-are-the-only-runtime.md)):
+`cmd/facility` needs a database and a broker, and exits at boot with an error
+that names the missing variable (`DATABASE_URL is required ...`). The
+in-memory adapters exist only as test doubles and are not linked into any
+binary (enforced by `TestRuntimeBinaryHasNoInMemoryAdapters`).
 
 ```sh
-go run ./cmd/facility
-# {"time":"...","level":"INFO","msg":"telemetry configured","service_name":"facility-layout","service_version":"dev","environment":"local","otlp_endpoint":"localhost:4317"}
-# {"time":"...","level":"INFO","msg":"database url not configured; using in-memory adapters"}
+docker compose up -d --wait          # postgres:16 + confluent-local Kafka on localhost:9092
+export DATABASE_URL="postgres://facility:***@localhost:5432/facility?sslmode=disable"
+export KAFKA_BROKERS="localhost:9092"
+go run ./cmd/facility                # migrations run automatically at startup
 # {"time":"...","level":"INFO","msg":"http server listening","addr":":8080"}
-```
-
-### With Postgres
-
-```sh
-docker compose up -d postgres
-export DATABASE_URL="postgres://facility:facility@localhost:5432/facility?sslmode=disable"
-go run ./cmd/facility          # migrations run automatically at startup
 ```
 
 Migrations can also be applied standalone:
@@ -212,10 +235,11 @@ migrate -source file://migrations -database "$DATABASE_URL" up
 | Env var | Default | Meaning |
 |---|---|---|
 | `HTTP_ADDR` | `:8080` | Listen address |
-| `DATABASE_URL` | *(unset)* | Postgres DSN. Unset ⇒ in-memory adapters + log-only event publishing |
-| `EVENT_PUBLISHER` | *(unset)* | `kafka` publishes the full Published Language to `warehouse.facility.events` (and the analytics topic); with `DATABASE_URL` also set, publishing goes through the transactional outbox (ADR-0018) and a background relay drains it — unset ⇒ log publisher |
-| `KAFKA_BROKERS` | `localhost:9092` | Comma-separated broker list, used when `EVENT_PUBLISHER=kafka` |
-| `OUTBOX_RELAY_INTERVAL` | `1s` | How long the outbox relay sleeps between empty passes (ADR-0018; only relevant with `DATABASE_URL` + `EVENT_PUBLISHER=kafka`) |
+| `DATABASE_URL` | **required** | Postgres DSN. Unset ⇒ the binary exits at boot naming the variable |
+| `KAFKA_BROKERS` | **required** | Comma-separated broker list; no default. Unset ⇒ boot error |
+| `EVENT_PUBLISHER` | *(unset = `kafka`)* | Only `kafka` is accepted (`log` was removed, ADR 0039). Events go through the transactional outbox (ADR-0018); the relay always runs and publishes the full Published Language to `warehouse.facility.events` and `warehouse.facility.analytics` |
+| `OUTBOX_RELAY_INTERVAL` | `1s` | How long the outbox relay sleeps between empty passes (ADR-0018) |
+| `OUTBOX_MAX_ATTEMPTS` | `20` | Outbox relay attempt cap (ADR-0036): a row that failed this many sends is excluded from the relay and logged at ERROR; re-arm with `UPDATE outbox_events SET attempts = 0 WHERE id = ...`. `0` = unlimited |
 | `HOUSEKEEPING_INTERVAL` | `1h` | Housekeeping sweeper interval (ADR-0026; `0` disables; only relevant with `DATABASE_URL`) |
 | `IDEMPOTENCY_KEY_TTL` | `24h` | How long an idempotency_keys row is kept before the sweeper deletes it (ADR-0026; `0` disables) |
 | `OUTBOX_RETENTION` | `168h` | How long a PUBLISHED outbox_events row is kept before the sweeper deletes it (ADR-0026; `0` disables) |
@@ -227,8 +251,8 @@ migrate -source file://migrations -database "$DATABASE_URL" up
 | `ENVIRONMENT` | `local` | `deployment.environment.name` |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:5186` | Comma-separated browser origins allowed to call the API (the `web/` micro-frontend) |
 
-`cmd/mcp` reads `MCP_ADDR` (default `:8090`), `DATABASE_URL`,
-`MIGRATIONS_PATH` and `REPORTS_BASE_URL`.
+`cmd/mcp` reads `MCP_ADDR` (default `:8090`), `DATABASE_URL` (**required**,
+boot error when unset), `MIGRATIONS_PATH` and `REPORTS_BASE_URL`.
 
 See [Observability](#observability) for what each of the OTel variables
 actually changes.
@@ -245,25 +269,21 @@ docker run --rm -p 8080:8080 claudioed/facility-layout
 An additive analytical read side (ADR-0010) built from this service's own domain
 events, delivered on a **separate** Kafka topic `warehouse.facility.analytics`,
 projected into a **separate** analytical database, and served read-only. It is
-three processes with one writer; the OLTP `cmd/facility` binary is unchanged
-except that with `EVENT_PUBLISHER=kafka` it now fans events out to BOTH the
-integration topic and the analytics topic.
+three processes with one writer; the OLTP `cmd/facility` binary fans events
+out (through the outbox) to BOTH the integration topic and the analytics
+topic.
 
 ```sh
-docker compose up -d postgres
-# Kafka itself is NOT in docker-compose.yml: the fleet runs one shared
-# broker (in-cluster Bitnami via warehouse-infra) with externalAccess
-# exposed on localhost:9092, which is why KAFKA_BROKERS defaults there.
-# Point at that broker, or your own, for a local run.
+docker compose up -d --wait    # postgres:16 + Kafka on localhost:9092
 
 # OLTP service, fanning out to both warehouse.facility.events and .analytics
 export DATABASE_URL="postgres://facility:***@localhost:5432/facility?sslmode=disable"
-EVENT_PUBLISHER=kafka KAFKA_BROKERS=localhost:9092 go run ./cmd/facility
+KAFKA_BROKERS=localhost:9092 go run ./cmd/facility
 
 # Projector (the ONLY writer): consumes the analytics topic, runs migrations/analytics,
-# projects into the analytical database.
+# projects into the analytical database. All three variables are required.
 export ANALYTICS_DATABASE_URL="postgres://facility:***@localhost:5432/facility_analytics?sslmode=disable"
-KAFKA_BROKERS=localhost:9092 go run ./cmd/facility-projector    # admin/health on :8091
+KAFKA_BROKERS=localhost:9092 ANALYTICS_CONSUMER_GROUP=facility-analytics go run ./cmd/facility-projector    # admin/health on :8091
 
 # Reports (read-only reader): serves the report over REST.
 ANALYTICS_DATABASE_URL="$ANALYTICS_DATABASE_URL" go run ./cmd/facility-reports   # :8092
@@ -284,7 +304,9 @@ connection to `default_transaction_read_only=on` for defence in depth. See
 
 | Env var | Default | Meaning |
 |---|---|---|
-| `ANALYTICS_DATABASE_URL` | *(required for projector/reports)* | Analytical Postgres DSN (separate DB from `DATABASE_URL`) |
+| `ANALYTICS_DATABASE_URL` | **required** (projector, reports) | Analytical Postgres DSN (separate DB from `DATABASE_URL`) |
+| `KAFKA_BROKERS` | **required** (projector) | Brokers of the analytics topic; no default |
+| `ANALYTICS_CONSUMER_GROUP` | **required** (projector) | Stable consumer-group id; the deployed value is `facility-analytics` (a new group replays the whole topic) |
 | `ANALYTICS_MIGRATIONS_PATH` | `migrations/analytics` | Analytical golang-migrate SQL files (projector only) |
 | `ADMIN_ADDR` | `:8091` | Projector health endpoint |
 | `HTTP_ADDR` | `:8092` | Reports REST listen address (reader) |
@@ -340,7 +362,7 @@ the in-cluster Collector Service
 | `http.server.active_requests` | up/down counter | otelchi |
 | `facility.location_slot.registrations` | counter, attribute `outcome` | **this service's business metric** |
 | `go.*` (goroutines, GC, memory) | various | `contrib/instrumentation/runtime` |
-| `pgxpool_*` | various | otelpgx pool stats (only with `DATABASE_URL` set) |
+| `pgxpool_*` | various | otelpgx pool stats |
 
 `facility.location_slot.registrations` is recorded in the
 `RegisterLocationSlot` **use case**, not in the HTTP handler, so a slot
@@ -399,9 +421,8 @@ one. Every `201` carries a `Location` header that resolves.
 Every true resource-creation `POST` (`/sites`, `/sites/{siteCode}/zones`,
 `/sites/{siteCode}/structures`, `/zones/{zoneId}/aisles`,
 `/zones/{zoneId}/cross-aisles`, `/location-types`, `/placement-rules`,
-`/locations`) requires a caller-supplied `Idempotency-Key` header **when the
-service is running with `DATABASE_URL` set** (Postgres-backed
-`IdempotencyPool`; in-memory/no-database runs skip the check entirely). A
+`/locations`) requires a caller-supplied `Idempotency-Key` header, always
+(Postgres-backed `IdempotencyPool`; there is no database-less run). A
 retry with the same key and the same request body replays the original
 response verbatim instead of double-creating; the same key with a
 different body is rejected `422`. Missing the header on a protected route is
@@ -434,8 +455,10 @@ are deliberately excluded. See
 | `POST` | `/locations/{locationCode}/decommission` | DecommissionLocationSlot | `204` |
 | `POST` | `/locations/import` | ImportFacilityLayout (bulk, partial success) | `200` |
 | `PUT` | `/locations/{locationCode}/geometry` | SetLocationGeometry (position, dimensions, pick sequence) | `200` |
+| `PUT` | `/locations/{locationCode}/handling-unit` | DeclareLocationHandlingUnit (`EACH`/`CASE`/`PALLET`, ADR-0040) | `200` |
 | `PUT` | `/zones/{zoneId}/aisles/{aisleCode}/geometry` | SetAisleGeometry (travel centreline) | `200` |
 | `POST` | `/zones/{zoneId}/cross-aisles` | RegisterCrossAisle | `201` |
+| `GET` | `/zones/{zoneId}/cross-aisles` | List a zone's cross-aisles | `200` |
 | `POST` | `/sites/{siteCode}/structures` | RegisterFixedStructure | `201` + `Location` |
 | `GET` | `/sites/{siteCode}/structures` | List a site's fixed structures | `200` |
 
@@ -455,12 +478,12 @@ points at something that actually has a representation — a `Location` with no
 | `GET` | `/sites/{siteCode}/locations?role=` | Every slot at a site with one `LocationRole` (e.g. all `Dock` doors) |
 | `GET` | `/locations/{locationCode}/classification` | The slot's resolved `hazmat` / `temperatureClass` (ADR-0008) |
 | `GET` | `/zones/{zoneId}/travel-graph` | The zone's travel graph: aisle/bay waypoints and metre-weighted edges |
-| `GET` | `/distance?from=&to=` | Shortest travel distance between two slots in the same zone: `{metresM, estimated, route}` |
+| `GET` | `/distance?from=&to=` | Shortest travel distance between two slots: `{metresM, estimated, route}` — routed over the zone's travel graph within a zone; across zones a straight-line estimate (`estimated: true`) only when both slots have position geometry, else `422 no-route-between-zones` |
 | `GET` | `/healthz` | Liveness |
-| `GET` | `/readyz` | Readiness (flips not-ready at the start of graceful shutdown, ADR-0020) |
+| `GET` | `/readyz` | Readiness (drain gate plus Postgres ping plus Kafka broker check; flips not-ready at the start of graceful shutdown, ADR-0020, ADR 0039) |
 
-`apis/openapi.yaml` declares the two geometry `PUT`s without the trailing
-`/geometry` segment; the router (above) is authoritative.
+Every route above, including `/healthz` and `/readyz`, is declared at the
+same path in `apis/openapi.yaml` (33 operations over 26 paths).
 
 ### Status codes
 
@@ -816,7 +839,7 @@ Content-Type: application/problem+json
 `apis/openapi.yaml` (OpenAPI 3.0.3) documents every route with full
 request/response schemas, a shared `Problem` component, and real
 domain-grounded examples. `apis/asyncapi.yaml` (AsyncAPI 2.6.0) specifies the
-`warehouse.facility.events` topic, its CloudEvents 1.0 envelope (ADR-0024) and all twelve messages. The
+`warehouse.facility.events` topic, its CloudEvents 1.0 envelope (ADR-0024) and all fifteen messages. The
 OpenAPI document is linted in CI:
 
 ```sh
@@ -831,6 +854,7 @@ Every CI sensor is also a `make` target, so the same feedback is available
 before a commit leaves the machine. `make help` lists them all.
 
 ```sh
+make check-fast # quickest gate: fmt-check, vet, arch-test
 make check      # fast pre-commit loop: fmt-check, vet, build, lint, test
 make check-all  # pre-push gate: check + coverage (90% gate) + arch-test + bdd
 make vuln       # govulncheck ./... (supply-chain sensor)
@@ -838,7 +862,7 @@ make mutation   # gremlins over ./internal/domain, thresholds from .gremlins.yam
 ```
 
 `make check` needs no database and runs in well under a minute; `make
-integration` (Postgres) and the exhaustive scheduled mutation run are
+integration` (testcontainers Postgres/Kafka — needs only Docker) and the exhaustive scheduled mutation run are
 deliberately outside both bundles.
 
 Git hooks are managed by [lefthook](https://github.com/evilmartians/lefthook)
@@ -865,13 +889,12 @@ go test ./internal/domain/... ./internal/application/... -race \
   -coverpkg=./internal/domain/...,./internal/application/...
 go tool cover -func=coverage.out | tail -1
 
-# Postgres integration tests (build-tagged; skipped without DATABASE_URL)
-docker compose up -d postgres
-DATABASE_URL="postgres://facility:facility@localhost:5432/facility?sslmode=disable" \
-  go test -tags=integration ./... -race -count=1
+# integration tests (build-tagged; testcontainers boots its own Postgres/Kafka — needs only Docker)
+go test -tags=integration ./... -race -count=1
 
-# BDD acceptance suite (godog/Gherkin, over the real HTTP API)
-go test ./... -run TestFeatures -v
+# BDD acceptance suite (godog/Gherkin, over the real HTTP API; the godog
+# files live in features/, never at the repo root)
+go test ./features/ -run TestFeatures -v
 
 # architecture fitness tests (arch-go)
 go test ./internal/architecture/... -v
@@ -950,6 +973,7 @@ from inside the cluster).
 ```sh
 helm upgrade --install facility-layout ./charts/facility-layout \
   --set database.url="postgres://facility:***@postgres:5432/facility?sslmode=disable" \
+  --set kafka.brokers="kafka:9092" \
   --set mcp.enabled=true
 ```
 

@@ -46,6 +46,12 @@ spec:
               value: {{ .Values.analytics.projector.adminAddr | quote }}
             - name: KAFKA_BROKERS
               value: {{ .Values.kafka.brokers | quote }}
+            # A stable, shared Kafka group id (ADR 0039): the binary exits at
+            # boot without it. The default is the projector's historical
+            # group, so committed offsets survive the move from the constant
+            # to the variable.
+            - name: ANALYTICS_CONSUMER_GROUP
+              value: {{ .Values.analytics.projector.consumerGroup | quote }}
             - name: ANALYTICS_MIGRATIONS_PATH
               value: {{ .Values.analytics.migrationsPath | quote }}
             - name: ANALYTICS_DATABASE_URL
@@ -76,9 +82,9 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
           readinessProbe:
-            # ADR-0020 §graceful shutdown, mirroring order-management's
-            # ADR-0025 §8: distinct from /healthz above so a draining pod
-            # can flip readiness without failing liveness.
+            # ADR-0020 §graceful shutdown, ADR 0039: distinct from /healthz
+            # above so a draining pod (or an unreachable Postgres/Kafka) can
+            # flip readiness without failing liveness.
             httpGet:
               path: /readyz
               port: admin

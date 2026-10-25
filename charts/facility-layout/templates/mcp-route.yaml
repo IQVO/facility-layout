@@ -1,0 +1,47 @@
+{{- if and .Values.mcp.enabled .Values.mcp.route.enabled -}}
+{{- /*
+MCP exposure through Kong (fleet decision 2026-10-13: Kong config lives in
+the application charts, not warehouse-infra Terraform).
+
+Host contract: /api/facility-layout -> Service facility-layout-mcp:8090,
+prefix rewritten to /mcp (the SDK's canonical endpoint on every cmd/mcp in
+this fleet; the healthz route deliberately stays off the host — it is a
+Kubernetes probe concern, not a public endpoint).
+
+Plugins: this chart's cors + prometheus + opentelemetry KongPlugins (see
+kong-plugins.yaml), attached by annotation. NO auth plugin — endpoints are
+unauthenticated by fleet-wide decision.
+*/ -}}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "facility-layout.mcpFullname" . }}
+  labels:
+    {{- include "facility-layout.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp
+  annotations:
+    konghq.com/plugins: {{ include "facility-layout.kongPluginNames" . | quote }}
+spec:
+  parentRefs:
+    {{- range .Values.mcp.route.parentRefs }}
+    - name: {{ .name }}
+      namespace: {{ .namespace }}
+      {{- if .sectionName }}
+      sectionName: {{ .sectionName }}
+      {{- end }}
+    {{- end }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: {{ .Values.mcp.route.path }}
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /mcp
+      backendRefs:
+        - name: {{ include "facility-layout.mcpFullname" . }}
+          port: {{ .Values.mcp.service.port }}
+{{- end }}

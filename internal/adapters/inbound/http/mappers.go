@@ -15,7 +15,58 @@ import (
 )
 
 func toSiteResponse(s *site.Site) siteResponse {
-	return siteResponse{SiteCode: s.Code(), Name: s.Name(), Status: string(s.Status())}
+	return siteResponse{SiteCode: s.Code(), Name: s.Name(), Status: string(s.Status()), SiteRole: string(s.Role())}
+}
+
+// fromRegisterSiteRole maps the optional registration role (ADR-0037): an
+// omitted role is UNSPECIFIED, anything else must be a known role.
+func fromRegisterSiteRole(raw string) (site.Role, error) {
+	if raw == "" {
+		return site.RoleUnspecified, nil
+	}
+	return site.ParseRole(raw)
+}
+
+// fromSetSiteRoleRequest maps the PUT /sites/{siteCode}/role body: the role
+// is required and exact; the domain then rejects UNSPECIFIED.
+func fromSetSiteRoleRequest(req setSiteRoleRequest) (site.Role, error) {
+	return site.ParseRole(req.SiteRole)
+}
+
+func toSiteRoleTransferDefaultsResponse(rows []site.RoleTransferDefault) []siteRoleTransferDefaultResponse {
+	out := make([]siteRoleTransferDefaultResponse, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, siteRoleTransferDefaultResponse{
+			SiteRole:                   string(row.Role),
+			TransferOriginEnabled:      row.Capability.OriginEnabled(),
+			TransferDestinationEnabled: row.Capability.DestinationEnabled(),
+		})
+	}
+	return out
+}
+
+func toTransferCapabilityResponse(s *site.Site) transferCapabilityResponse {
+	c := s.TransferCapability()
+	return transferCapabilityResponse{
+		SiteCode:                   s.Code(),
+		TransferOriginEnabled:      c.OriginEnabled(),
+		TransferDestinationEnabled: c.DestinationEnabled(),
+		CapabilityRevision:         s.CapabilityRevision(),
+	}
+}
+
+// errMissingTransferCapabilityField reports an omitted or null
+// transferOriginEnabled/transferDestinationEnabled: the PUT body is a full
+// snapshot (ADR-0035), and encoding/json would otherwise coerce the absence
+// to false and silently switch a capability off.
+var errMissingTransferCapabilityField = errors.New("transferOriginEnabled and transferDestinationEnabled are both required booleans")
+
+// fromTransferCapabilityRequest maps the PUT body to the domain value object.
+func fromTransferCapabilityRequest(req setTransferCapabilityRequest) (site.TransferCapability, error) {
+	if req.TransferOriginEnabled == nil || req.TransferDestinationEnabled == nil {
+		return site.TransferCapability{}, errMissingTransferCapabilityField
+	}
+	return site.NewTransferCapability(*req.TransferOriginEnabled, *req.TransferDestinationEnabled), nil
 }
 
 func toZoneResponse(z *zone.Zone) zoneResponse {
@@ -110,6 +161,7 @@ func toLocationSlotResponse(s *slot.LocationSlot) locationSlotResponse {
 		Capacity:     toCapacityResponse(s.Capacity()),
 		Status:       string(s.Status()),
 		PickSequence: s.PickSequence(),
+		HandlingUnit: string(s.HandlingUnit()),
 	}
 	if position := s.Position(); !position.IsZero() {
 		p := toPoint3DResponse(position)

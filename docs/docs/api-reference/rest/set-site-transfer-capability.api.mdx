@@ -1,0 +1,72 @@
+---
+id: set-site-transfer-capability
+title: "Set a site's transfer capability"
+description: "Replaces the site's transfer capability with the full snapshot in the body (ADR-0035). When the snapshot differs from the current one — or no snapshot was ever published — the site's capabilityRevision advances by exactly one and SiteCapabilityChanged is published through the transactional outbox with that revision. Repeating the current snapshot is an idempotent no-op: 200, same revision, no event, so no Idempotency-Key is needed."
+sidebar_label: "Set a site's transfer capability"
+hide_title: true
+hide_table_of_contents: true
+api: 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
+sidebar_class_name: "put api-method"
+info_path: docs/api-reference/rest/facility-layout-api
+custom_edit_url: null
+---
+
+import MethodEndpoint from "@theme/ApiExplorer/MethodEndpoint";
+import ParamsDetails from "@theme/ParamsDetails";
+import RequestSchema from "@theme/RequestSchema";
+import StatusCodes from "@theme/StatusCodes";
+import OperationTabs from "@theme/OperationTabs";
+import TabItem from "@theme/TabItem";
+import Heading from "@theme/Heading";
+import Translate from "@docusaurus/Translate";
+
+<Heading
+  as={"h1"}
+  className={"openapi__heading"}
+  children={"Set a site's transfer capability"}
+>
+</Heading>
+
+<MethodEndpoint
+  method={"put"}
+  path={"/sites/{siteCode}/transfer-capability"}
+  context={"endpoint"}
+>
+  
+</MethodEndpoint>
+
+
+
+Replaces the site's transfer capability with the full snapshot in the body (ADR-0035). When the snapshot differs from the current one — or no snapshot was ever published — the site's capabilityRevision advances by exactly one and SiteCapabilityChanged is published through the transactional outbox with that revision. Repeating the current snapshot is an idempotent no-op: 200, same revision, no event, so no Idempotency-Key is needed.
+
+Optimistic concurrency (ADR-0025, extended to Site by ADR-0035): a concurrent change of the same site loses with 409 `concurrent-modification`; re-read and retry. A decommissioned site's capability is frozen (409 `site-not-active`).
+
+
+<Heading
+  id={"request"}
+  as={"h2"}
+  className={"openapi-tabs__heading"}
+>
+  <Translate id="theme.openapi.request.title">Request</Translate>
+</Heading>
+
+<ParamsDetails
+  {...require("./set-site-transfer-capability.ParamsDetails.json")}
+>
+  
+</ParamsDetails>
+
+<RequestSchema
+  {...require("./set-site-transfer-capability.RequestSchema.json")}
+>
+  
+</RequestSchema>
+
+<StatusCodes
+  {...require("./set-site-transfer-capability.StatusCodes.json")}
+>
+  
+</StatusCodes>
+
+
+      

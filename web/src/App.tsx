@@ -3,12 +3,14 @@ import { FacilityScreen } from "./screens/FacilityScreen";
 import { ConfigureScreen } from "./screens/ConfigureScreen";
 import { LayoutDesignerScreen } from "./screens/LayoutDesignerScreen";
 import { RackPlannerScreen } from "./screens/RackPlannerScreen";
+import { OperatorScreen } from "./screens/OperatorScreen";
 
 const SUB_NAV = [
   { to: "", label: "Overview", end: true },
   { to: "configure", label: "Configure" },
   { to: "designer", label: "Layout designer" },
   { to: "planner", label: "Rack planner" },
+  { to: "operator", label: "Operate" },
 ];
 
 const linkStyle = ({ isActive }: { isActive: boolean }) => ({
@@ -37,7 +39,10 @@ const linkStyle = ({ isActive }: { isActive: boolean }) => ({
  *   - Rack planner: sketch a whole BLANK rack's shape (bay x level x
  *     position ranges) client-side first, then deploy the entire
  *     Site/Zone/Aisle/slots in one atomic bulk import -- the actual
- *     "draw a new warehouse, then deploy it" workflow. */
+ *     "draw a new warehouse, then deploy it" workflow.
+ *   - Operate: day-2 operator actions on an existing layout -- site
+ *     network role & transfer capability, location detail with
+ *     decommission, and geometry corrections. */
 export default function App() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--wh-space-5)" }}>
@@ -53,6 +58,7 @@ export default function App() {
         <Route path="/configure" element={<ConfigureScreen />} />
         <Route path="/designer" element={<LayoutDesignerScreen />} />
         <Route path="/planner" element={<RackPlannerScreen />} />
+        <Route path="/operator" element={<OperatorScreen />} />
       </Routes>
     </div>
   );

@@ -1,0 +1,72 @@
+---
+id: set-site-role
+title: "Set a site's role in the fulfilment network"
+description: "Sets the site's role (ADR-0037). When the role differs from the current one, SiteRoleChanged (new and previous role) is published through the transactional outbox. Repeating the current role is an idempotent no-op: 200, no event, so no Idempotency-Key is needed. `UNSPECIFIED` cannot be assigned, and an unknown or missing role is 422 `invalid-site-role`."
+sidebar_label: "Set a site's role in the fulfilment network"
+hide_title: true
+hide_table_of_contents: true
+api: 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
+sidebar_class_name: "put api-method"
+info_path: docs/api-reference/rest/facility-layout-api
+custom_edit_url: null
+---
+
+import MethodEndpoint from "@theme/ApiExplorer/MethodEndpoint";
+import ParamsDetails from "@theme/ParamsDetails";
+import RequestSchema from "@theme/RequestSchema";
+import StatusCodes from "@theme/StatusCodes";
+import OperationTabs from "@theme/OperationTabs";
+import TabItem from "@theme/TabItem";
+import Heading from "@theme/Heading";
+import Translate from "@docusaurus/Translate";
+
+<Heading
+  as={"h1"}
+  className={"openapi__heading"}
+  children={"Set a site's role in the fulfilment network"}
+>
+</Heading>
+
+<MethodEndpoint
+  method={"put"}
+  path={"/sites/{siteCode}/role"}
+  context={"endpoint"}
+>
+  
+</MethodEndpoint>
+
+
+
+Sets the site's role (ADR-0037). When the role differs from the current one, SiteRoleChanged (new and previous role) is published through the transactional outbox. Repeating the current role is an idempotent no-op: 200, no event, so no Idempotency-Key is needed. `UNSPECIFIED` cannot be assigned, and an unknown or missing role is 422 `invalid-site-role`.
+
+A role change NEVER changes the site's transfer capability: that stays the explicit `PUT /sites/{siteCode}/transfer-capability` command (ADR-0035). Optimistic concurrency: a concurrent change of the same site loses with 409 `concurrent-modification`; a decommissioned site's role is frozen (409 `site-not-active`).
+
+
+<Heading
+  id={"request"}
+  as={"h2"}
+  className={"openapi-tabs__heading"}
+>
+  <Translate id="theme.openapi.request.title">Request</Translate>
+</Heading>
+
+<ParamsDetails
+  {...require("./set-site-role.ParamsDetails.json")}
+>
+  
+</ParamsDetails>
+
+<RequestSchema
+  {...require("./set-site-role.RequestSchema.json")}
+>
+  
+</RequestSchema>
+
+<StatusCodes
+  {...require("./set-site-role.StatusCodes.json")}
+>
+  
+</StatusCodes>
+
+
+      

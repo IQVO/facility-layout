@@ -24,7 +24,16 @@ from pathlib import Path
 
 CHART_DIR = Path(__file__).resolve().parents[1]
 
+REQUIRED = [
+    # Mandatory since ADR 0039 (the chart refuses to render without them);
+    # dummy values, never dialled.
+    "--set", "database.url=postgres://u@example.invalid:5432/db",
+    "--set", "kafka.brokers=kafka.example.invalid:9092",
+]
+
 ENABLE_EVERYTHING = [
+    *REQUIRED,
+    "--set", "analytics.database.projectorUrl=postgres://projector@example.invalid:5432/a",
     "--set", "frontend.enabled=true",
     "--set", "analytics.enabled=true",
     "--set", "mcp.enabled=true",
@@ -96,7 +105,7 @@ def main() -> int:
     # Default values must not deploy the frontend at all.
     stray = [
         d["metadata"]["name"]
-        for d in render([])
+        for d in render(REQUIRED)
         if d.get("metadata", {}).get("name", "").endswith("-frontend")
     ]
     if stray:

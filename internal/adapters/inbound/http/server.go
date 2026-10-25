@@ -45,37 +45,47 @@ func WithServiceName(name string) RouterOption {
 
 // Server holds every use case the HTTP adapter depends on.
 type Server struct {
-	RegisterSite              *usecases.RegisterSite
-	GetSite                   *usecases.GetSite
-	ListSites                 *usecases.ListSites
-	RegisterZone              *usecases.RegisterZone
-	GetZone                   *usecases.GetZone
-	ListZones                 *usecases.ListZones
-	RegisterAisle             *usecases.RegisterAisle
-	GetAisle                  *usecases.GetAisle
-	ListAisles                *usecases.ListAisles
-	RegisterLocationType      *usecases.RegisterLocationType
-	GetLocationType           *usecases.GetLocationType
-	ListLocationTypes         *usecases.ListLocationTypes
-	DefinePlacementRule       *usecases.DefinePlacementRule
-	GetPlacementRule          *usecases.GetPlacementRule
-	ListPlacementRules        *usecases.ListPlacementRules
-	RegisterLocationSlot      *usecases.RegisterLocationSlot
-	GetLocationSlot           *usecases.GetLocationSlot
-	GetLocationClassification *usecases.GetLocationClassification
-	ListLocationsByRole       *usecases.ListLocationsByRole
-	DecommissionLocationSlot  *usecases.DecommissionLocationSlot
-	ImportFacilityLayout      *usecases.ImportFacilityLayout
-	GetSiteLayout             *usecases.GetSiteLayout
-	GetZoneGrid               *usecases.GetZoneGrid
-	SetLocationGeometry       *usecases.SetLocationGeometry
-	SetAisleGeometry          *usecases.SetAisleGeometry
-	RegisterFixedStructure    *usecases.RegisterFixedStructure
-	ListFixedStructures       *usecases.ListFixedStructures
-	RegisterCrossAisle        *usecases.RegisterCrossAisle
-	ListCrossAisles           *usecases.ListCrossAisles
-	GetZoneTravelGraph        *usecases.GetZoneTravelGraph
-	EstimateTravelDistance    *usecases.EstimateTravelDistance
+	RegisterSite *usecases.RegisterSite
+	GetSite      *usecases.GetSite
+	ListSites    *usecases.ListSites
+	// ChangeSiteTransferCapability backs PUT
+	// /sites/{siteCode}/transfer-capability (ADR-0035); the GET reads the
+	// same aggregate through GetSite.
+	ChangeSiteTransferCapability *usecases.ChangeSiteTransferCapability
+	// ChangeSiteRole backs PUT /sites/{siteCode}/role (ADR-0037).
+	ChangeSiteRole *usecases.ChangeSiteRole
+	// ListSiteRoleTransferDefaults backs GET /site-roles/transfer-defaults
+	// (ADR-0037).
+	ListSiteRoleTransferDefaults *usecases.ListSiteRoleTransferDefaults
+	RegisterZone                 *usecases.RegisterZone
+	GetZone                      *usecases.GetZone
+	ListZones                    *usecases.ListZones
+	RegisterAisle                *usecases.RegisterAisle
+	GetAisle                     *usecases.GetAisle
+	ListAisles                   *usecases.ListAisles
+	RegisterLocationType         *usecases.RegisterLocationType
+	GetLocationType              *usecases.GetLocationType
+	ListLocationTypes            *usecases.ListLocationTypes
+	DefinePlacementRule          *usecases.DefinePlacementRule
+	GetPlacementRule             *usecases.GetPlacementRule
+	ListPlacementRules           *usecases.ListPlacementRules
+	RegisterLocationSlot         *usecases.RegisterLocationSlot
+	GetLocationSlot              *usecases.GetLocationSlot
+	GetLocationClassification    *usecases.GetLocationClassification
+	ListLocationsByRole          *usecases.ListLocationsByRole
+	DecommissionLocationSlot     *usecases.DecommissionLocationSlot
+	ImportFacilityLayout         *usecases.ImportFacilityLayout
+	GetSiteLayout                *usecases.GetSiteLayout
+	GetZoneGrid                  *usecases.GetZoneGrid
+	SetLocationGeometry          *usecases.SetLocationGeometry
+	DeclareLocationHandlingUnit  *usecases.DeclareLocationHandlingUnit
+	SetAisleGeometry             *usecases.SetAisleGeometry
+	RegisterFixedStructure       *usecases.RegisterFixedStructure
+	ListFixedStructures          *usecases.ListFixedStructures
+	RegisterCrossAisle           *usecases.RegisterCrossAisle
+	ListCrossAisles              *usecases.ListCrossAisles
+	GetZoneTravelGraph           *usecases.GetZoneTravelGraph
+	EstimateTravelDistance       *usecases.EstimateTravelDistance
 
 	// IdempotencyPool, when non-nil, wires RequireIdempotencyKey (see
 	// idempotency.go) onto every true resource-creation POST below. A
@@ -139,7 +149,7 @@ func NewRouter(s *Server, logger *slog.Logger, opts ...RouterOption) http.Handle
 	r.Use(otelchimetric.NewServerActiveRequests(metricCfg))
 	r.Use(RequestLogger(logger))
 	r.Use(middleware.Recoverer)
-	r.Use(corsMiddleware())
+	r.Use(corsMiddleware(), rejectNUL)
 
 	r.Get("/healthz", s.handleHealthz)
 	r.Get("/readyz", HandleReadyz(s.Readiness))
@@ -169,6 +179,13 @@ func NewRouter(s *Server, logger *slog.Logger, opts ...RouterOption) http.Handle
 		r.Get("/{siteCode}", s.handleGetSite)
 		r.Get("/{siteCode}/layout", s.handleGetSiteLayout)
 		r.Get("/{siteCode}/locations", s.handleListLocationsByRole)
+		// PUT /sites/{siteCode}/transfer-capability replaces a full
+		// snapshot of an EXISTING site's capability: naturally idempotent
+		// (a repeat is a no-op, ADR-0035), so it is not wrapped by the
+		// Idempotency-Key middleware, like the geometry PUTs.
+		r.Get("/{siteCode}/transfer-capability", s.handleGetSiteTransferCapability)
+		r.Put("/{siteCode}/transfer-capability", s.handleChangeSiteTransferCapability)
+		r.Put("/{siteCode}/role", s.handleChangeSiteRole) // ADR-0037: a repeat is a no-op, no Idempotency-Key
 		idempotent(r).Post("/{siteCode}/zones", s.handleRegisterZone)
 		r.Get("/{siteCode}/zones", s.handleListZones)
 		idempotent(r).Post("/{siteCode}/structures", s.handleRegisterFixedStructure)
@@ -188,6 +205,7 @@ func NewRouter(s *Server, logger *slog.Logger, opts ...RouterOption) http.Handle
 	})
 
 	r.Get("/distance", s.handleEstimateTravelDistance)
+	r.Get("/site-roles/transfer-defaults", s.handleListSiteRoleTransferDefaults)
 
 	r.Route("/location-types", func(r chi.Router) {
 		idempotent(r).Post("/", s.handleRegisterLocationType)
@@ -212,10 +230,18 @@ func NewRouter(s *Server, logger *slog.Logger, opts ...RouterOption) http.Handle
 		// POST /locations/{locationCode}/decommission acts on an
 		// EXISTING caller-supplied resource, not a creation — excluded.
 		r.Post("/{locationCode}/decommission", s.handleDecommissionLocationSlot)
-		r.Put("/{locationCode}/geometry", s.handleSetLocationGeometry)
+		s.mountSlotUpdates(r)
 	})
 
 	return r
+}
+
+// mountSlotUpdates mounts the PUT updates on an existing slot: geometry
+// (ADR-0017) and handling unit (ADR-0040). PUTs are naturally idempotent
+// (same body, same state), so neither takes an Idempotency-Key.
+func (s *Server) mountSlotUpdates(r chi.Router) {
+	r.Put("/{locationCode}/geometry", s.handleSetLocationGeometry)
+	r.Put("/{locationCode}/handling-unit", s.handleDeclareLocationHandlingUnit)
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
@@ -230,7 +256,12 @@ func (s *Server) handleRegisterSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	registered, err := s.RegisterSite.Execute(r.Context(), req.SiteCode, req.Name)
+	role, err := fromRegisterSiteRole(req.SiteRole)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	registered, err := s.RegisterSite.Execute(r.Context(), req.SiteCode, req.Name, role)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -260,6 +291,69 @@ func (s *Server) handleGetSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, toSiteResponse(found))
+}
+
+// handleGetSiteTransferCapability returns a site's current transfer
+// capability and the revision of its last SiteCapabilityChanged (ADR-0035).
+func (s *Server) handleGetSiteTransferCapability(w http.ResponseWriter, r *http.Request) {
+	found, err := s.GetSite.Execute(r.Context(), chi.URLParam(r, "siteCode"))
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toTransferCapabilityResponse(found))
+}
+
+// handleChangeSiteTransferCapability replaces a site's transfer capability
+// with the full snapshot in the body (ADR-0035). 200 with the resulting
+// state; a repeat of the current snapshot is a 200 no-op. A concurrent
+// change of the same site loses with 409 concurrent-modification.
+func (s *Server) handleChangeSiteTransferCapability(w http.ResponseWriter, r *http.Request) {
+	var req setTransferCapabilityRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	capability, err := fromTransferCapabilityRequest(req)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	updated, err := s.ChangeSiteTransferCapability.Execute(r.Context(), chi.URLParam(r, "siteCode"), capability)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toTransferCapabilityResponse(updated))
+}
+
+// handleChangeSiteRole sets a site's role in the fulfilment network
+// (ADR-0037). 200 with the site; a repeat of the current role is a 200
+// no-op. UNSPECIFIED, an unknown or a missing role is 422
+// invalid-site-role; a concurrent change of the same site loses with 409
+// concurrent-modification. The transfer capability is never touched.
+func (s *Server) handleChangeSiteRole(w http.ResponseWriter, r *http.Request) {
+	var req setSiteRoleRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	role, err := fromSetSiteRoleRequest(req)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	updated, err := s.ChangeSiteRole.Execute(r.Context(), chi.URLParam(r, "siteCode"), role)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toSiteResponse(updated))
+}
+
+// handleListSiteRoleTransferDefaults returns the role -> default transfer
+// capability table (ADR-0037): the one source of truth the warehouse-infra
+// seed and operators read instead of hard-coding it.
+func (s *Server) handleListSiteRoleTransferDefaults(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, toSiteRoleTransferDefaultsResponse(s.ListSiteRoleTransferDefaults.Execute(r.Context())))
 }
 
 // handleListLocationsByRole answers "where are this site's dock doors" (or
@@ -514,7 +608,7 @@ func (s *Server) handleRegisterLocationSlot(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	registered, err := s.RegisterLocationSlot.Execute(r.Context(), code, req.LocationType, override, req.DockFlow, req.Activities)
+	registered, err := s.RegisterLocationSlot.ExecuteWithHandlingUnit(r.Context(), code, req.LocationType, override, req.DockFlow, req.Activities, req.HandlingUnit)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -660,6 +754,26 @@ func (s *Server) handleSetLocationGeometry(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	updated, err := s.SetLocationGeometry.Execute(r.Context(), code, position, dimensions, req.PickSequence)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toLocationSlotResponse(updated))
+}
+
+// handleDeclareLocationHandlingUnit sets or changes a slot's handling unit
+// (ADR-0040) and returns the updated slot.
+func (s *Server) handleDeclareLocationHandlingUnit(w http.ResponseWriter, r *http.Request) {
+	code, err := shared.ParseLocationCode(chi.URLParam(r, "locationCode"))
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	var req declareHandlingUnitRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	updated, err := s.DeclareLocationHandlingUnit.Execute(r.Context(), code, req.HandlingUnit)
 	if err != nil {
 		writeError(w, r, err)
 		return

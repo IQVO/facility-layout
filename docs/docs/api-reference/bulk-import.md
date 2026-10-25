@@ -127,8 +127,11 @@ intentional no-op.
 
 ## Events
 
-One `LocationSlotRegistered` fires per **successful** row, plus exactly one
-`FacilityLayoutImported` summary event carrying
-`rowsSubmitted` / `slotsImported` / `rowsRejected`. The summary exists so a
+Per row, the import publishes the registration events for whatever it
+creates: `SiteRegistered` / `ZoneRegistered` / `AisleRegistered` for a parent
+seen for the first time, one `LocationSlotRegistered` per **successful**
+slot, and `LocationGeometryUpdated` when the row carries geometry. After the
+last row it publishes exactly one `FacilityLayoutImported` summary event
+carrying `rowsSubmitted` / `slotsImported` / `rowsRejected`. The summary exists so a
 consumer can tell "the building was loaded" apart from a burst of unrelated
 single registrations. See [Domain events](../ddd/domain-events.md).

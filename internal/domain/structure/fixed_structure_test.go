@@ -31,7 +31,7 @@ func TestParseKind(t *testing.T) {
 		wantErr bool
 	}{
 		{"Wall", false}, {"Column", false}, {"Office", false},
-		{"Conveyor", false}, {"Other", false}, {"Elevator", true}, {"", true},
+		{"Conveyor", false}, {"Other", false}, {"Elevator", true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -109,5 +109,14 @@ func TestRehydrateFixedStructure(t *testing.T) {
 	f := structure.RehydrateFixedStructure("STR-1", "WH1", structure.Column, footprint, "Column B3")
 	if f.ID() != "STR-1" || f.Kind() != structure.Column || f.Label() != "Column B3" {
 		t.Fatalf("unexpected rehydrated structure %+v", f)
+	}
+}
+
+func TestParseKind_EmptyIsItsOwnError(t *testing.T) {
+	if _, err := structure.ParseKind(""); !errors.Is(err, structure.ErrEmptyKind) {
+		t.Fatalf("expected ErrEmptyKind for an absent kind, got %v", err)
+	}
+	if _, err := structure.ParseKind("Elevator"); !errors.Is(err, structure.ErrUnknownKind) {
+		t.Fatalf("expected ErrUnknownKind for an unrecognised kind, got %v", err)
 	}
 }

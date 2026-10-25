@@ -21,7 +21,7 @@ const AnalyticsTopic = "warehouse.facility.analytics"
 // the integration topic (it names the occurrence); `dataschema`
 // urn:warehouse:facility-layout:analytics:<EventName>:v1 names the analytics
 // stream's shape (it replaces the retired schema_version field). `data` is
-// the domain event's own JSON. It satisfies ports.EventPublisher and
+// the event's wire DTO (cloudevents.WireData). It satisfies ports.EventPublisher and
 // is a SEPARATE adapter from Publisher: the integration publisher (publisher.go,
 // ADR-0009) publishes the same events to warehouse.facility.events and is left
 // untouched. The composition root fans out to BOTH so the integration and
@@ -44,6 +44,7 @@ type AnalyticsPublisher struct {
 // partition routing; this writer had the same latent gap (ADR 0021).
 func NewAnalyticsPublisher(brokers []string, newId func() string) *AnalyticsPublisher {
 	return &AnalyticsPublisher{
+		//kafka:fixed-topic-writer AnalyticsPublisher.Send is the only writer of p.Writer and builds Message{Key, Value, Headers} with no Topic; the package's Topic-setting Message (RelaySink.Send) goes through RelaySink.Writer, which NewRelaySink builds with no Topic
 		Writer: &kafkago.Writer{
 			BatchTimeout:           syncWriterBatchTimeout,
 			RequiredAcks:           syncWriterRequiredAcks,

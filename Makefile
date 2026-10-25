@@ -24,20 +24,18 @@ help: ## Print the available targets
 	@echo "  lint          golangci-lint run ./... (pin: $(GOLANGCI_LINT_VERSION))"
 	@echo "  test          go test ./... -race (unit + httptest + bdd; no DB needed)"
 	@echo "  coverage      coverage run + $(COVERAGE_THRESHOLD)% gate over domain+application"
-	@echo "  integration   go test -tags=integration ./... -race (NEEDS DATABASE_URL + Postgres)"
+	@echo "  integration   go test -tags=integration ./... -race (testcontainers; needs only Docker)"
 	@echo "  bdd           go test ./... -run TestFeatures -v (godog acceptance suite)"
 	@echo "  contract      scripts/contract-test.sh (Schemathesis vs apis/openapi.yaml;"
-	@echo "                boots the service in-memory; needs st: pip install"
+	@echo "                boots the service against real Postgres + Kafka (set"
+	@echo "                DATABASE_URL and KAFKA_BROKERS; docker compose up -d --wait);"
+	@echo "                needs st: pip install"
 	@echo "                'schemathesis==4.28.0')"
 	@echo "  arch-test     go test ./internal/architecture/... -v (arch-go fitness tests)"
 	@echo "  mutation      gremlins unleash ./internal/domain (same subset/threshold as CI mutation-fast)"
 	@echo "  vuln          govulncheck ./... (supply-chain sensor)"
 	@echo "  check         FAST pre-commit bundle: fmt-check vet build lint test"
 	@echo "  check-all     check + coverage arch-test bdd (pre-push gate)"
-	@echo ""
-	@echo "  integration needs a running Postgres, e.g.:"
-	@echo "    docker compose up -d postgres"
-	@echo "    DATABASE_URL='postgres://facility:facility@localhost:5432/facility?sslmode=disable' make integration"
 
 build: ## go build ./...
 	go build ./...
@@ -70,16 +68,23 @@ lint: ## golangci-lint run ./...
 test: ## go test ./... -race
 	go test ./... -race
 
+# The ONLY definition of the coverage scope and gate: the CI `test` job runs
+# `make coverage` (gap 16d). Harness repo_lint rule R11 (coverage-scope)
+# forbids a workflow running `go test -coverpkg=...` itself, so the package
+# set cannot drift again. Change the scope or threshold here only.
 coverage: ## coverage run + gate, identical to the CI test job
 	go test ./... -race -coverprofile=coverage.out -coverpkg=$(COVERPKG)
 	@COVERAGE=$$(go tool cover -func=coverage.out | awk '/^total:/ {print $$3}' | tr -d '%'); \
-	echo "Coverage: $${COVERAGE}% (gate: $(COVERAGE_THRESHOLD)%)"; \
+	echo "Coverage: $${COVERAGE}% (gate: $(COVERAGE_THRESHOLD)%, scope: $(COVERPKG))"; \
+	if [ -n "$$GITHUB_STEP_SUMMARY" ]; then \
+		echo "### Coverage: $${COVERAGE}% (gate: $(COVERAGE_THRESHOLD)%, scope: \`$(COVERPKG)\`)" >> "$$GITHUB_STEP_SUMMARY"; \
+	fi; \
 	if awk -v c="$$COVERAGE" -v t="$(COVERAGE_THRESHOLD)" 'BEGIN { exit !(c < t) }'; then \
-		echo "coverage $${COVERAGE}% is below the $(COVERAGE_THRESHOLD)% gate"; \
+		echo "::error::coverage $${COVERAGE}% is below the $(COVERAGE_THRESHOLD)% gate"; \
 		exit 1; \
 	fi
 
-integration: ## build-tagged Postgres integration tests — needs DATABASE_URL + a running Postgres
+integration: ## build-tagged integration tests — testcontainers boots its own Postgres/Kafka (needs only Docker)
 	go test -tags=integration ./... -race -count=1
 
 bdd: ## godog/Gherkin acceptance suite
@@ -131,3 +136,4 @@ guide-lint: ## lint agent guides: skills load, references resolve, context budge
 
 harness-test: ## unit-test the agent hooks (pre/post/stop)
 	python3 scripts/harness/test_hook.py
+	python3 scripts/harness/test_red_issue.py

@@ -27,12 +27,22 @@ export default defineConfig({
     federation({
       name: "facility_mfe",
       filename: "remoteEntry.js",
+      // No federated type generation. warehouse-console (the only host) never
+      // consumes remote types: it declares every remote itself and imports it
+      // as `// @ts-expect-error` + lazy(() => import("<name>/App")), with no
+      // @mf-types paths in its tsconfig. With the default dts settings the
+      // plugin ran tsc against web/tsconfig.json, a solution-style file
+      // (`files: []` + references, no compilerOptions, so no `jsx`), and every
+      // build printed "Failed to generate type declaration #TYPE-001" for
+      // types nobody downloads. If a host ever needs them, re-enable with
+      // `dts: { tsConfigPath: "./tsconfig.app.json" }`.
+      dts: false,
       exposes: {
         "./App": "./src/App.tsx",
       },
       shared: {
-        react: { singleton: true, requiredVersion: "^19.2.8" },
-        "react-dom": { singleton: true, requiredVersion: "^19.2.8" },
+        react: { singleton: true, requiredVersion: "^19.3.0" },
+        "react-dom": { singleton: true, requiredVersion: "^19.3.0" },
         "react-router-dom": { singleton: true, requiredVersion: "^7.18.3" },
         "@warehouse/ui-kit": { singleton: true },
       },

@@ -27,10 +27,14 @@ type DomainEvent interface {
 	OccurredAt() time.Time
 }
 
+// base carries the identity every event shares. It deliberately has no
+// serialisation tags: the JSON wire shape is owned by the adapters
+// (internal/adapters/kafka/cloudevents/wire.go), and a fitness test
+// forbids json/db tags under internal/domain.
 type base struct {
-	Name string    `json:"eventName"`
-	Type string    `json:"eventType"`
-	At   time.Time `json:"occurredAt"`
+	Name string
+	Type string
+	At   time.Time
 }
 
 func (b base) EventName() string     { return b.Name }
@@ -42,26 +46,73 @@ func newBase(entity, name string, occurredAt time.Time) base {
 }
 
 // SiteRegistered: a physical facility was added to the warehouse map.
+// SiteRole is additive (ADR-0037): the site's role in the fulfilment
+// network, UNSPECIFIED when the registration did not state one.
 type SiteRegistered struct {
 	base
-	SiteCode string `json:"siteCode"`
-	SiteName string `json:"siteName"`
+	SiteCode string
+	SiteName string
+	SiteRole string
 }
 
 // NewSiteRegistered builds a SiteRegistered event.
-func NewSiteRegistered(occurredAt time.Time, siteCode, siteName string) SiteRegistered {
-	return SiteRegistered{base: newBase("site", "SiteRegistered", occurredAt), SiteCode: siteCode, SiteName: siteName}
+func NewSiteRegistered(occurredAt time.Time, siteCode, siteName, siteRole string) SiteRegistered {
+	return SiteRegistered{base: newBase("site", "SiteRegistered", occurredAt), SiteCode: siteCode, SiteName: siteName, SiteRole: siteRole}
+}
+
+// SiteRoleChanged: an operator changed a site's role in the fulfilment
+// network (ADR-0037). It carries the new and the replaced role; it never
+// implies a transfer-capability change (that is SiteCapabilityChanged,
+// raised only by the explicit ADR-0035 command).
+type SiteRoleChanged struct {
+	base
+	SiteCode         string
+	SiteRole         string
+	PreviousSiteRole string
+}
+
+// NewSiteRoleChanged builds a SiteRoleChanged event.
+func NewSiteRoleChanged(occurredAt time.Time, siteCode, siteRole, previousSiteRole string) SiteRoleChanged {
+	return SiteRoleChanged{
+		base:             newBase("site", "SiteRoleChanged", occurredAt),
+		SiteCode:         siteCode,
+		SiteRole:         siteRole,
+		PreviousSiteRole: previousSiteRole,
+	}
+}
+
+// SiteCapabilityChanged: a site's transfer capability state changed. The
+// payload is a complete, PII-free last-write-wins snapshot; consumers use
+// CapabilityRevision to retain the newest state and never infer it from
+// physical layout topology.
+type SiteCapabilityChanged struct {
+	base
+	SiteCode                   string
+	TransferOriginEnabled      bool
+	TransferDestinationEnabled bool
+	CapabilityRevision         int64
+}
+
+// NewSiteCapabilityChanged builds a full last-write-wins capability snapshot.
+func NewSiteCapabilityChanged(occurredAt time.Time, siteCode string, transferOriginEnabled, transferDestinationEnabled bool, capabilityRevision int64) SiteCapabilityChanged {
+	return SiteCapabilityChanged{
+		base:                       newBase("site", "SiteCapabilityChanged", occurredAt),
+		SiteCode:                   siteCode,
+		TransferOriginEnabled:      transferOriginEnabled,
+		TransferDestinationEnabled: transferDestinationEnabled,
+		CapabilityRevision:         capabilityRevision,
+	}
 }
 
 // ZoneRegistered: a behavioral zone was added inside a Site's area.
 type ZoneRegistered struct {
 	base
-	ZoneID           string           `json:"zoneId"`
-	SiteCode         string           `json:"siteCode"`
-	AreaCode         string           `json:"areaCode"`
-	ZoneCode         string           `json:"zoneCode"`
-	TemperatureClass TemperatureClass `json:"temperatureClass"`
-	Hazmat           bool             `json:"hazmat"`
+	ZoneID           string
+	SiteCode         string
+	AreaCode         string
+	ZoneCode         string
+	TemperatureClass TemperatureClass
+	Hazmat           bool
 }
 
 // NewZoneRegistered builds a ZoneRegistered event.
@@ -80,11 +131,11 @@ func NewZoneRegistered(occurredAt time.Time, zoneID, siteCode, areaCode, zoneCod
 // AisleRegistered: a physical corridor was added inside a Zone.
 type AisleRegistered struct {
 	base
-	AisleID      string    `json:"aisleId"`
-	ZoneID       string    `json:"zoneId"`
-	AisleCode    string    `json:"aisleCode"`
-	SequenceHint int       `json:"sequenceHint"`
-	Direction    Direction `json:"direction"`
+	AisleID      string
+	ZoneID       string
+	AisleCode    string
+	SequenceHint int
+	Direction    Direction
 }
 
 // NewAisleRegistered builds an AisleRegistered event.
@@ -102,10 +153,10 @@ func NewAisleRegistered(occurredAt time.Time, aisleID, zoneID, aisleCode string,
 // LocationTypeRegistered: a reusable slot shape/kind was defined.
 type LocationTypeRegistered struct {
 	base
-	LocationType string  `json:"locationType"`
-	Role         string  `json:"role"`
-	MaxWeightKg  float64 `json:"maxWeightKg,omitempty"`
-	MaxVolumeM3  float64 `json:"maxVolumeM3,omitempty"`
+	LocationType string
+	Role         string
+	MaxWeightKg  float64
+	MaxVolumeM3  float64
 }
 
 // NewLocationTypeRegistered builds a LocationTypeRegistered event. Role is
@@ -126,10 +177,10 @@ func NewLocationTypeRegistered(occurredAt time.Time, locationType string, role s
 // in which Zones was declared.
 type PlacementRuleDefined struct {
 	base
-	RuleID       string `json:"ruleId"`
-	LocationType string `json:"locationType"`
-	Effect       string `json:"effect"`
-	Predicate    string `json:"predicate"`
+	RuleID       string
+	LocationType string
+	Effect       string
+	Predicate    string
 }
 
 // NewPlacementRuleDefined builds a PlacementRuleDefined event.
@@ -146,15 +197,18 @@ func NewPlacementRuleDefined(occurredAt time.Time, ruleID, locationType, effect,
 // LocationSlotRegistered: a coded leaf slot now exists on the warehouse map.
 type LocationSlotRegistered struct {
 	base
-	LocationCode string   `json:"locationCode"`
-	AisleID      string   `json:"aisleId"`
-	ZoneID       string   `json:"zoneId"`
-	LocationType string   `json:"locationType"`
-	Role         string   `json:"role"`
-	DockFlow     string   `json:"dockFlow,omitempty"`
-	Activities   []string `json:"activities,omitempty"`
-	MaxWeightKg  float64  `json:"maxWeightKg,omitempty"`
-	MaxVolumeM3  float64  `json:"maxVolumeM3,omitempty"`
+	LocationCode string
+	AisleID      string
+	ZoneID       string
+	LocationType string
+	Role         string
+	DockFlow     string
+	Activities   []string
+	MaxWeightKg  float64
+	MaxVolumeM3  float64
+	// HandlingUnit is OPTIONAL (ADR-0040): "" when none was recorded at
+	// registration, which keeps the wire payload byte-identical to before.
+	HandlingUnit HandlingUnit
 }
 
 // NewLocationSlotRegistered builds a LocationSlotRegistered event. Role,
@@ -176,10 +230,39 @@ func NewLocationSlotRegistered(occurredAt time.Time, code LocationCode, location
 	}
 }
 
+// WithHandlingUnit returns a copy of the event carrying the slot's optional
+// handling unit (ADR-0040). Kept out of the constructor so the existing
+// constructor signature — and every caller of it — is unchanged.
+func (e LocationSlotRegistered) WithHandlingUnit(unit HandlingUnit) LocationSlotRegistered {
+	e.HandlingUnit = unit
+	return e
+}
+
+// LocationSlotHandlingUnitDeclared: a slot's handling unit (EACH/CASE/PALLET)
+// was set or changed after registration (ADR-0040). Identified by the same
+// LocationCode as LocationSlotRegistered.
+type LocationSlotHandlingUnitDeclared struct {
+	base
+	LocationCode string
+	HandlingUnit HandlingUnit
+	DeclaredAt   time.Time
+}
+
+// NewLocationSlotHandlingUnitDeclared builds a LocationSlotHandlingUnitDeclared
+// event; DeclaredAt equals the occurrence instant.
+func NewLocationSlotHandlingUnitDeclared(occurredAt time.Time, code LocationCode, unit HandlingUnit) LocationSlotHandlingUnitDeclared {
+	return LocationSlotHandlingUnitDeclared{
+		base:         newBase("locationslot", "LocationSlotHandlingUnitDeclared", occurredAt),
+		LocationCode: code.String(),
+		HandlingUnit: unit,
+		DeclaredAt:   occurredAt,
+	}
+}
+
 // LocationSlotDecommissioned: a coded slot was permanently retired.
 type LocationSlotDecommissioned struct {
 	base
-	LocationCode string `json:"locationCode"`
+	LocationCode string
 }
 
 // NewLocationSlotDecommissioned builds a LocationSlotDecommissioned event.
@@ -195,9 +278,9 @@ func NewLocationSlotDecommissioned(occurredAt time.Time, code LocationCode) Loca
 // per-slot within that same import.
 type FacilityLayoutImported struct {
 	base
-	RowsSubmitted int `json:"rowsSubmitted"`
-	SlotsImported int `json:"slotsImported"`
-	RowsRejected  int `json:"rowsRejected"`
+	RowsSubmitted int
+	SlotsImported int
+	RowsRejected  int
 }
 
 // NewFacilityLayoutImported builds a FacilityLayoutImported event.
@@ -214,14 +297,14 @@ func NewFacilityLayoutImported(occurredAt time.Time, submitted, imported, reject
 // set or changed (ADR-0017).
 type LocationGeometryUpdated struct {
 	base
-	LocationCode string  `json:"locationCode"`
-	XM           float64 `json:"xM"`
-	YM           float64 `json:"yM"`
-	ZM           float64 `json:"zM"`
-	WidthM       float64 `json:"widthM"`
-	DepthM       float64 `json:"depthM"`
-	HeightM      float64 `json:"heightM"`
-	PickSequence *int    `json:"pickSequence,omitempty"`
+	LocationCode string
+	XM           float64
+	YM           float64
+	ZM           float64
+	WidthM       float64
+	DepthM       float64
+	HeightM      float64
+	PickSequence *int
 }
 
 // NewLocationGeometryUpdated builds a LocationGeometryUpdated event.
@@ -243,14 +326,14 @@ func NewLocationGeometryUpdated(occurredAt time.Time, code LocationCode, positio
 // (ADR-0017).
 type AisleGeometryUpdated struct {
 	base
-	AisleID string  `json:"aisleId"`
-	StartXM float64 `json:"startXM"`
-	StartYM float64 `json:"startYM"`
-	StartZM float64 `json:"startZM"`
-	EndXM   float64 `json:"endXM"`
-	EndYM   float64 `json:"endYM"`
-	EndZM   float64 `json:"endZM"`
-	LengthM float64 `json:"lengthM"`
+	AisleID string
+	StartXM float64
+	StartYM float64
+	StartZM float64
+	EndXM   float64
+	EndYM   float64
+	EndZM   float64
+	LengthM float64
 }
 
 // NewAisleGeometryUpdated builds an AisleGeometryUpdated event.
@@ -272,16 +355,16 @@ func NewAisleGeometryUpdated(occurredAt time.Time, aisleID string, centreline Se
 // office, conveyor, or other) was added to the warehouse map (ADR-0017).
 type FixedStructureRegistered struct {
 	base
-	StructureID string  `json:"structureId"`
-	SiteCode    string  `json:"siteCode"`
-	Kind        string  `json:"kind"`
-	XM          float64 `json:"xM"`
-	YM          float64 `json:"yM"`
-	ZM          float64 `json:"zM"`
-	WidthM      float64 `json:"widthM"`
-	DepthM      float64 `json:"depthM"`
-	HeightM     float64 `json:"heightM"`
-	Label       string  `json:"label"`
+	StructureID string
+	SiteCode    string
+	Kind        string
+	XM          float64
+	YM          float64
+	ZM          float64
+	WidthM      float64
+	DepthM      float64
+	HeightM     float64
+	Label       string
 }
 
 // NewFixedStructureRegistered builds a FixedStructureRegistered event.
@@ -305,10 +388,10 @@ func NewFixedStructureRegistered(occurredAt time.Time, structureID, siteCode, ki
 // at a bay ordinal was added to the travel graph (ADR-0017).
 type CrossAisleRegistered struct {
 	base
-	ZoneID    string `json:"zoneId"`
-	FromAisle string `json:"fromAisle"`
-	ToAisle   string `json:"toAisle"`
-	AtBay     string `json:"atBay"`
+	ZoneID    string
+	FromAisle string
+	ToAisle   string
+	AtBay     string
 }
 
 // NewCrossAisleRegistered builds a CrossAisleRegistered event.

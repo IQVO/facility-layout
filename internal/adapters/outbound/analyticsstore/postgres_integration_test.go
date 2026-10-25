@@ -4,36 +4,73 @@ package analyticsstore_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/testcontainers/testcontainers-go"
+	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
+	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/analyticsstore"
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/postgres"
 	"github.com/claudioed/facility-layout/internal/analytics/report"
 )
 
-func requireAnalyticsURL(t *testing.T) string {
-	t.Helper()
-	url := os.Getenv("ANALYTICS_DATABASE_URL")
-	if url == "" {
-		t.Skip("ANALYTICS_DATABASE_URL not set, skipping analytics postgres integration test")
-	}
-	return url
+// These tests own their database: one throwaway testcontainers Postgres per
+// package run (TestMain), with the real analytics migrations applied. They
+// never read ANALYTICS_DATABASE_URL and never skip — a broken projection
+// must fail CI, not silently pass. Each test uses unique ids or truncates
+// what it asserts on, so they stay isolated on the shared container.
+
+// analyticsURL is the shared, already-migrated container's DSN, set by
+// TestMain before any test runs.
+var analyticsURL string
+
+func TestMain(m *testing.M) {
+	os.Exit(runWithPostgres(m))
 }
 
-func migrateAnalytics(t *testing.T, url string) {
-	t.Helper()
-	if err := postgres.RunMigrations(url, "../../../../migrations/analytics"); err != nil {
-		t.Fatalf("migrate analytics: %v", err)
+// runWithPostgres boots the container, migrates it, runs the package's
+// tests, and always terminates the container (os.Exit in TestMain would
+// skip a defer, hence the separate function).
+func runWithPostgres(m *testing.M) int {
+	ctx := context.Background()
+	container, err := tcpostgres.Run(ctx, "postgres:16-alpine",
+		tcpostgres.WithDatabase("facility_analytics"),
+		tcpostgres.WithUsername("facility"),
+		tcpostgres.WithPassword("facility"),
+		testcontainers.WithWaitStrategy(
+			wait.ForLog("database system is ready to accept connections").
+				WithOccurrence(2).
+				WithStartupTimeout(90*time.Second),
+		),
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "start analytics postgres container: %v\n", err)
+		return 1
 	}
+	defer func() {
+		if err := testcontainers.TerminateContainer(container); err != nil {
+			fmt.Fprintf(os.Stderr, "terminate analytics postgres container: %v\n", err)
+		}
+	}()
+
+	analyticsURL, err = container.ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "analytics postgres connection string: %v\n", err)
+		return 1
+	}
+	if err := postgres.RunMigrations(analyticsURL, "../../../../migrations/analytics"); err != nil {
+		fmt.Fprintf(os.Stderr, "migrate analytics: %v\n", err)
+		return 1
+	}
+	return m.Run()
 }
 
 func TestPostgresProjectionAndReport_RoundTrip(t *testing.T) {
-	url := requireAnalyticsURL(t)
-	migrateAnalytics(t, url)
-
-	pool, err := analyticsstore.NewPool(context.Background(), url)
+	pool, err := analyticsstore.NewPool(context.Background(), analyticsURL)
 	if err != nil {
 		t.Fatalf("NewPool: %v", err)
 	}
@@ -100,10 +137,7 @@ func TestPostgresProjectionAndReport_RoundTrip(t *testing.T) {
 // TestReadOnlyPool_RejectsWrites asserts the reader pool is genuinely
 // read-only: an attempt to write through it must be rejected by Postgres.
 func TestReadOnlyPool_RejectsWrites(t *testing.T) {
-	url := requireAnalyticsURL(t)
-	migrateAnalytics(t, url)
-
-	roPool, err := analyticsstore.NewReadOnlyPool(context.Background(), url)
+	roPool, err := analyticsstore.NewReadOnlyPool(context.Background(), analyticsURL)
 	if err != nil {
 		t.Fatalf("NewReadOnlyPool: %v", err)
 	}
@@ -128,10 +162,7 @@ func TestReadOnlyPool_RejectsWrites(t *testing.T) {
 // empty table returns a single NULL row (not zero rows), which must be read as
 // a zero lag rather than a scan error (pilot bug #2).
 func TestFreshnessLag_EmptyStore(t *testing.T) {
-	url := requireAnalyticsURL(t)
-	migrateAnalytics(t, url)
-
-	pool, err := analyticsstore.NewPool(context.Background(), url)
+	pool, err := analyticsstore.NewPool(context.Background(), analyticsURL)
 	if err != nil {
 		t.Fatalf("NewPool: %v", err)
 	}
@@ -154,10 +185,7 @@ func TestFreshnessLag_EmptyStore(t *testing.T) {
 // TestConsumedEventsRepo_MarksOnce verifies the consumer dedupe gate: the same
 // event_id is admitted once and rejected thereafter.
 func TestConsumedEventsRepo_MarksOnce(t *testing.T) {
-	url := requireAnalyticsURL(t)
-	migrateAnalytics(t, url)
-
-	pool, err := analyticsstore.NewPool(context.Background(), url)
+	pool, err := analyticsstore.NewPool(context.Background(), analyticsURL)
 	if err != nil {
 		t.Fatalf("NewPool: %v", err)
 	}

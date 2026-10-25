@@ -12,9 +12,13 @@ warehouse-systems: one set of global standards, enforced the same way in every
 repository, while each bounded context owns its own server. It is the MCP
 counterpart to the platform's existing 5-stage quality gate and its ADR
 discipline. `fulfillment-execution` is the reference implementation
-(see [its ADR-0008](https://github.com/IQVO/fulfillment-execution)); the
-other four contexts — `inventory-storage`, `wes-work-planning`,
-`workforce-management`, `facility-layout` — copy it. In `facility-layout` the
+(see [its ADR-0008](https://github.com/IQVO/fulfillment-execution)); every
+other backend bounded context copies it. As of October 2026 all twelve ship a
+`cmd/mcp` server: `facility-layout`, `inventory-storage`, `product-master`
+(read-only), `order-management`, `process-path-management`,
+`wes-work-planning`, `fulfillment-execution`, `workforce-management`,
+`labor-performance`, `warehouse-planning`, `network-fulfillment` and
+`network-inventory-planning`. In `facility-layout` the
 adopting decision is [ADR-0007](../adr/0007-mcp-inbound-adapter.md).
 
 Keywords **MUST**, **SHOULD**, **MAY** are used per RFC 2119.
@@ -92,6 +96,15 @@ across clients and **SHOULD** be used rather than leaving procedure implicit.
 
 ## 7. Security & authorization (current posture: no IdP)
 
+:::caution[Not in force — REST and MCP are unauthenticated]
+The static-bearer auth layer this section describes was rolled out and then
+reverted fleet-wide ([ADR 0015](../adr/0015-remove-rest-mcp-auth.md),
+superseding the auth portion of ADR 0007). `cmd/mcp` today accepts every
+request without a key, and `TestNoAuthMiddlewareReintroduced` fails the
+build if auth middleware reappears. Rules 1–4 below are kept as the
+historical standard; re-adopting them needs a new ADR first.
+:::
+
 Per the MCP inbound-adapter ADR, the current posture for these internal,
 non-user-facing servers:
 
@@ -128,6 +141,14 @@ bounds the exposure here.
 3. Domain errors **MUST** surface as clean structured tool errors, mapped from
    RFC 7807. The existing invariants are the safety net for model-invoked writes
    and **MUST NOT** be bypassed.
+4. A tool error **MUST** read `<slug>: detail`, where the slug is the stable
+   problem slug the service's REST adapter uses for the same condition, and an
+   unexpected (untyped) failure **MUST** read
+   `internal-error: an unexpected internal error occurred`, never carrying
+   infrastructure detail. Callers classify on the slug, never on the prose.
+   `warehouse-planning` introduced the convention; `facility-layout` adopts it
+   in [ADR 0033](../adr/0033-slug-prefixed-mcp-tool-errors.md), with a test
+   keeping the MCP slug table one-for-one with the REST problem table.
 
 ## 9. Auditability
 
@@ -188,13 +209,23 @@ Jaeger and Grafana alongside HTTP.
 
 ### Pinned behavioral contracts the evals found
 
+- A tool error is `<slug>: detail` on an `isError` result — the slug is the REST
+  problem slug for the same condition (`site-not-found`, `zone-not-found`,
+  `malformed-location-code`, `missing-location-code`, `no-route-between-zones`,
+  …) and an unexpected failure is `internal-error`
+  ([ADR 0033](../adr/0033-slug-prefixed-mcp-tool-errors.md)). The E3 scenarios
+  pin the prefix over the wire; `TestSlugTableMatchesRESTOneForOne` pins the
+  parity with the REST table.
 - Typed tool schemas are **strict** (`additionalProperties: false`, the
   SDK default): stray model-generated argument keys are rejected with a
   validation error, not silently ignored — even for `list_sites`, which
   declares no parameters at all.
-- `estimate_travel_distance` **refuses** cross-zone travel
-  (`ErrNoRouteBetweenZones`) rather than guessing a route — this
-  context's travel graph does not yet connect zones.
+- `estimate_travel_distance` never guesses a cross-zone route: across zones
+  it returns a straight-line estimate flagged `estimated: true` only when
+  both slots carry recorded position geometry, and otherwise refuses
+  (`ErrNoRouteBetweenZones`) — this context's travel graph does not connect
+  zones. The tool's description string states both outcomes (pinned by
+  `TestEval_EstimateTravelDistanceDescribesCrossZoneEstimate`).
 - With no real aisle geometry registered, a within-aisle distance is the
   bay gap at the zone's default bay pitch (1.2 m per bay) and is always
   flagged `estimated: true` — the map's distances are explicitly
@@ -206,5 +237,6 @@ Jaeger and Grafana alongside HTTP.
 ## 11. Changing this charter
 
 This charter is versioned with the docs. A change to a global standard **MUST**
-be proposed as a PR and, because it binds all five contexts, **SHOULD** be
+be proposed as a PR and, because it binds every context that runs an MCP
+server, **SHOULD** be
 recorded as an ADR when it changes an architecturally significant rule.

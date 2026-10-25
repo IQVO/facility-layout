@@ -1,0 +1,220 @@
+---
+id: testing
+title: Testing
+sidebar_label: Testing
+---
+
+# Testing
+
+This page describes the test suite as it exists on `develop`: what each layer
+proves, how to run it locally (`Makefile`), and which CI job
+(`.github/workflows/ci.yml`) enforces it. Every local target is the same
+command its CI job runs.
+
+```mermaid
+flowchart BT
+  unit["Unit + httptest<br/>81 non-integration _test.go files<br/>make test / coverage (90% gate)"]
+  arch["Architecture fitness<br/>internal/architecture<br/>make arch-test"]
+  bdd["BDD (godog)<br/>11 features, 107 scenarios + MCP feature (24)<br/>make bdd"]
+  integ["Integration (testcontainers)<br/>17 files in 7 packages<br/>make integration"]
+  contract["Contract (Schemathesis)<br/>apis/openapi.yaml<br/>make contract"]
+  evals["MCP evals<br/>E1 schemas, E2 wire, E3 behavioral"]
+  mut["Mutation (gremlins)<br/>internal/domain, efficacy 89%"]
+  unit --> integ --> bdd --> contract
+  arch -.-> unit
+  evals -.-> bdd
+  mut -.-> unit
+```
+
+Source: `Makefile`, `.github/workflows/ci.yml`, `features/`, `internal/architecture/`, `.gremlins.yaml`.
+
+## Local targets
+
+| Target | Command | Needs |
+|---|---|---|
+| `make check` | `fmt-check vet build lint test` (lefthook **pre-push**) | Go, golangci-lint v2.13.1 |
+| `make check-all` | `check` + `coverage arch-test bdd` | same |
+| `make test` | `go test ./... -race`: unit, httptest and BDD together | nothing external |
+| `make coverage` | `go test ./... -race -coverprofile=coverage.out -coverpkg=./internal/domain/...,./internal/application/...` plus a **90%** gate | nothing external |
+| `make integration` | `go test -tags=integration ./... -race -count=1` | Docker only |
+| `make bdd` | `go test ./... -run TestFeatures -v` | nothing external |
+| `make contract` | `scripts/contract-test.sh` | `st` (`pip install 'schemathesis==4.28.0'`) |
+| `make arch-test` | `go test ./internal/architecture/... -v` | nothing external |
+| `make mutation` | `gremlins unleash ./internal/domain` | gremlins v0.6.0 |
+| `make vuln` | `govulncheck ./...` | govulncheck |
+| `make guide-lint` / `make harness-test` | agent-guide lint and hook tests (Python) | python3 |
+
+lefthook **pre-commit** runs `make fmt-check`, `make vet` and `make lint`.
+Neither hook needs a database.
+
+## Unit tests
+
+Unit tests are plain `go test`, with in-memory adapters and `httptest` for
+the HTTP adapter. The coverage gate measures only
+`internal/domain/...` and `internal/application/...`, at a 90% threshold, in
+both `make coverage` and the CI `test` job.
+
+The Makefile is the single source of the coverage scope and threshold
+(gap 16d): the CI `test` job runs `make coverage` instead of its own
+`go test -coverpkg=...` command, so the local and the PR gate cannot drift;
+harness `repo_lint` rule R11 (coverage-scope) forbids a workflow passing
+`-coverpkg` itself. Change the scope or the threshold in the Makefile only.
+
+## BDD (godog)
+
+- `features/features_test.go` (`TestFeatures`; the godog files live in
+  `features/`, never at the repo root, enforced by `TestNoGoFilesAtRepoRoot`)
+  drives the **real chi router** over a TCP `httptest.Server`, wired with the
+  in-memory test doubles, a fixed clock and a buffered event publisher. Every
+  scenario is a black-box test of the REST API. The in-memory adapters are
+  test doubles only: no shipped binary imports them
+  (`TestRuntimeBinaryHasNoInMemoryAdapters`, ADR 0039); the real runtime is
+  proven by `TestRunOnRealPostgresAndKafka` below.
+- There are **12 feature files under `features/`** with **113 `Scenario` /
+  `Scenario Outline` headings**: `catalog_reads` 7, `draw_the_warehouse` 4,
+  `error_contract` 7, `fixed_structures_and_cross_aisles` 21, `geometry` 18,
+  `import` 2, `location_roles_and_reads` 14, `placement_rules` 4,
+  `site_role` 6 (ADR-0037), `site_transfer_capability` 6 (ADR-0035),
+  `structure` 6, `travel_graph` 18.
+  Outlines expand to more runtime cases.
+- Scenarios tagged `@known-bug` describe the correct behaviour for a defect
+  that is still open. The default filter `~@known-bug` skips them.
+  `BDD_TAGS=@known-bug go test -run TestFeatures` runs only those scenarios.
+  The tag currently appears in `fixed_structures_and_cross_aisles.feature`.
+- A separate MCP feature,
+  `internal/adapters/inbound/mcp/testdata/features/mcp_tools.feature`
+  (24 scenarios), is run by `TestMCPEvalSuite` in the MCP package.
+
+## Integration tests (`-tags=integration`)
+
+Each suite boots its own Postgres 16 (and Kafka where needed) through
+**testcontainers-go**. There are no service containers and no
+`DATABASE_URL`/`KAFKA_BROKERS` skip gates: architecture fitness tests forbid
+both.
+
+| Package | Files |
+|---|---|
+| `internal/adapters/outbound/postgres` | `integration_test.go` (shared container and migrations), `repos_`, `version_` (optimistic concurrency), `site_capability_` (ADR-0035: the `SiteCapabilityChanged` outbox row is the CloudEvent network-inventory-planning decodes; repeat writes no row; concurrent changes never share a revision), `site_role_` (ADR-0037: migration `0009` backfills the role of rows seeded at schema version 8 from the name pattern, leaves other names `UNSPECIFIED`, touches no capability/version and writes no outbox row; the CHECK rejects an unknown role; role changes are version-guarded; the `SiteRoleChanged` outbox row is a CloudEvents 1.0 message with the documented attributes and camelCase data), `travel_`, `geometry_`, `telemetry_` (otelpgx child spans), `pool_limits_` (MaxConns / statement_timeout), `pool_alias_`, `outbox_`, `outbox_trace_` (ADR-0038, Postgres + Kafka: a request span's `traceparent` is stored on every outbox row and reaches the consumed Kafka message, where `Extract` yields the request span as a remote parent; a NULL-headers row relays with `content-type` only; an untraced use case stores NULL), `outbox_relay_cap_` (ADR-0036: a poison row is excluded after `WithMaxAttempts` failures and logged once at ERROR, the good same-key row behind it publishes; re-arm with `attempts = 0`; `0` = unlimited blocks), `sweeper_` |
+| `internal/adapters/outbound/analyticsstore` | `postgres_integration_test.go` (projection and report) |
+| `internal/adapters/outbound/kafka` | `publisher_partition_integration_test.go` (Hash balancer keeps aggregate order) |
+| `internal/adapters/inbound/kafka` | `analytics_dlq_integration_test.go` (retry then DLQ) |
+| `internal/adapters/inbound/http` | `idempotency_integration_test.go` (Idempotency-Key replay and reuse) |
+| `internal/adapters/inbound/mcp` | `streamable_http_integration_test.go` |
+| `cmd/facility` | `e2e_integration_test.go` (`TestRunOnRealPostgresAndKafka`: boots the real `run()` on testcontainers Postgres and Kafka, drives only REST, asserts the Postgres rows, the byte-exact CloudEvents on both topics, `Idempotency-Key` replay, an in-process restart, and `/readyz` following Postgres and Kafka going away) |
+| `internal/application/usecases` | `usecases_wiring_integration_test.go` |
+
+The CI `integration` job runs `go test -tags=integration ./... -race -count=1`,
+so every tagged package runs, the same as `make integration`.
+
+## Contract tests (Schemathesis)
+
+`scripts/contract-test.sh` builds `cmd/facility`, boots it against a **real
+Postgres and a real Kafka** (`DATABASE_URL` and `KAFKA_BROKERS` are required;
+CI provides `postgres:16` and `confluentinc/confluent-local:7.6.1` service
+containers, locally `docker compose up -d --wait` does), on `127.0.0.1:18081`
+(override with `CONTRACT_PORT`), waits for `/readyz`, and runs
+`st run apis/openapi.yaml` with 100 examples per operation
+(`CONTRACT_MAX_EXAMPLES`) and 4 workers. Because the Idempotency-Key check is
+always on, `scripts/contract_hooks.py` (a Schemathesis `before_call` hook)
+gives every request a fresh `Idempotency-Key`; the header is `required: true`
+on the create operations in the spec. NUL characters are not generated
+(`--generation-allow-x00 false`): the service answers them with 400 (body) or
+404 (path) instead of the 500 a Postgres text parameter would give, pinned by
+unit and real-Postgres tests (ADR 0039). The service seeds nothing at boot:
+a fresh database starts empty.
+
+Six operations are excluded because their cross-field rules cannot be
+expressed in OpenAPI 3.0.3. The script names the test that covers each one:
+`registerLocationType`, `registerLocationSlot`, `importFacilityLayout`,
+`registerCrossAisle`, `setAisleGeometry` and `registerZone`. The
+`allow_header_conformance` check is also excluded. MCP is not in the spec,
+so this job does not cover it.
+
+The reports API (`cmd/facility-reports`) has its own spec,
+`apis/openapi-reports.yaml` (gap fix D18). `facility-reports` needs an
+analytical Postgres to boot, so Schemathesis does not run against it.
+`internal/adapters/inbound/http/reports_contract_test.go` is its contract
+test instead: every route of `NewReportsRouter` is documented and every
+documented operation is routed, and each documented status the handlers can
+produce (200/400/500, `/readyz` 503) returns the documented content type with
+exactly the schema's properties. Spectral (`api-lint`) lints both specs.
+
+## Architecture fitness tests (`internal/architecture`)
+
+| Test | Rule |
+|---|---|
+| `TestHexagonalArchitecture` | Hexagonal dependency direction: domain → application → adapters (arch-go) |
+| `TestMCPAdapterDependencyRule` | `internal/adapters/inbound/mcp` may depend only on the application and domain layers, never on outbound adapters or `cmd`. Nothing else may import it. |
+| `TestNoAuthMiddlewareReintroduced` | No bearer or JWT middleware returns to `internal/adapters/inbound`: REST and MCP stay unauthenticated (ADR-0015) |
+| `TestKafkaConsumerGroupNeverHardcodedInline` | A kafka-go `GroupID` must come from a named symbol, never an inline string literal |
+| `TestMCPOptionalToolInputsCarryOmitempty` | An MCP tool input field whose `jsonschema` description says "optional" must carry `omitempty`, or the SDK marks it required (gap fix D16; has a sensor-fails-on-bad-fixture twin) |
+| `TestOutboxRelaysPassAttemptCap` (+ `TestOutboxRelayCapSensorFailsOnBadFixtures`) | Every non-test `NewOutboxRelay` call under `cmd/` passes `WithMaxAttempts` ([ADR-0036](../adr/0036-outbox-relay-attempt-cap.md)), so one poison row cannot block the relay forever (gap fix D12). |
+| `TestKafkaIntegrationTestsUseTestcontainers`, `TestPostgresIntegrationTestsUseTestcontainers` (+ sensor self-test) | No env-gated skips. Real containers are required. |
+| `TestCloudEventsOnly` | No envelope-mode toggle anywhere, and a module that talks to Kafka imports the CloudEvents SDK (ADR-0024) |
+| `TestReplayConsumersSetCommitInterval` | A reader with a process-unique group must set `CommitInterval`. Nothing in this repo matches, because the projector's group is fixed and shared. |
+| `TestEventCatalogueMatchesContract` (+ detector self-test) | Every CloudEvents type this service declares for itself in `apis/asyncapi.yaml` also appears in a CloudEvents ADR under `docs/docs/adr/` |
+| `TestNoStructTagsInDomain` (+ sensor self-test) | No serialisation tags in `internal/domain` |
+| `TestSiteCapabilityChangedContractPublishesFullLWWState` | The `SiteCapabilityChanged` message in the AsyncAPI carries the full last-write-wins state |
+| `TestSiteRoleContractIsPublished` | The AsyncAPI declares `SiteRoleChanged` on the integration topic (type, dataschema, required `siteCode`/`siteRole`/`previousSiteRole`) and the additive `siteRole` ([ADR-0037](../adr/0037-site-role-and-siterolechanged-cloudevents.md)) |
+| `TestKafkaWritersSetRequiredAcks` (+ `TestKafkaWriterAcksSensorBites`) | Every kafka-go `Writer` composite literal in a non-test file under `internal/` or `cmd/` sets `RequiredAcks` (the import alias is resolved per file). kafka-go defaults it to `RequireNone` (acks=0): the broker never confirms the write, so a broker blip silently drops the message while `WriteMessages` returns nil. The twin proves the sensor flags a bad fixture under any alias. |
+| `TestDeadLetterCallsGuardCancellation` (+ `TestDeadLetterShutdownSensorBites`, `kafka_dlq_shutdown_fitness_test.go`) | Every function in a non-test file under `internal/adapters/inbound/kafka` that sends to the dead-letter topic must reference `ctx.Err()` (any context-named value) or `context.Canceled` in its own body, or carry a `//dlq:deterministic <reason>` comment on the call line or the line above it. A handler that fails because the process is stopping must not dead-letter a good message and commit past it (network-fulfillment #89); a guard in the caller does not count. The sensor test proves the detector flags the pre-fix shape. |
+| `TestKafkaWriterTopicNotSetTwice` (+ `TestKafkaWriterTopicSensorBites`, `kafka_writer_topic_fitness_test.go`) | kafka-go rejects every write whose `Message.Topic` is set when the `Writer` also has a `Topic`. Per Go package under `internal/` and `cmd/`: once any kafka-go `Message` literal sets `Topic`, every `Writer` literal in that package must leave `Topic` empty, unless it carries `//kafka:fixed-topic-writer <reason>` and no Topic-setting Message is provably written through it. Writers configured after construction and `WriterConfig` are not covered. (Escape: warehouse-planning's domain DLQ writer, where no dead letter ever landed.) |
+
+## MCP evals
+
+The CI `evals-tests` job runs
+`go test ./internal/adapters/inbound/mcp/... -race -run '^TestEval|^TestMCPEvalSuite' -v`:
+
+- **E1, governance**: input schemas resolve and constrain, parameters are
+  described, the tool registry matches its golden file, and fleet tool names
+  are globally unique.
+- **E2, wire conformance**: initialize handshake, unknown tool, wrong-typed
+  or extra arguments, resource templates, prompts, session close.
+- **E3, behavioural**: `TestMCPEvalSuite` runs `mcp_tools.feature`.
+
+## Mutation testing (gremlins)
+
+`.gremlins.yaml` pins 2 workers, a timeout coefficient of 30, and thresholds
+**efficacy 89%** and **mutant-coverage 95%**. The last measurement was 99
+mutants with 89 killed, 89.90% efficacy and 100% coverage (see
+`MUTATION.md`). The default mutator set is listed explicitly.
+
+- `mutation-fast` runs on every push and PR, blocking, with
+  `gremlins unleash ./internal/domain`.
+- `mutation` runs weekly (Monday 06:00 UTC) or on dispatch with
+  `--workers 1 --timeout-coefficient 30`. It opens a `harness:red` issue on
+  failure.
+
+## CI jobs (`.github/workflows/ci.yml`)
+
+| Job | Runs | When |
+|---|---|---|
+| `lint` | golangci-lint v2.13.1 | push / PR |
+| `guide-lint` | `scripts/harness/guide_lint.py`, `repo_lint.py`, `test_hook.py`, `test_repo_lint.py` | push / PR |
+| `complexity` | golangci-lint `--enable-only gocyclo,gocognit,cyclop,funlen,nestif`, plus a gocyclo report of functions over 10 (informational) | push / PR |
+| `test` | `go build`, `go vet`, then `make coverage` (unit tests with `-race` and the Makefile's coverage scope and 90% gate) | push / PR |
+| `bdd` | `go test ./... -run TestFeatures -v` | push / PR |
+| `contract` | Schemathesis 4.28.0 through `scripts/contract-test.sh` | push / PR |
+| `evals-tests` | MCP evals (see above) | push / PR |
+| `integration` | build, vet and test with `-tags=integration` (testcontainers) | push / PR |
+| `mutation-fast` | gremlins over `./internal/domain` | push / PR |
+| `vuln` | govulncheck v1.8.0 | push / PR |
+| `api-lint` | Spectral over `apis/openapi.yaml` (`--fail-severity=warn`) | push / PR |
+| `docs-api-drift` | `npm run clean-api-docs && npm run gen-api-docs`, then `git diff --exit-code -- docs/api-reference/rest` | push / PR |
+| `chart-tests` | `charts/facility-layout/tests/render_test.sh` (ConfigMap mount, `OUTBOX_MAX_ATTEMPTS` default and override, component selectors) and `test_service_selectors.py` | push / PR |
+| `arch-test` | `go test ./internal/architecture/... -v` | push / PR |
+| `web` | Builds warehouse-ui-kit, then lint, `tsc -b`, vitest and build of `web/` | push / PR |
+| `helm-lint` | `ct lint` on `charts/facility-layout` | PR into `main` only |
+| `trivy-scan` | Image build plus Trivy (blocks on CRITICAL/HIGH with a fix) | PR into `main` only |
+| `mutation`, `drift` | Full mutation run. Drift covers deadcode, `go mod tidy -diff`, knip and coverage quality. | schedule / dispatch only |
+| `docker-publish`, `release` | GHCR image, cosign signature, SBOM attestation, git tag, Helm chart to `oci://ghcr.io/iqvo` | push to `main` only |
+
+On a PR into `develop`, `helm-lint`, `trivy-scan`, `mutation`, `drift`,
+`docker-publish` and `release` report **skipped** because of their `if:`
+conditions. That is expected.
+
+The docs site has its own workflow, `.github/workflows/docs.yml`: on a pull
+request that touches `docs/**` (or the workflow) it runs `npm ci` and
+`npm run build` in `docs/` and publishes nothing; on a push to `main` it also
+uploads the Pages artifact and deploys (gap fix D25). A broken sidebar id,
+link or MDX expression therefore fails the PR, not the release.

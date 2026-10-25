@@ -52,13 +52,12 @@ The invariants CLAUDE.md calls out each have an explicit failing-path test:
 ## 3 — Integration tests
 
 Every outbound Postgres adapter has a build-tagged
-(`//go:build integration`) round-trip test that skips silently without
-`DATABASE_URL`:
+(`//go:build integration`) round-trip test that boots its own Postgres via
+testcontainers (needs only Docker; never skips, never reads `DATABASE_URL` —
+`TestPostgresIntegrationTestsUseTestcontainers` fails CI if that regresses):
 
 ```sh
-docker compose up -d postgres
-DATABASE_URL="postgres://facility:facility@localhost:5432/facility?sslmode=disable" \
-  go test -tags=integration ./... -race -count=1
+go test -tags=integration ./... -race -count=1
 ```
 
 Five tests cover the Site repo, the Zone+Aisle repos, the LocationType and
@@ -66,8 +65,8 @@ PlacementRule repos (including that a partially-unconstrained
 `ZonePredicate` round-trips through SQL `NULL`s), the Slot repo (including
 that the seven LocationCode segments are stored as real columns and that
 ordering by them works), and the Postgres outbox publisher (including that
-the CloudEvents `type` is persisted verbatim). They self-migrate: each test
-runs `RunMigrations` and truncates, so execution order does not matter.
+the CloudEvents `type` is persisted verbatim). They share one migrated container per package: each test
+truncates, so execution order does not matter.
 
 ## 4 — Mutation testing
 

@@ -1,0 +1,1 @@
+{"parameters":[{"name":"locationCode","in":"path","required":true,"description":"The slot's full seven-segment code, `SITE-AREA-ZONE-AISLE-BAY-LEVEL-POSITION`.\n","schema":{"type":"string","pattern":"^[A-Z0-9]+(-[A-Z0-9]+){6}$"},"example":"WH1-STOR-AMB-A07-03-02-B"}]}

@@ -33,7 +33,7 @@ function StudyDisclaimer() {
       following real industry-standard patterns (the
       Site-Area-Zone-Aisle-Bay-Level-Position location-code hierarchy). Not
       a production system. Not affiliated with, endorsed by, or
-      representative of Amazon or any other company.
+      representative of the reference operator or any other company.
     </div>
   );
 }
@@ -114,6 +114,10 @@ function WhatItOwns() {
               <li>
                 Stock, occupancy and reservations — that is{' '}
                 <code>inventory-storage</code>
+              </li>
+              <li>
+                SKU master data (handling classification, unit dimensions
+                and weight) — that is <code>product-master</code>
               </li>
               <li>
                 Tasks, assignments and dispatch — that is{' '}

@@ -166,6 +166,12 @@ paths:
         uniqueness is enforced here in the application layer rather than in
         the aggregate: a single aggregate cannot see its siblings. A newly
         registered Site is Active, and publishes SiteRegistered.
+
+
+        `siteRole` (ADR-0037) is optional: omitted means `UNSPECIFIED`. An
+        unknown role is 422 `invalid-site-role`. The role never sets the
+        transfer capability (ADR-0035 stays the only writer; see
+        `GET /site-roles/transfer-defaults` for the per-role defaults).
       tags: [Sites]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -176,8 +182,9 @@ paths:
             schema:
               $ref: "#/components/schemas/RegisterSiteRequest"
             example:
-              siteCode: WH1
-              name: Fulfilment Centre One
+              siteCode: ABE8
+              name: ABE8 - Non-Sortable Fulfillment Center (Breinigsville, PA)
+              siteRole: NON_SORTABLE_FC
       responses:
         "201":
           description: Site registered.
@@ -192,9 +199,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/Site"
               example:
-                siteCode: WH1
-                name: Fulfilment Centre One
+                siteCode: ABE8
+                name: ABE8 - Non-Sortable Fulfillment Center (Breinigsville, PA)
                 status: Active
+                siteRole: NON_SORTABLE_FC
         "400":
           description: >
             Malformed input, or the Idempotency-Key header is absent or
@@ -223,7 +231,31 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
-          $ref: "#/components/responses/IdempotencyKeyReused"
+          description: >
+            The `siteRole` is not one of the known site roles
+            (`invalid-site-role`, ADR-0037), or the Idempotency-Key was
+            already used with a different request (ADR 0019).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                invalidSiteRole:
+                  summary: Unknown site role
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/invalid-site-role
+                    title: Site role must be one of the known site roles
+                    status: 422
+                    detail: 'site role must be one of the known site roles: "Fulfillment Center"'
+                    instance: /sites
+                idempotencyKeyReused:
+                  summary: Idempotency-Key reused with a different request
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-reused
+                    title: Idempotency-Key was already used with a different request
+                    status: 422
+                    detail: The Idempotency-Key header on this request was already used with a request that had a different body. Use a new Idempotency-Key for a genuinely different request.
+                    instance: /sites
         "500":
           $ref: "#/components/responses/InternalError"
     get:
@@ -245,12 +277,14 @@ paths:
                 items:
                   $ref: "#/components/schemas/Site"
               example:
-                - siteCode: WH1
-                  name: Fulfilment Centre One
+                - siteCode: ABE8
+                  name: ABE8 - Non-Sortable Fulfillment Center (Breinigsville, PA)
                   status: Active
+                  siteRole: NON_SORTABLE_FC
                 - siteCode: WH2
                   name: Fulfilment Centre Two
                   status: Decommissioned
+                  siteRole: UNSPECIFIED
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -275,8 +309,232 @@ paths:
                 siteCode: WH1
                 name: Fulfilment Centre One
                 status: Active
+                siteRole: UNSPECIFIED
         "404":
           $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /sites/{siteCode}/role:
+    put:
+      operationId: setSiteRole
+      summary: Set a site's role in the fulfilment network
+      description: >
+        Sets the site's role (ADR-0037). When the role differs from the
+        current one, SiteRoleChanged (new and previous role) is published
+        through the transactional outbox. Repeating the current role is an
+        idempotent no-op: 200, no event, so no Idempotency-Key is needed.
+        `UNSPECIFIED` cannot be assigned, and an unknown or missing role is
+        422 `invalid-site-role`.
+
+
+        A role change NEVER changes the site's transfer capability: that
+        stays the explicit `PUT /sites/{siteCode}/transfer-capability`
+        command (ADR-0035). Optimistic concurrency: a concurrent change of
+        the same site loses with 409 `concurrent-modification`; a
+        decommissioned site's role is frozen (409 `site-not-active`).
+      tags: [Sites]
+      parameters:
+        - $ref: "#/components/parameters/SiteCode"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetSiteRoleRequest"
+            example:
+              siteRole: DELIVERY_STATION
+      responses:
+        "200":
+          description: The site after the change (or unchanged, for a repeat).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Site"
+              example:
+                siteCode: DAT3
+                name: DAT3 - Delivery Station (Atlanta, GA)
+                status: Active
+                siteRole: DELIVERY_STATION
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: >
+            The site is decommissioned (`site-not-active`), or another
+            writer changed it between this request's read and write
+            (`concurrent-modification`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              example:
+                type: https://errors.facility-layout.warehouse-systems.dev/concurrent-modification
+                title: The resource was modified by another writer; re-fetch and retry
+                status: 409
+                detail: aggregate was concurrently modified; reload and retry
+                instance: /sites/WH1/role
+        "422":
+          description: >
+            The role is missing, `UNSPECIFIED`, or not one of the known site
+            roles (`invalid-site-role`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              example:
+                type: https://errors.facility-layout.warehouse-systems.dev/invalid-site-role
+                title: Site role must be one of the known site roles
+                status: 422
+                detail: 'site role must be one of the known site roles: "UNSPECIFIED" cannot be assigned'
+                instance: /sites/WH1/role
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /site-roles/transfer-defaults:
+    get:
+      operationId: listSiteRoleTransferDefaults
+      summary: The default transfer capability of every site role
+      description: >
+        Read-only table (ADR-0037): for every assignable site role, whether
+        a site of that role should be an inter-site transfer origin and/or
+        destination. It is the ONE source of truth the warehouse-infra seed
+        and operators read instead of hard-coding it. It is a default only:
+        nothing applies it automatically, a role change never flips
+        capability, and capability is set with
+        `PUT /sites/{siteCode}/transfer-capability` (ADR-0035).
+        `UNSPECIFIED` has no row: an unclassified site's capability is left
+        as it is. Rows are in a stable display order.
+      tags: [Sites]
+      responses:
+        "200":
+          description: One row per assignable site role.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SiteRoleTransferDefault"
+              example:
+                - siteRole: NON_SORTABLE_FC
+                  transferOriginEnabled: true
+                  transferDestinationEnabled: true
+                - siteRole: MICRO_FC
+                  transferOriginEnabled: false
+                  transferDestinationEnabled: true
+                - siteRole: INBOUND_CROSS_DOCK
+                  transferOriginEnabled: true
+                  transferDestinationEnabled: false
+                - siteRole: DELIVERY_STATION
+                  transferOriginEnabled: false
+                  transferDestinationEnabled: false
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /sites/{siteCode}/transfer-capability:
+    get:
+      operationId: getSiteTransferCapability
+      summary: Get a site's transfer capability
+      description: >
+        Returns whether the site may act as the origin (donates stock) and/or
+        the destination (receives stock) of an inter-warehouse transfer, and
+        the revision of its last published SiteCapabilityChanged (ADR-0035).
+        A site whose capability was never set is capable of nothing at
+        revision 0 — exactly how network-inventory-planning treats a site it
+        has never heard about.
+      tags: [Sites]
+      parameters:
+        - $ref: "#/components/parameters/SiteCode"
+      responses:
+        "200":
+          description: The site's current transfer capability.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SiteTransferCapability"
+              example:
+                siteCode: WH1
+                transferOriginEnabled: true
+                transferDestinationEnabled: false
+                capabilityRevision: 3
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    put:
+      operationId: setSiteTransferCapability
+      summary: Set a site's transfer capability
+      description: >
+        Replaces the site's transfer capability with the full snapshot in the
+        body (ADR-0035). When the snapshot differs from the current one — or
+        no snapshot was ever published — the site's capabilityRevision
+        advances by exactly one and SiteCapabilityChanged is published
+        through the transactional outbox with that revision. Repeating the
+        current snapshot is an idempotent no-op: 200, same revision, no
+        event, so no Idempotency-Key is needed.
+
+
+        Optimistic concurrency (ADR-0025, extended to Site by ADR-0035): a
+        concurrent change of the same site loses with 409
+        `concurrent-modification`; re-read and retry. A decommissioned
+        site's capability is frozen (409 `site-not-active`).
+      tags: [Sites]
+      parameters:
+        - $ref: "#/components/parameters/SiteCode"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetSiteTransferCapabilityRequest"
+            example:
+              transferOriginEnabled: true
+              transferDestinationEnabled: false
+      responses:
+        "200":
+          description: The site's transfer capability after the change (or unchanged, for a repeat).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SiteTransferCapability"
+              example:
+                siteCode: WH1
+                transferOriginEnabled: true
+                transferDestinationEnabled: false
+                capabilityRevision: 1
+        "400":
+          description: >
+            The body is not JSON, or a field is omitted, null or not a
+            boolean (`missing-transfer-capability-field`): the body is a
+            full snapshot and an absent field is never read as false.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              example:
+                type: https://errors.facility-layout.warehouse-systems.dev/missing-transfer-capability-field
+                title: transferOriginEnabled and transferDestinationEnabled are both required booleans
+                status: 400
+                detail: transferOriginEnabled and transferDestinationEnabled are both required booleans
+                instance: /sites/WH1/transfer-capability
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: >
+            The site is decommissioned (`site-not-active`), or another
+            writer changed it between this request's read and write
+            (`concurrent-modification`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              example:
+                type: https://errors.facility-layout.warehouse-systems.dev/concurrent-modification
+                title: The resource was modified by another writer; re-fetch and retry
+                status: 409
+                detail: aggregate was concurrently modified; reload and retry
+                instance: /sites/WH1/transfer-capability
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -476,6 +734,7 @@ paths:
                   siteCode: WH1
                   name: Fulfilment Centre One
                   status: Active
+                  siteRole: UNSPECIFIED
                 fixedStructures: []
                 zones:
                   - zoneId: WH1-STOR-AMB
@@ -1766,6 +2025,44 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /locations/{locationCode}/handling-unit:
+    put:
+      operationId: declareLocationHandlingUnit
+      summary: Declare a location slot's handling unit
+      description: >
+        Sets or changes the unit of handling (EACH, CASE or PALLET) the slot
+        accepts (ADR-0040). The slot must already exist and must not be
+        Decommissioned. Naturally idempotent (same body, same state), like
+        the geometry PUT, so it takes no Idempotency-Key. Publishes
+        LocationSlotHandlingUnitDeclared. inventory-storage uses the value
+        to decide whether a sealed case may be stowed in the bin.
+      tags: [Locations]
+      parameters:
+        - $ref: "#/components/parameters/LocationCode"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeclareHandlingUnitRequest"
+      responses:
+        "200":
+          description: The location slot, with its handling unit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocationSlot"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   /locations/{locationCode}/classification:
     get:
       operationId: getLocationClassification
@@ -1913,19 +2210,16 @@ components:
     IdempotencyKey:
       name: Idempotency-Key
       in: header
-      required: false
+      required: true
       description: >-
         Caller-generated unique key (a UUID per logical submit) that makes a
         retried request safe (ADR 0019). Clients MUST always send a
-        non-empty, unique-per-submit key: the header is required whenever
-        the service runs with Postgres — i.e. in every deployment — and an
+        non-empty, unique-per-submit key: the service runs on Postgres in
+        every deployment (ADR 0039), so the header is always enforced and an
         absent or empty key is answered 400 `idempotency-key-required`. A
         replay with the same key and the same body returns the original
         response verbatim; the same key with a different body is 422
-        `idempotency-key-reused`. It is declared `required: false` here only
-        because the in-memory development mode (no DATABASE_URL) does not
-        enforce the middleware and the Schemathesis contract run boots that
-        mode.
+        `idempotency-key-reused`.
       schema:
         type: string
         example: 5b0f6a0e-6a41-4c63-9f33-0c8f5c1d2a77
@@ -1953,21 +2247,6 @@ components:
       example: WH1-STOR-AMB-A07-03-02-B
 
   responses:
-    IdempotencyKeyReused:
-      description: >-
-        The Idempotency-Key was already used with a request that had a
-        different body (ADR 0019). Use a new key for a genuinely different
-        request.
-      content:
-        application/problem+json:
-          schema:
-            $ref: "#/components/schemas/Problem"
-          example:
-            type: https://errors.facility-layout.warehouse-systems.dev/idempotency-key-reused
-            title: Idempotency-Key was already used with a different request
-            status: 422
-            detail: The Idempotency-Key header on this request was already used with a request that had a different body. Use a new Idempotency-Key for a genuinely different request.
-            instance: /sites
     BadRequest:
       description: >
         Malformed input: a body that is not valid JSON, a location code that
@@ -2172,7 +2451,7 @@ components:
     Site:
       type: object
       description: A physical facility/building — the root of the location hierarchy.
-      required: [siteCode, name, status]
+      required: [siteCode, name, status, siteRole]
       properties:
         siteCode:
           type: string
@@ -2184,6 +2463,83 @@ components:
           example: Fulfilment Centre One
         status:
           $ref: "#/components/schemas/Status"
+        siteRole:
+          $ref: "#/components/schemas/SiteRole"
+
+    SiteRole:
+      type: string
+      description: >
+        The site's role in the fulfilment network (ADR-0037). `UNSPECIFIED`
+        means nobody classified the site yet; it is the registration default
+        and cannot be assigned by `PUT /sites/{siteCode}/role`.
+      enum: [UNSPECIFIED, ROBOTICS_SORTABLE_FC, NON_SORTABLE_FC, TRADITIONAL_SORTABLE_FC, SUB_SAME_DAY_FC, FRESH_GROCERY_FC, XL_FC, SOFT_LINES_SORTABLE_FC, MICRO_FC, SIMULATED_FC, INBOUND_CROSS_DOCK, NATIONAL_INBOUND_CROSS_DOCK, RETURNS_CENTER, SORTATION_CENTER, DELIVERY_STATION, AIR_HUB_GATEWAY]
+      example: NON_SORTABLE_FC
+
+    SetSiteRoleRequest:
+      type: object
+      description: The role to assign; required, and never UNSPECIFIED.
+      required: [siteRole]
+      properties:
+        siteRole:
+          type: string
+          enum: [ROBOTICS_SORTABLE_FC, NON_SORTABLE_FC, TRADITIONAL_SORTABLE_FC, SUB_SAME_DAY_FC, FRESH_GROCERY_FC, XL_FC, SOFT_LINES_SORTABLE_FC, MICRO_FC, SIMULATED_FC, INBOUND_CROSS_DOCK, NATIONAL_INBOUND_CROSS_DOCK, RETURNS_CENTER, SORTATION_CENTER, DELIVERY_STATION, AIR_HUB_GATEWAY]
+          example: DELIVERY_STATION
+
+    SiteRoleTransferDefault:
+      type: object
+      description: The default transfer capability of one site role (ADR-0037).
+      required: [siteRole, transferOriginEnabled, transferDestinationEnabled]
+      properties:
+        siteRole:
+          $ref: "#/components/schemas/SiteRole"
+        transferOriginEnabled:
+          type: boolean
+          description: Sites of this role should be allowed to donate stock.
+          example: true
+        transferDestinationEnabled:
+          type: boolean
+          description: Sites of this role should be allowed to receive stock.
+          example: true
+
+    SiteTransferCapability:
+      type: object
+      description: >
+        A site's transfer capability (ADR-0035) and the revision of the last
+        SiteCapabilityChanged published for it. The revision only ever
+        increases per site; 0 means no snapshot was ever published.
+      required: [siteCode, transferOriginEnabled, transferDestinationEnabled, capabilityRevision]
+      properties:
+        siteCode:
+          type: string
+          example: WH1
+        transferOriginEnabled:
+          type: boolean
+          description: The site may donate stock to another site.
+          example: true
+        transferDestinationEnabled:
+          type: boolean
+          description: The site may receive stock from another site.
+          example: false
+        capabilityRevision:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Revision of the last published SiteCapabilityChanged for this site.
+          example: 1
+
+    SetSiteTransferCapabilityRequest:
+      type: object
+      description: The full capability snapshot; both fields are required.
+      required: [transferOriginEnabled, transferDestinationEnabled]
+      properties:
+        transferOriginEnabled:
+          type: boolean
+          description: Whether the site may donate stock to another site.
+          example: true
+        transferDestinationEnabled:
+          type: boolean
+          description: Whether the site may receive stock from another site.
+          example: false
 
     RegisterSiteRequest:
       type: object
@@ -2199,6 +2555,8 @@ components:
           minLength: 1
           description: Human-readable facility name.
           example: Fulfilment Centre One
+        siteRole:
+          $ref: "#/components/schemas/SiteRole"
 
     Zone:
       type: object
@@ -2383,6 +2741,21 @@ components:
           minimum: 0
           description: Optional explicit pick-path override for this slot. JSON null is treated as omitted.
           example: 42
+
+    HandlingUnit:
+      type: string
+      enum: [EACH, CASE, PALLET]
+      description: >
+        The unit of handling a slot accepts (ADR-0040). Absent on a slot
+        means none was recorded.
+      example: CASE
+
+    DeclareHandlingUnitRequest:
+      type: object
+      required: [handlingUnit]
+      properties:
+        handlingUnit:
+          $ref: "#/components/schemas/HandlingUnit"
 
     SetAisleGeometryRequest:
       type: object
@@ -2736,6 +3109,8 @@ components:
           minimum: 0
           description: Explicit pick-path override, when set (ADR-0017).
           example: 42
+        handlingUnit:
+          $ref: "#/components/schemas/HandlingUnit"
 
     LocationClassification:
       type: object
@@ -2787,6 +3162,8 @@ components:
             - $ref: "#/components/schemas/Capacity"
           description: >
             Optional. Omit to inherit the LocationType's default envelope.
+        handlingUnit:
+          $ref: "#/components/schemas/HandlingUnit"
 
     ImportRow:
       type: object

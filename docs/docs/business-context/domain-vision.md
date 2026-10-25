@@ -26,6 +26,7 @@ deliberately narrow, and the boundary is the interesting part.
 | Which aisle comes next in walk order? | **facility-layout** |
 | How many units of SKU X are in that location? | `inventory-storage` |
 | Is that stock reserved, usable, or unlocated? | `inventory-storage` |
+| Is SKU X hazmat or temperature-sensitive, and how big and heavy is one unit? | `product-master` |
 | Who is picking from it right now? | `fulfillment-execution` |
 | Should we release more work into that zone? | `wes-work-planning` |
 
@@ -70,7 +71,7 @@ extracted into one service, and everyone else references it.
 This service has **no** dependency on any other warehouse-systems service,
 and never will. It does not read `inventory-storage`'s stock, it does not
 know what a Task is, and it does not call anybody. Everything it publishes is
-its **Published Language**: twelve past-tense
+its **Published Language**: fifteen past-tense
 [domain events](../ddd/domain-events.md) plus a stable REST surface.
 
 That asymmetry is the point. A context that everyone depends on must be
@@ -80,8 +81,9 @@ services that use it are downstream **Conformists** to whatever shape this
 service publishes — they translate its vocabulary into their own models
 rather than negotiating a shared one. See
 [Context map](../ecosystem/context-map.md) for exactly who consumes what today
-(`inventory-storage` over Kafka, `wes-work-planning` and
-`fulfillment-execution` over REST, `warehouse-ops-agent` over MCP).
+(`inventory-storage` and `warehouse-planning` over Kafka,
+`wes-work-planning` and `fulfillment-execution` over REST,
+`warehouse-ops-agent` over MCP).
 
 ## The location code is the product
 

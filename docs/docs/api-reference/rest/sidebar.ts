@@ -32,6 +32,30 @@ const sidebar: SidebarsConfig = {
           label: "Get one site",
           className: "api-method get",
         },
+        {
+          type: "doc",
+          id: "api-reference/rest/set-site-role",
+          label: "Set a site's role in the fulfilment network",
+          className: "api-method put",
+        },
+        {
+          type: "doc",
+          id: "api-reference/rest/list-site-role-transfer-defaults",
+          label: "The default transfer capability of every site role",
+          className: "api-method get",
+        },
+        {
+          type: "doc",
+          id: "api-reference/rest/get-site-transfer-capability",
+          label: "Get a site's transfer capability",
+          className: "api-method get",
+        },
+        {
+          type: "doc",
+          id: "api-reference/rest/set-site-transfer-capability",
+          label: "Set a site's transfer capability",
+          className: "api-method put",
+        },
       ],
     },
     {
@@ -194,6 +218,12 @@ const sidebar: SidebarsConfig = {
           type: "doc",
           id: "api-reference/rest/set-location-geometry",
           label: "Set a location slot's physical geometry",
+          className: "api-method put",
+        },
+        {
+          type: "doc",
+          id: "api-reference/rest/declare-location-handling-unit",
+          label: "Declare a location slot's handling unit",
           className: "api-method put",
         },
         {

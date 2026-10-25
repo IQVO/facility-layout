@@ -11,8 +11,8 @@ paths:
 ## REST API (inbound adapter) — this is the "draw the warehouse" capability
 
 Structural / write side (builds up the model). Every route marked **(idem)**
-requires a caller-supplied `Idempotency-Key` header when `DATABASE_URL` is
-set (ADR-0019; skipped entirely in in-memory/no-database runs):
+requires a caller-supplied `Idempotency-Key` header, always (ADR-0019,
+ADR 0039; Postgres is mandatory):
 
 - `POST   /sites`                                    -> RegisterSite (idem)
 - `GET    /sites`                                    -> list sites

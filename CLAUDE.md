@@ -1,20 +1,23 @@
 # Facility Layout (Generic Subdomain — physical warehouse structure)
 
+<!-- harness-template: v4 -->
+
 System of record for **where things physically are in the building**: the
 site hierarchy (site, area, zone, aisle) and the coded storage slots in it.
 It owns whether a coded location **exists, is active, and is legal for a
 given kind of storage unit**. It does NOT own occupancy or stock — that
 stays in `inventory-storage`'s `Bin`/`StockUnit` aggregates.
 
-Domain source of truth: `/Users/claudioed/docs/amazon-fulfillment-ddd.md`
+Domain source of truth: `/Users/claudioed/docs/fulfillment-reference-ddd.md`
 and `/Users/claudioed/warehouse-systems-ddd.md`. Honor that ubiquitous
 language everywhere. Module `github.com/claudioed/facility-layout`, Go 1.26.
 
 ## Hard rules
 
 - **Own bounded context, own service**: consumed by `inventory-storage`
-  (WMS) and `wes-work-planning`/`fulfillment-execution` (WES). Never a
-  package bolted onto `inventory-storage`. This service is an Open Host
+  (WMS), `wes-work-planning`/`fulfillment-execution`/`warehouse-planning`
+  (WES) and `warehouse-ops-agent` (MCP). Never a package bolted onto
+  `inventory-storage`. This service is an Open Host
   Service with a Published Language (events + REST) and has NO inbound
   dependency on any other fleet service, ever. Downstream Conformists never
   get write access, and this service never reaches into their aggregates.
@@ -43,7 +46,7 @@ language everywhere. Module `github.com/claudioed/facility-layout`, Go 1.26.
   part of the Go module or its quality gate.
 - Every package has a doc comment; gofmt/go vet clean. Table-driven tests
   (domain + application with in-memory adapter), one httptest per endpoint,
-  build-tagged Postgres integration test (skipped without `DATABASE_URL`).
+  build-tagged Postgres integration tests (testcontainers; need Docker, never skip).
 - Config via env: `DATABASE_URL`, `HTTP_ADDR` (default `:8080`),
   `ANALYTICS_DATABASE_URL`, `EVENT_PUBLISHER` (`kafka` or unset).
 
@@ -71,7 +74,7 @@ Run from the repo root, not the docs site:
 make check-fast  # quick gate — run before saying "done"
 make check       # fmt-check + vet + build + lint + test — before every commit
 make check-all   # check + coverage(90%) + arch-test + bdd — before every push
-make integration # Postgres integration tests — needs DATABASE_URL
+make integration # Postgres/Kafka integration tests — needs Docker (testcontainers)
 make vuln        # govulncheck — after touching go.mod/go.sum
 make mutation    # gremlins on internal/domain — after changing domain behaviour
 ```

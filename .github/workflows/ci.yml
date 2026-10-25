@@ -47,6 +47,7 @@ jobs:
       - run: python3 scripts/harness/guide_lint.py
       - run: python3 scripts/harness/repo_lint.py
       - run: python3 scripts/harness/test_hook.py
+      - run: python3 scripts/harness/test_red_issue.py
       - run: python3 scripts/harness/test_repo_lint.py
 
 
@@ -97,26 +98,13 @@ jobs:
           go build ./...
           go vet ./...
 
-      - name: Unit tests with coverage
-        run: |
-          set -euo pipefail
-          go test ./... -race \
-            -coverprofile=coverage.out \
-            -coverpkg=./internal/domain/...,./internal/application/...
+      # Coverage scope and gate live ONLY in the Makefile (gap 16d: a copy of
+      # the package set here can drift from `make coverage`). Harness repo_lint
+      # rule R11 (coverage-scope) forbids a workflow passing -coverpkg itself.
+      - name: Unit tests with coverage + gate (make coverage)
+        run: make coverage
 
-      - name: Coverage gate
-        env:
-          THRESHOLD: "90"
-        run: |
-          set -euo pipefail
-          COVERAGE=$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}' | tr -d '%')
-          echo "### Coverage: ${COVERAGE}% (gate: ${THRESHOLD}%)" >> "$GITHUB_STEP_SUMMARY"
-          if awk -v c="$COVERAGE" -v t="$THRESHOLD" 'BEGIN { exit !(c < t) }'; then
-            echo "::error::coverage ${COVERAGE}% is below the ${THRESHOLD}% gate"
-            exit 1
-          fi
-
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: coverage
@@ -136,18 +124,49 @@ jobs:
       - name: Run BDD (godog/Gherkin) acceptance tests
         run: go test ./... -run TestFeatures -v
 
-  # Property-based contract testing: boots the service with its in-memory
-  # adapters and generates valid AND invalid requests for every operation
-  # in apis/openapi.yaml, asserting response conformance (status codes,
-  # content types, response schemas; positive data accepted, negative data
-  # rejected). Catches spec/implementation drift the example-based suites
-  # (unit, httptest, BDD) cannot see. Same invocation as `make contract`.
+  # Property-based contract testing: boots the REAL cmd/facility and generates
+  # valid AND invalid requests for every operation in apis/openapi.yaml,
+  # asserting response conformance (status codes, content types, response
+  # schemas; positive data accepted, negative data rejected). Catches
+  # spec/implementation drift the example-based suites (unit, httptest, BDD)
+  # cannot see. Same invocation as scripts/contract-test.sh.
+  #
+  # The service has no in-memory mode (ADR 0039): the job runs against a
+  # Postgres AND a Kafka service container and the script waits for /readyz
+  # (Postgres ping + broker metadata). The broker is confluent-local (KRaft,
+  # single node, the image the integration tests use); its default
+  # PLAINTEXT_HOST listener advertises localhost:9092, which is the
+  # service-container port mapping below (the first produce would otherwise
+  # fail on the inter-broker address). No topic is pre-created: the broker
+  # auto-creates them like the cluster does.
   # ============================================================
   # CLASSIFICATION: CONTRACT TESTING (OpenAPI / Schemathesis)
   # ============================================================
   contract:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: facility
+          POSTGRES_PASSWORD: facility
+          POSTGRES_DB: facility
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      kafka:
+        image: confluentinc/confluent-local:7.6.1
+        ports: ["9092:9092"]
+        options: >-
+          --health-cmd "kafka-topics --bootstrap-server localhost:29092 --list"
+          --health-interval 5s
+          --health-timeout 10s
+          --health-retries 20
+          --health-start-period 10s
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
@@ -159,6 +178,9 @@ jobs:
       - name: Install Schemathesis (pinned)
         run: python3 -m pip install "schemathesis==4.28.0"
       - name: Contract tests (Schemathesis over apis/openapi.yaml)
+        env:
+          DATABASE_URL: "postgres://facility:facility@localhost:5432/facility?sslmode=disable"
+          KAFKA_BROKERS: "localhost:9092"
         run: ./scripts/contract-test.sh
 
   # The MCP eval gate as its own named check: the eval suites from
@@ -184,32 +206,14 @@ jobs:
   integration:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: facility
-          POSTGRES_PASSWORD: facility
-          POSTGRES_DB: facility
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
+    # No Postgres service container: every integration test boots its own
+    # Postgres (and Kafka) via testcontainers on the runner's Docker daemon.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
-      - name: Create isolated analytics database
-        env:
-          PGPASSWORD: facility
-        run: psql -h localhost -U facility -d postgres -c 'CREATE DATABASE facility_analytics;'
-      - name: Integration tests
-        env:
-          DATABASE_URL: "postgres://facility:facility@localhost:5432/facility?sslmode=disable"
-          ANALYTICS_DATABASE_URL: "postgres://facility:facility@localhost:5432/facility_analytics?sslmode=disable"
+      - name: Integration tests (testcontainers; each test boots its own Postgres/Kafka)
         run: |
           set -euo pipefail
           go build -tags=integration ./...
@@ -296,7 +300,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: "20"
       - name: Dead code (go tool deadcode, -test so test-only helpers don't false-positive)
@@ -340,7 +344,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: "20"
       - name: Install Spectral (pinned via package-lock.json, npm ci)
@@ -348,6 +352,10 @@ jobs:
         run: npm ci
       - name: Lint OpenAPI spec
         run: .github/tooling/spectral/node_modules/.bin/spectral lint apis/openapi.yaml --ruleset .spectral.yaml --fail-severity=warn
+      - name: Lint OpenAPI spec (reports API)
+        # The facility-reports read API is a SEPARATE spec: a separate
+        # binary on a separate port against the analytical database (D18).
+        run: .github/tooling/spectral/node_modules/.bin/spectral lint apis/openapi-reports.yaml --ruleset .spectral.yaml --fail-severity=warn
 
   # ============================================================
   # CLASSIFICATION: PACKAGING VALIDATION (Helm chart)
@@ -381,20 +389,25 @@ jobs:
         working-directory: docs
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: "20"
           cache: npm
           cache-dependency-path: docs/package-lock.json
       - run: npm ci
-      - name: Regenerate REST API docs from apis/openapi.yaml
+      - name: Regenerate REST API docs from apis/openapi.yaml and apis/openapi-reports.yaml
         run: npm run clean-api-docs && npm run gen-api-docs
       - name: Fail if generated docs differ from what's committed
         run: |
           set -euo pipefail
-          if ! git diff --exit-code -- docs/api-reference/rest; then
-            echo "::error::docs/api-reference/rest is out of sync with apis/openapi.yaml." \
+          if ! git diff --exit-code -- docs/api-reference/rest docs/api-reference/rest-reports; then
+            echo "::error::docs/api-reference/rest{,-reports} is out of sync with apis/openapi{,-reports}.yaml." \
                  "Run 'npm run gen-api-docs' inside docs/ and commit the result."
+            exit 1
+          fi
+          untracked="$(git ls-files --others --exclude-standard -- docs/api-reference/rest docs/api-reference/rest-reports)"
+          if [ -n "$untracked" ]; then
+            echo "::error::generated API docs not committed:" $untracked
             exit 1
           fi
 
@@ -413,9 +426,33 @@ jobs:
         with:
           python-version: "3.x"
           check-latest: true
-      - uses: helm/chart-testing-action@6ec842c01de15ebb84c8627d2744a0c2f2755c9f # v2.8.0
+      - uses: helm/chart-testing-action@720270857a28afd41e2426521a7801db09e9b510 # v2.9.0
       - name: Run chart-testing (lint)
         run: ct lint --charts charts/facility-layout --validate-maintainers=false --check-version-increment=false
+
+  # ============================================================
+  # CLASSIFICATION: PACKAGING VALIDATION (Helm chart render tests)
+  # Runs on EVERY push and PR (unlike helm-lint above): the render
+  # assertions guard behaviour, not packaging -- e.g. the api Deployment
+  # mounting the chart ConfigMap via envFrom (gap fix D14), the frontend
+  # gating, and every Service selecting exactly one Deployment. Same
+  # scripts as `bash charts/facility-layout/tests/render_test.sh` and
+  # `python3 charts/facility-layout/tests/test_service_selectors.py`.
+  # ============================================================
+  chart-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5
+        with:
+          version: v3.16.4
+      - name: Chart render assertions
+        run: bash charts/facility-layout/tests/render_test.sh
+      - name: Service selector test
+        run: python3 charts/facility-layout/tests/test_service_selectors.py
+      - name: Kong config test (routes + plugins live in the chart, no auth plugin)
+        run: python3 charts/facility-layout/tests/test_kong_config.py
 
   # ============================================================
   # CLASSIFICATION: LINTERS & STATIC ANALYSIS (architecture fitness)
@@ -455,7 +492,7 @@ jobs:
           repository: IQVO/warehouse-ui-kit
           ref: develop
           path: warehouse-ui-kit
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: "22"
       - run: npm ci && npm run build
@@ -506,7 +543,7 @@ jobs:
           severity: 'CRITICAL,HIGH,MEDIUM'
           ignore-unfixed: true
       - name: Upload Trivy SARIF to Security tab
-        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
@@ -562,7 +599,7 @@ jobs:
           cosign sign --yes \
             ghcr.io/iqvo/facility-layout@${{ steps.build.outputs.digest }}
       - name: Generate SBOM (SPDX) for the published image
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           image: ghcr.io/iqvo/facility-layout@${{ steps.build.outputs.digest }}
           format: spdx-json
@@ -574,7 +611,7 @@ jobs:
             --type spdxjson \
             ghcr.io/iqvo/facility-layout@${{ steps.build.outputs.digest }}
       - name: Upload SBOM as a workflow artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: sbom
           path: sbom.spdx.json

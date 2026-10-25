@@ -84,10 +84,9 @@ resource, so there is no single `Location` to hand back.
 Every true resource-creation `POST` — `/sites`, `/sites/{siteCode}/zones`,
 `/sites/{siteCode}/structures`, `/zones/{zoneId}/aisles`,
 `/zones/{zoneId}/cross-aisles`, `/location-types`, `/placement-rules`,
-`/locations` — requires a caller-supplied `Idempotency-Key` header
-whenever the service is running with `DATABASE_URL` set (ADR-0019). The
-middleware is Postgres-backed: an in-memory/no-database run skips the
-check entirely. `POST /locations/import` (bulk, partial-success
+`/locations` — requires a caller-supplied `Idempotency-Key` header, always
+(ADR-0019, ADR 0039). The middleware is Postgres-backed and always on; there
+is no database-less run that skips the check. `POST /locations/import` (bulk, partial-success
 semantics) and `POST /locations/{locationCode}/decommission` (acts on an
 existing resource, not a creation) are deliberately excluded.
 
@@ -187,6 +186,7 @@ with `errors.Is`. The domain never knows an HTTP status code exists.
 | `empty-fixed-structure-id` | 400 | Fixed structure requires an id |
 | `empty-fixed-structure-site-code` | 400 | Fixed structure must be scoped to a site code |
 | `empty-fixed-structure-label` | 400 | Fixed structure requires a label |
+| `empty-fixed-structure-kind` | 400 | Fixed structure requires a kind |
 | `empty-cross-aisle-zone-id` | 400 | Cross-aisle must be scoped to a zone id |
 | `empty-cross-aisle-from-aisle` | 400 | Cross-aisle requires a from-aisle code |
 | `empty-cross-aisle-to-aisle` | 400 | Cross-aisle requires a to-aisle code |
@@ -194,6 +194,14 @@ with `errors.Is`. The domain never knows an HTTP status code exists.
 | `empty-import` | 400 | Facility layout import must contain at least one row |
 | `idempotency-key-required` | 400 | A resource-creation POST was missing its required `Idempotency-Key` header |
 | `idempotency-key-reused` | 422 | The same `Idempotency-Key` was reused with a different request body |
+| `concurrent-modification` | 409 | The resource was modified by another writer; re-fetch and retry ([ADR 0025](../adr/0025-optimistic-concurrency-version-column.md)) |
+| `segment-endpoints-not-real` | 422 | Centreline endpoints must both be real points |
+| `segment-start-end-equal` | 422 | Centreline start and end must differ |
+| `missing-geometry-field` | 400 | Geometry coordinates and dimensions must be numbers, not null |
+| `missing-sequence-hint` | 400 | Aisle sequenceHint is required |
+| `invalid-layout-format` | 400 | Layout format must be json or svg (`GET /sites/{siteCode}/layout?format=`) |
+| `invalid-report-query` | 400 | The report query is malformed or missing a required parameter (`cmd/facility-reports` only) |
+| `report-store-error` | 500 | The report could not be served (`cmd/facility-reports` only) |
 | `internal-error` | 500 | An unexpected internal error occurred |
 
 All `type` values are prefixed with

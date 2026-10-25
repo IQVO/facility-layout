@@ -33,4 +33,7 @@ var (
 	// ErrUnknownStatus is returned when a lifecycle status is not one of
 	// Active/UnderMaintenance/Decommissioned.
 	ErrUnknownStatus = errors.New("status must be one of Active, UnderMaintenance, Decommissioned")
+	// ErrUnknownHandlingUnit is returned when a handling unit is not one of
+	// EACH/CASE/PALLET (ADR-0040).
+	ErrUnknownHandlingUnit = errors.New("handling unit must be one of EACH, CASE, PALLET")
 )

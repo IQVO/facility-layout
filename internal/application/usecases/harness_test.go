@@ -11,6 +11,7 @@ import (
 	"github.com/claudioed/facility-layout/internal/application/usecases"
 	"github.com/claudioed/facility-layout/internal/domain/placement"
 	"github.com/claudioed/facility-layout/internal/domain/shared"
+	"github.com/claudioed/facility-layout/internal/domain/site"
 )
 
 // fixedNow is the deterministic clock every use case test runs against.
@@ -52,6 +53,7 @@ type harness struct {
 	getSiteLayout             *usecases.GetSiteLayout
 	getZoneGrid               *usecases.GetZoneGrid
 	setLocationGeometry       *usecases.SetLocationGeometry
+	declareHandlingUnit       *usecases.DeclareLocationHandlingUnit
 	setAisleGeometry          *usecases.SetAisleGeometry
 	registerFixedStructure    *usecases.RegisterFixedStructure
 	listFixedStructures       *usecases.ListFixedStructures
@@ -105,6 +107,7 @@ func newHarness(t *testing.T) *harness {
 	h.getSiteLayout = &usecases.GetSiteLayout{Sites: h.sites, Zones: h.zones, Aisles: h.aisles, Slots: h.slots, Structures: h.structures}
 	h.getZoneGrid = &usecases.GetZoneGrid{Zones: h.zones, Aisles: h.aisles, Slots: h.slots}
 	h.setLocationGeometry = &usecases.SetLocationGeometry{Slots: h.slots, Events: h.publisher, Clock: h.clock}
+	h.declareHandlingUnit = &usecases.DeclareLocationHandlingUnit{Slots: h.slots, Events: h.publisher, Clock: h.clock}
 	h.setAisleGeometry = &usecases.SetAisleGeometry{Aisles: h.aisles, Events: h.publisher, Clock: h.clock}
 	h.registerFixedStructure = &usecases.RegisterFixedStructure{Sites: h.sites, Structures: h.structures, Events: h.publisher, Clock: h.clock}
 	h.listFixedStructures = &usecases.ListFixedStructures{Sites: h.sites, Structures: h.structures}
@@ -135,7 +138,7 @@ func (h *harness) seedAmbientAisle() {
 
 func (h *harness) mustRegisterSite(code, name string) {
 	h.t.Helper()
-	if _, err := h.registerSite.Execute(h.ctx(), code, name); err != nil {
+	if _, err := h.registerSite.Execute(h.ctx(), code, name, site.RoleUnspecified); err != nil {
 		h.t.Fatalf("seeding site %q: %v", code, err)
 	}
 }

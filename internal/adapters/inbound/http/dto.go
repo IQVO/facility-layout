@@ -8,6 +8,23 @@ package http
 type registerSiteRequest struct {
 	SiteCode string `json:"siteCode"`
 	Name     string `json:"name"`
+	// SiteRole is optional (ADR-0037): omitted means UNSPECIFIED.
+	SiteRole string `json:"siteRole,omitempty"`
+}
+
+// setSiteRoleRequest is the body of PUT /sites/{siteCode}/role (ADR-0037).
+// A missing role decodes to "" and is rejected as invalid-site-role.
+type setSiteRoleRequest struct {
+	SiteRole string `json:"siteRole"`
+}
+
+// setTransferCapabilityRequest is the full snapshot PUT
+// /sites/{siteCode}/transfer-capability replaces (ADR-0035). Both fields
+// are required booleans; pointers turn an omitted or null field into a 400
+// instead of encoding/json's silent false.
+type setTransferCapabilityRequest struct {
+	TransferOriginEnabled      *bool `json:"transferOriginEnabled"`
+	TransferDestinationEnabled *bool `json:"transferDestinationEnabled"`
 }
 
 type registerZoneRequest struct {
@@ -62,6 +79,13 @@ type registerLocationSlotRequest struct {
 	DockFlow         string           `json:"dockFlow,omitempty"`
 	Activities       []string         `json:"activities,omitempty"`
 	CapacityOverride *capacityRequest `json:"capacityOverride,omitempty"`
+	HandlingUnit     string           `json:"handlingUnit,omitempty"`
+}
+
+// declareHandlingUnitRequest is the body of PUT /locations/{code}/handling-unit
+// (ADR-0040): the handling unit is required there, validated by the domain.
+type declareHandlingUnitRequest struct {
+	HandlingUnit string `json:"handlingUnit"`
 }
 
 type importRowRequest struct {
@@ -155,6 +179,25 @@ type siteResponse struct {
 	SiteCode string `json:"siteCode"`
 	Name     string `json:"name"`
 	Status   string `json:"status"`
+	// SiteRole is the site's role in the fulfilment network (ADR-0037).
+	SiteRole string `json:"siteRole"`
+}
+
+// siteRoleTransferDefaultResponse is one row of
+// GET /site-roles/transfer-defaults (ADR-0037).
+type siteRoleTransferDefaultResponse struct {
+	SiteRole                   string `json:"siteRole"`
+	TransferOriginEnabled      bool   `json:"transferOriginEnabled"`
+	TransferDestinationEnabled bool   `json:"transferDestinationEnabled"`
+}
+
+// transferCapabilityResponse is a site's current transfer capability and
+// the revision of its last published SiteCapabilityChanged (0 = never).
+type transferCapabilityResponse struct {
+	SiteCode                   string `json:"siteCode"`
+	TransferOriginEnabled      bool   `json:"transferOriginEnabled"`
+	TransferDestinationEnabled bool   `json:"transferDestinationEnabled"`
+	CapabilityRevision         int64  `json:"capabilityRevision"`
 }
 
 type zoneResponse struct {
@@ -234,6 +277,7 @@ type locationSlotResponse struct {
 	Position     *point3DResponse    `json:"position,omitempty"`
 	Dimensions   *dimensionsResponse `json:"dimensions,omitempty"`
 	PickSequence *int                `json:"pickSequence,omitempty"`
+	HandlingUnit string              `json:"handlingUnit,omitempty"`
 }
 
 // point3DResponse mirrors point3DRequest for a slot/structure position.

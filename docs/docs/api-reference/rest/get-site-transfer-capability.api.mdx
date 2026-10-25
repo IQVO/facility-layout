@@ -1,0 +1,70 @@
+---
+id: get-site-transfer-capability
+title: "Get a site's transfer capability"
+description: "Returns whether the site may act as the origin (donates stock) and/or the destination (receives stock) of an inter-warehouse transfer, and the revision of its last published SiteCapabilityChanged (ADR-0035). A site whose capability was never set is capable of nothing at revision 0 — exactly how network-inventory-planning treats a site it has never heard about."
+sidebar_label: "Get a site's transfer capability"
+hide_title: true
+hide_table_of_contents: true
+api: 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
+sidebar_class_name: "get api-method"
+info_path: docs/api-reference/rest/facility-layout-api
+custom_edit_url: null
+---
+
+import MethodEndpoint from "@theme/ApiExplorer/MethodEndpoint";
+import ParamsDetails from "@theme/ParamsDetails";
+import RequestSchema from "@theme/RequestSchema";
+import StatusCodes from "@theme/StatusCodes";
+import OperationTabs from "@theme/OperationTabs";
+import TabItem from "@theme/TabItem";
+import Heading from "@theme/Heading";
+import Translate from "@docusaurus/Translate";
+
+<Heading
+  as={"h1"}
+  className={"openapi__heading"}
+  children={"Get a site's transfer capability"}
+>
+</Heading>
+
+<MethodEndpoint
+  method={"get"}
+  path={"/sites/{siteCode}/transfer-capability"}
+  context={"endpoint"}
+>
+  
+</MethodEndpoint>
+
+
+
+Returns whether the site may act as the origin (donates stock) and/or the destination (receives stock) of an inter-warehouse transfer, and the revision of its last published SiteCapabilityChanged (ADR-0035). A site whose capability was never set is capable of nothing at revision 0 — exactly how network-inventory-planning treats a site it has never heard about.
+
+
+<Heading
+  id={"request"}
+  as={"h2"}
+  className={"openapi-tabs__heading"}
+>
+  <Translate id="theme.openapi.request.title">Request</Translate>
+</Heading>
+
+<ParamsDetails
+  {...require("./get-site-transfer-capability.ParamsDetails.json")}
+>
+  
+</ParamsDetails>
+
+<RequestSchema
+  {...require("./get-site-transfer-capability.RequestSchema.json")}
+>
+  
+</RequestSchema>
+
+<StatusCodes
+  {...require("./get-site-transfer-capability.StatusCodes.json")}
+>
+  
+</StatusCodes>
+
+
+      

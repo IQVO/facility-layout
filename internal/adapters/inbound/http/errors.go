@@ -63,6 +63,7 @@ var errorCategories = []errorCategory{
 
 	// 409 Conflict: a parent that exists but is no longer Active.
 	{usecases.ErrSiteNotActive, http.StatusConflict, problemInfo{"site-not-active", "Site is not active"}},
+	{site.ErrSiteDecommissioned, http.StatusConflict, problemInfo{"site-not-active", "Site is not active"}},
 	{usecases.ErrZoneNotActive, http.StatusConflict, problemInfo{"zone-not-active", "Zone is not active"}},
 	{usecases.ErrAisleNotActive, http.StatusConflict, problemInfo{"aisle-not-active", "Aisle is not active"}},
 
@@ -88,6 +89,7 @@ var errorCategories = []errorCategory{
 	{shared.ErrInvalidMaxVolume, http.StatusUnprocessableEntity, problemInfo{"invalid-max-volume", "Capacity max volume must be greater than zero"}},
 	{shared.ErrUnknownTemperatureClass, http.StatusUnprocessableEntity, problemInfo{"unknown-temperature-class", "Unknown temperature class"}},
 	{shared.ErrUnknownDirection, http.StatusUnprocessableEntity, problemInfo{"unknown-direction", "Unknown aisle direction"}},
+	{shared.ErrUnknownHandlingUnit, http.StatusUnprocessableEntity, problemInfo{"unknown-handling-unit", "Handling unit must be one of EACH, CASE, PALLET"}},
 	{shared.ErrUnknownStatus, http.StatusUnprocessableEntity, problemInfo{"unknown-status", "Unknown lifecycle status"}},
 	{shared.ErrInvalidZ, http.StatusUnprocessableEntity, problemInfo{"invalid-z", "Z coordinate must not be negative"}},
 	{shared.ErrInvalidDimensions, http.StatusUnprocessableEntity, problemInfo{"invalid-dimensions", "Width, depth, and height must all be greater than zero"}},
@@ -96,6 +98,7 @@ var errorCategories = []errorCategory{
 	{placement.ErrUnknownEffect, http.StatusUnprocessableEntity, problemInfo{"unknown-placement-effect", "Unknown placement rule effect"}},
 	{placement.ErrEmptyPredicate, http.StatusUnprocessableEntity, problemInfo{"empty-zone-predicate", "Placement rule predicate constrains nothing"}},
 	{placement.ErrUnknownLocationRole, http.StatusUnprocessableEntity, problemInfo{"unknown-location-role", "Unknown location role"}},
+	{site.ErrInvalidSiteRole, http.StatusUnprocessableEntity, problemInfo{"invalid-site-role", "Site role must be one of the known site roles"}},
 	{slot.ErrUnknownDockFlow, http.StatusUnprocessableEntity, problemInfo{"unknown-dock-flow", "Unknown dock flow"}},
 	{slot.ErrUnknownActivity, http.StatusUnprocessableEntity, problemInfo{"unknown-activity", "Unknown work center activity"}},
 	{slot.ErrDockFlowRequired, http.StatusUnprocessableEntity, problemInfo{"dock-flow-required", "A Dock location requires a dockFlow"}},
@@ -135,6 +138,7 @@ var errorCategories = []errorCategory{
 	{structure.ErrEmptyID, http.StatusBadRequest, problemInfo{"empty-fixed-structure-id", "Fixed structure requires an id"}},
 	{structure.ErrEmptySiteCode, http.StatusBadRequest, problemInfo{"empty-fixed-structure-site-code", "Fixed structure must be scoped to a site code"}},
 	{structure.ErrEmptyLabel, http.StatusBadRequest, problemInfo{"empty-fixed-structure-label", "Fixed structure requires a label"}},
+	{structure.ErrEmptyKind, http.StatusBadRequest, problemInfo{"empty-fixed-structure-kind", "Fixed structure requires a kind"}},
 	{aisle.ErrCrossAisleEmptyZoneID, http.StatusBadRequest, problemInfo{"empty-cross-aisle-zone-id", "Cross-aisle must be scoped to a zone id"}},
 	{aisle.ErrCrossAisleEmptyFromAisle, http.StatusBadRequest, problemInfo{"empty-cross-aisle-from-aisle", "Cross-aisle requires a from-aisle code"}},
 	{aisle.ErrCrossAisleEmptyToAisle, http.StatusBadRequest, problemInfo{"empty-cross-aisle-to-aisle", "Cross-aisle requires a to-aisle code"}},
@@ -142,6 +146,7 @@ var errorCategories = []errorCategory{
 	{usecases.ErrEmptyImport, http.StatusBadRequest, problemInfo{"empty-import", "Facility layout import must contain at least one row"}},
 	{errMissingGeometryField, http.StatusBadRequest, problemInfo{"missing-geometry-field", "Geometry coordinates and dimensions must be numbers, not null"}},
 	{errMissingSequenceHint, http.StatusBadRequest, problemInfo{"missing-sequence-hint", "Aisle sequenceHint is required"}},
+	{errMissingTransferCapabilityField, http.StatusBadRequest, problemInfo{"missing-transfer-capability-field", "transferOriginEnabled and transferDestinationEnabled are both required booleans"}},
 }
 
 // categoryFor returns the first category whose sentinel matches err via

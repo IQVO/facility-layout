@@ -1,3 +1,13 @@
+# Local dependencies for cmd/facility, cmd/mcp, cmd/facility-projector and
+# cmd/facility-reports: Postgres AND Kafka are the only runtime (ADR 0039),
+# there is no in-memory mode. `docker compose up -d --wait` then, for example:
+#
+#   export DATABASE_URL='postgres://facility:facility@localhost:5432/facility?sslmode=disable'
+#   export KAFKA_BROKERS='localhost:9092'
+#   go run ./cmd/facility
+#
+# The broker (confluent-local, KRaft, single node) advertises localhost:9092
+# to the host and auto-creates topics on first write, like the cluster does.
 services:
   postgres:
     image: postgres:16
@@ -15,6 +25,16 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+  kafka:
+    image: confluentinc/confluent-local:7.6.1
+    ports:
+      - "9092:9092"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:29092 --list"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 10s
 
 volumes:
   facility_pg_data:
