@@ -75,6 +75,11 @@ aggregate that can never be used alone.
 The bay and level pitch are the travel graph's fallback distances when an
 aisle has no real centreline geometry (default bay pitch 1.2 m).
 
+The `zoneCode` is a free-form code (`^[A-Z0-9]+$`), not an enum: the fleet
+convention gives `AMB`, `CHL`, `FRZ`, `HAZ`, `FWD`, `RSV`, `BLK` and `CPK`
+(case-pick faces) their meaning, and the aggregate does not validate any of
+them ([ADR 0042](../adr/0042-case-pick-zone-class-convention.md)).
+
 `TemperatureClass` and `Hazmat` are not decoration. They are the fields a
 `PlacementRule` predicate matches on, and they are what makes a Zone a
 *behavioral* classification rather than a label.

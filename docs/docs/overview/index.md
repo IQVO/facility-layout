@@ -29,7 +29,7 @@ WH1-STOR-AMB-A07-03-02-B
  |    |    |   |   |  `----- Level:    vertical level / shelf
  |    |    |   |   `-------- Bay:      bay / section along the aisle
  |    |    |   `------------ Aisle:    physical corridor
- |    |    `---------------- Zone:     behavioral class (AMB/CHL/FRZ/HAZ/FWD/RSV)
+ |    |    `---------------- Zone:     behavioral class (AMB/CHL/FRZ/HAZ/FWD/RSV/CPK)
  |    `--------------------- Area:     coarse functional area (STOR/RCV/PACK/STAGE)
  `-------------------------- Site:     the physical facility
 ```
