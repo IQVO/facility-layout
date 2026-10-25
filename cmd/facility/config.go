@@ -10,6 +10,11 @@ import (
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/postgres"
 )
 
+// defaultSiteCapabilityHeartbeatInterval is the SITE_CAPABILITY_HEARTBEAT_INTERVAL
+// default (ADR 0041): half of network-inventory-planning's 10 minute
+// freshness window for a site-capability fact.
+const defaultSiteCapabilityHeartbeatInterval = 5 * time.Minute
+
 // Boot errors of the mandatory configuration. Each names its variable
 // (ADR 0039): the service runs on real Postgres and real Kafka, with no
 // default and no degraded mode behind either.
@@ -87,5 +92,9 @@ func publisherConfigFromEnv() publisherConfig {
 		housekeepingInterval: durationEnvRaw("HOUSEKEEPING_INTERVAL", postgres.DefaultSweepInterval),
 		idempotencyKeyTTL:    durationEnvRaw("IDEMPOTENCY_KEY_TTL", postgres.DefaultIdempotencyKeyTTL),
 		outboxRetention:      durationEnvRaw("OUTBOX_RETENTION", postgres.DefaultOutboxRetention),
+		// Site capability heartbeat (ADR 0041): same convention as the
+		// housekeeping knobs -- unset or malformed falls back to the
+		// default, an explicit "0s"/"0" disables the loop.
+		siteCapabilityHeartbeatInterval: durationEnvRaw("SITE_CAPABILITY_HEARTBEAT_INTERVAL", defaultSiteCapabilityHeartbeatInterval),
 	}
 }

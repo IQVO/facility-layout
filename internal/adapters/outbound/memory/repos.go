@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/claudioed/facility-layout/internal/domain/aisle"
 	"github.com/claudioed/facility-layout/internal/domain/placement"
@@ -55,6 +56,24 @@ func (r *SiteRepo) List(_ context.Context) ([]*site.Site, error) {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Code() < out[j].Code() })
 	return out, nil
+}
+
+// ListCapabilityHeartbeatDue implements ports.SiteCapabilityHeartbeatSource.
+func (r *SiteRepo) ListCapabilityHeartbeatDue(_ context.Context, notAfter time.Time, limit int) ([]string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	codes := make([]string, 0)
+	for _, s := range r.sites {
+		last := s.CapabilityHeartbeatAt()
+		if s.IsActive() && s.CapabilityRevision() > 0 && (last.IsZero() || !last.After(notAfter)) {
+			codes = append(codes, s.Code())
+		}
+	}
+	sort.Strings(codes)
+	if limit > 0 && len(codes) > limit {
+		codes = codes[:limit]
+	}
+	return codes, nil
 }
 
 // ZoneRepo is an in-memory implementation of ports.ZoneRepo.
