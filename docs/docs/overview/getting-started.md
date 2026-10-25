@@ -42,6 +42,7 @@ migrate -source file://migrations -database "$DATABASE_URL" up
 | `OUTBOX_RELAY_INTERVAL` | `1s` | Outbox relay idle sleep |
 | `OUTBOX_MAX_ATTEMPTS` | `20` | Outbox relay attempt cap ([ADR 0036](../adr/0036-outbox-relay-attempt-cap.md)); `0` = unlimited |
 | `HOUSEKEEPING_INTERVAL` / `IDEMPOTENCY_KEY_TTL` / `OUTBOX_RETENTION` | `1h` / `24h` / `168h` | Housekeeping sweeper ([ADR 0026](../adr/0026-housekeeping-sweeper.md)); `0` disables |
+| `SITE_CAPABILITY_HEARTBEAT_INTERVAL` | `5m` | Site capability heartbeat ([ADR 0041](../adr/0041-site-capability-heartbeat.md)): re-publishes each declared site's `SiteCapabilityChanged` so consumers' freshness windows hold; `0` disables |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:5186` | Browser origins allowed to call the API |
 | `LOG_LEVEL`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME`, `SERVICE_VERSION`, `ENVIRONMENT` | `info`, `localhost:4317`, `facility-layout`, `dev`, `local` | Logging and OpenTelemetry |
 

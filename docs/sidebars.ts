@@ -168,6 +168,8 @@ const sidebars: SidebarsConfig = {
         'adr/0037-site-role-and-siterolechanged-cloudevents',
         'adr/0038-outbox-trace-context',
         'adr/0039-postgres-and-kafka-are-the-only-runtime',
+        'adr/0040-slot-handling-unit',
+        'adr/0041-site-capability-heartbeat',
       ],
     },
   ],
