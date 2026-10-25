@@ -36,7 +36,7 @@ LocationSlot can exist without one.
 ## Zones
 
 Behavioral classifications scoped to a Site (ambient, chilled, frozen,
-hazmat, forward-pick, reserve), bundling a LocationCode's Area and Zone
+hazmat, forward-pick, reserve, case-pick), bundling a LocationCode's Area and Zone
 segments. Their `TemperatureClass` and `Hazmat` flag are exactly what
 PlacementRules match on.
 

@@ -21,6 +21,7 @@ to. A ⚠ marks a term whose code name differs from the spoken word — see
 | Term | Meaning | Code identifier |
 |---|---|---|
 | **Site** | A physical facility/building. The root of the hierarchy. Has a `SiteCode` (non-empty, uppercase alphanumeric, unique) and a human name. | `site.Site` |
+| **Zone class** | The free-form `zoneCode` string (`AMB`, `CHL`, `FRZ`, `HAZ`, `FWD`, `RSV`, `CPK`, `BLK`, ...) that names a zone's behavioural role. It is not an enum and nothing validates it against a list; meaning is a fleet convention. `CPK` marks case-pick faces whose capacity slotting plans in cases ([ADR 0042](../adr/0042-case-pick-zone-class-convention.md)). | `zone.Zone` `zoneCode` |
 | **Zone** | A behavioral classification scoped to a Site, bundling the Area and Zone code segments into one aggregate. Carries a `TemperatureClass` (Ambient/Chilled/Frozen) and a `Hazmat` flag. Zones are not cosmetic — every `PlacementRule` is keyed by one. Its identity is the zone id `SITE-AREA-ZONE`. | `zone.Zone`, `Zone.ID()` |
 | **Aisle** | A physical corridor scoped to a Zone. Carries a `SequenceHint` (its walk-order position — the concrete travel-distance input the WES tier needs) and a `Direction` (`OneWay`/`TwoWay`). | `aisle.Aisle` |
 | **LocationType** | A reusable classification of physical slot shape/kind — `PalletRack`, `Shelf`, `ToteWall`, `BulkFloor`, `Staging`, `Amnesty` — each carrying a default capacity envelope (max weight, max volume) and a `LocationRole`. The names are well-known constants, not an enum: any name may be registered. | `placement.LocationType`; constants `placement.PalletRack` … `placement.Amnesty` |
@@ -59,7 +60,7 @@ to. A ⚠ marks a term whose code name differs from the spoken word — see
 |---|---|---|
 | Site | the physical facility/building | `WH1` |
 | Area | coarse functional area | `STOR` (storage), `RCV` (receiving), `PACK`, `STAGE` |
-| Zone | behavioral class *within* an area — drives rules | `AMB` (ambient), `CHL` (chilled), `FRZ` (frozen), `HAZ` (hazmat), `FWD` (forward-pick), `RSV` (reserve) |
+| Zone | behavioral class *within* an area — drives rules | `AMB` (ambient), `CHL` (chilled), `FRZ` (frozen), `HAZ` (hazmat), `FWD` (forward-pick), `RSV` (reserve), `CPK` (case-pick faces; a convention on this free-form class, [ADR 0042](../adr/0042-case-pick-zone-class-convention.md)) |
 | Aisle | physical corridor | `A07` |
 | Bay | a bay/section along the aisle | `03` |
 | Level | vertical level/shelf | `02` |

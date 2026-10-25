@@ -170,6 +170,7 @@ const sidebars: SidebarsConfig = {
         'adr/0039-postgres-and-kafka-are-the-only-runtime',
         'adr/0040-slot-handling-unit',
         'adr/0041-site-capability-heartbeat',
+        'adr/0042-case-pick-zone-class-convention',
       ],
     },
   ],

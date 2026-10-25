@@ -18,7 +18,7 @@ WH1-STOR-AMB-A07-03-02-B
  |    |    |   |   |  `----- Level:    vertical level / shelf
  |    |    |   |   `-------- Bay:      bay / section along the aisle
  |    |    |   `------------ Aisle:    physical corridor
- |    |    `---------------- Zone:     behavioral class (AMB/CHL/FRZ/HAZ/FWD/RSV)
+ |    |    `---------------- Zone:     behavioral class (AMB/CHL/FRZ/HAZ/FWD/RSV/CPK)
  |    `--------------------- Area:     coarse functional area (STOR/RCV/PACK/STAGE)
  `-------------------------- Site:     the physical facility
 ```
@@ -29,7 +29,7 @@ Segments read left to right, coarsest to finest.
 |---|---|---|
 | Site | the physical facility/building | `WH1` |
 | Area | coarse functional area | `STOR` (storage), `RCV` (receiving), `PACK`, `STAGE` |
-| Zone | behavioral class *within* an area — drives rules | `AMB` (ambient), `CHL` (chilled), `FRZ` (frozen), `HAZ` (hazmat), `FWD` (forward-pick), `RSV` (reserve) |
+| Zone | behavioral class *within* an area — drives rules | `AMB` (ambient), `CHL` (chilled), `FRZ` (frozen), `HAZ` (hazmat), `FWD` (forward-pick), `RSV` (reserve), `CPK` (case-pick faces; a convention on this free-form class, [ADR 0042](../adr/0042-case-pick-zone-class-convention.md)) |
 | Aisle | physical corridor | `A07` |
 | Bay | a bay/section along the aisle | `03` |
 | Level | vertical level/shelf | `02` |

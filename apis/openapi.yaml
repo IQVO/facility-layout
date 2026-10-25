@@ -559,11 +559,21 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/RegisterZoneRequest"
-            example:
-              areaCode: STOR
-              zoneCode: FRZ
-              temperatureClass: Frozen
-              hazmat: false
+            examples:
+              frozenStorage:
+                summary: A frozen storage zone
+                value:
+                  areaCode: STOR
+                  zoneCode: FRZ
+                  temperatureClass: Frozen
+                  hazmat: false
+              casePickFaces:
+                summary: A case-pick (CPK) zone, a convention on the free-form zone code (ADR 0042)
+                value:
+                  areaCode: STOR
+                  zoneCode: CPK
+                  temperatureClass: Ambient
+                  hazmat: false
       responses:
         "201":
           description: Zone registered.
@@ -2429,7 +2439,7 @@ components:
           example: STOR
         zone:
           type: string
-          description: Behavioral class within the area (AMB, CHL, FRZ, HAZ, FWD, RSV).
+          description: Behavioral class within the area (AMB, CHL, FRZ, HAZ, FWD, RSV, CPK). CPK = case-pick faces whose capacity slotting plans in cases (a convention on this free-form string, not validated here; ADR 0042).
           example: AMB
         aisle:
           type: string
@@ -2620,7 +2630,7 @@ components:
         zoneCode:
           type: string
           pattern: "^[A-Z0-9]+$"
-          description: Behavioral zone, e.g. AMB, CHL, FRZ, HAZ, FWD, RSV.
+          description: Behavioral zone, e.g. AMB, CHL, FRZ, HAZ, FWD, RSV, CPK. CPK = case-pick faces whose capacity slotting plans in cases. Free-form, so any [A-Z0-9]+ code is accepted and none is validated against a list (ADR 0042).
           example: FRZ
         temperatureClass:
           $ref: "#/components/schemas/TemperatureClass"
