@@ -92,6 +92,7 @@ updated. The history of what was believed and when is the point.
 | [0040](./0040-slot-handling-unit.md) | A slot declares the handling unit it accepts: optional `handlingUnit` (EACH\|CASE\|PALLET) on LocationSlot, `PUT /locations/{code}/handling-unit`, additive on `LocationSlotRegistered`, new `LocationSlotHandlingUnitDeclared` event | Accepted |
 | [0041](./0041-site-capability-heartbeat.md) | Site capability heartbeat: every `SITE_CAPABILITY_HEARTBEAT_INTERVAL` (default 5m) the current `SiteCapabilityChanged` of each active, declared site is re-published through the outbox with a fresh `time` and `capability_revision` + 1 (NIP only supersedes on a strictly greater revision), so its 10 minute freshness window holds; a PUT of the current value stays a no-op (extends ADR-0035) | Accepted |
 | [0042](./0042-case-pick-zone-class-convention.md) | The case-pick zone is a convention on the free-form zone class: `CPK` (alongside `FWD`, `BLK`, `RSV`), not a new type; no schema or event change, nothing validates it | Accepted |
+| [0043](./0043-a2a-inbound-adapter.md) | A2A inbound adapter (third driving adapter): two curated read skills, `site_layout` and `travel_distance`, over the same read use cases as REST and MCP; no write skill because the MCP surface is read-only; message-only, problems answered in-band with the REST status; `cmd/a2a` on 8093 | Accepted |
 
 ## The Kafka record that was deferred until the adapter existed
 
