@@ -12,7 +12,9 @@ This test is the sensor for that decision. It fails if:
   * the annotation names KongPlugins the chart does not actually render,
   * any auth/authorization plugin (key-auth, jwt, oidc, acl, basic-auth,
     oauth2, ...) is ever configured — forbidden fleet-wide,
-  * the MCP route does not rewrite its prefix to /mcp, or the reports route
+  * the MCP route does not rewrite its prefix to /mcp, the A2A route to /
+    (so /.well-known/agent-card.json stays reachable under the same prefix),
+    or the reports route
     to /reports,
   * defaults (no --set flags) render any Kong object at all — standalone
     installs without Kong must be unaffected.
@@ -57,6 +59,10 @@ ENABLE_KONG = [
     "--set", "mcp.route.enabled=true",
     "--set", "mcp.route.parentRefs[0].name=warehouse-gateway",
     "--set", "mcp.route.parentRefs[0].namespace=kong",
+    "--set", "a2a.enabled=true",
+    "--set", "a2a.route.enabled=true",
+    "--set", "a2a.route.parentRefs[0].name=warehouse-gateway",
+    "--set", "a2a.route.parentRefs[0].namespace=kong",
     "--set", "analytics.enabled=true",
     "--set", "analytics.reports.route.enabled=true",
     "--set", "analytics.reports.route.parentRefs[0].name=warehouse-gateway",
@@ -121,7 +127,10 @@ def main() -> int:
                 "plugins are forbidden at the gateway by fleet-wide decision"
             )
 
-    # 4. Rewrite targets: MCP -> /mcp, reports -> /reports.
+    # 4. Rewrite targets: MCP -> /mcp, A2A -> /, reports -> /reports.
+    a2a_routes = [r for r in routes if r["metadata"]["name"].endswith("-a2a")]
+    if len(a2a_routes) != 1:
+        failures.append(f"expected exactly one A2A route, rendered {len(a2a_routes)}")
     for r in routes:
         name = r["metadata"]["name"]
         for rule in r.get("spec", {}).get("rules", []):
@@ -130,6 +139,8 @@ def main() -> int:
                     target = f["urlRewrite"]["path"].get("replacePrefixMatch")
                     if name.endswith("-mcp") and target != "/mcp":
                         failures.append(f"MCP route {name} rewrites to {target!r}, expected '/mcp'")
+                    if name.endswith("-a2a") and target != "/":
+                        failures.append(f"A2A route {name} rewrites to {target!r}, expected '/'")
                     if name.endswith("-reports") and target != "/reports":
                         failures.append(f"reports route {name} rewrites to {target!r}, expected '/reports'")
 

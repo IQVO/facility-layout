@@ -103,6 +103,18 @@ the drain gate plus a Postgres ping plus a Kafka broker metadata check.
 | `MIGRATIONS_PATH` | `migrations` | no | Directory of the OLTP SQL migrations. | `cmd/mcp/main.go` |
 | `REPORTS_BASE_URL` | *(unset)* | no | Base URL of `facility-reports`, for example `http://facility-reports:8092`. When set, the catalog-growth report tool is registered and calls the reports REST API. When unset, that tool is not registered at all. | `cmd/mcp/main.go` |
 
+## `a2a` (A2A agent, JSON-RPC over HTTP)
+
+| Variable | Default | Required | Effect | Read in |
+|---|---|---|---|---|
+| `A2A_ADDR` | `:8093` | no | Listen address. The JSON-RPC endpoint is mounted at both `/` and `/a2a`, the Agent Card at `/.well-known/agent-card.json`, and `/healthz` answers liveness. | `cmd/a2a/main.go` |
+| `A2A_AGENT_URL` | *(none)* | **yes** | Absolute http(s) URL of this agent's JSON-RPC endpoint, advertised on the Agent Card. If unset or not an absolute http(s) URL, the binary exits at boot with `A2A_AGENT_URL is required` / `is not an absolute http(s) URL`. The chart defaults it to the in-cluster Service DNS. | `cmd/a2a/main.go` |
+| `DATABASE_URL` | *(none)* | **yes** | OLTP Postgres DSN (same database as `facility`, read-only use cases only). If unset, the binary exits at boot with `DATABASE_URL is required`. There is no in-memory store. | `cmd/a2a/main.go` |
+| `MIGRATIONS_DATABASE_URL` | value of `DATABASE_URL` | no | Direct DSN for the migration step (ADR-0023). | `cmd/a2a/main.go` |
+| `MIGRATIONS_PATH` | `migrations` | no | Directory of the OLTP SQL migrations. | `cmd/a2a/main.go` |
+
+`a2a` needs no `KAFKA_BROKERS`: it is read-only and publishes nothing (ADR-0043).
+
 ## Boot-time behaviour that depends on configuration
 
 - **Boot retry.** Each binary retries its first Postgres operations (running

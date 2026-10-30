@@ -171,6 +171,7 @@ const sidebars: SidebarsConfig = {
         'adr/0040-slot-handling-unit',
         'adr/0041-site-capability-heartbeat',
         'adr/0042-case-pick-zone-class-convention',
+        'adr/0043-a2a-inbound-adapter',
       ],
     },
   ],

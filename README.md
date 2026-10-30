@@ -54,7 +54,7 @@ Page map (source under `docs/docs/`):
 | Development | [Testing](docs/docs/development/testing.md) |
 | Ecosystem | [Context map](docs/docs/ecosystem/context-map.md), [Consuming this service (integration)](docs/docs/ecosystem/consuming-this-service.md) |
 | DDD | [Use cases](docs/docs/ddd/use-cases.md), [Subdomain classification](docs/docs/ddd/subdomain-classification.md), [Aggregates](docs/docs/ddd/aggregates.md), [Domain events](docs/docs/ddd/domain-events.md), [DDD artifact pack](docs/docs/ddd/ddd-artifacts.md) |
-| MCP & analytics | [MCP governance charter](docs/docs/mcp/governance-charter.md), [Catalog growth report](docs/docs/analytics/catalog-growth-report.md) |
+| MCP, A2A & analytics | [MCP governance charter](docs/docs/mcp/governance-charter.md), [A2A inbound adapter (ADR-0043)](docs/docs/adr/0043-a2a-inbound-adapter.md), [Catalog growth report](docs/docs/analytics/catalog-growth-report.md) |
 | Decisions | [ADR index](docs/docs/adr/index.md) |
 
 ---
@@ -88,6 +88,7 @@ Hexagonal / ports & adapters. Dependencies point **inward only**:
 ```
 cmd/facility/                 main.go — composition root for the REST service (the only place that knows all layers)
 cmd/mcp/                      read-only MCP server (Streamable HTTP)
+cmd/a2a/                      read-only A2A agent (JSON-RPC over HTTP, Agent Card at /.well-known/agent-card.json)
 cmd/facility-projector/       analytics projector (the only analytical-DB writer)
 cmd/facility-reports/         analytics reader (serves /reports/catalog-growth)
 internal/
@@ -104,6 +105,7 @@ internal/
   adapters/
     inbound/http/             chi handlers, DTOs, RFC 7807 error mapping, SVG rendering
     inbound/mcp/              MCP tools, resource template and prompt
+    inbound/a2a/              A2A skills: site_layout, travel_distance (both read; the MCP surface has no write)
     inbound/kafka/            analytics topic consumer (projector)
     outbound/postgres/        pgxpool repos, golang-migrate runner, UnitOfWork, transactional outbox + relay, sweeper
     outbound/memory/          thread-safe in-memory repos: TEST DOUBLES only, never imported by cmd/** (ADR 0039)
@@ -254,6 +256,11 @@ migrate -source file://migrations -database "$DATABASE_URL" up
 
 `cmd/mcp` reads `MCP_ADDR` (default `:8090`), `DATABASE_URL` (**required**,
 boot error when unset), `MIGRATIONS_PATH` and `REPORTS_BASE_URL`.
+
+`cmd/a2a` reads `A2A_ADDR` (default `:8093`), `DATABASE_URL` (**required**),
+`A2A_AGENT_URL` (**required**, the absolute http(s) URL advertised on the Agent
+Card; boot error when unset or relative), `MIGRATIONS_DATABASE_URL` and
+`MIGRATIONS_PATH`.
 
 See [Observability](#observability) for what each of the OTel variables
 actually changes.
@@ -976,6 +983,42 @@ helm upgrade --install facility-layout ./charts/facility-layout \
   --set database.url="postgres://facility:***@postgres:5432/facility?sslmode=disable" \
   --set kafka.brokers="kafka:9092" \
   --set mcp.enabled=true
+```
+
+### Running the A2A agent in Kubernetes
+
+The A2A agent ([ADR-0043](docs/docs/adr/0043-a2a-inbound-adapter.md)) is another
+binary in the same image, `/app/a2a`, and the Helm chart deploys it as a
+separate Deployment + ClusterIP Service (`<release>-a2a`, port `8093`) when
+`a2a.enabled=true` (default `false`). It runs the same read use cases over the
+same `DATABASE_URL` secret as the main deployment and needs no Kafka (nothing
+in it writes or publishes). It reads `A2A_ADDR` (default `:8093`) and the
+mandatory `A2A_AGENT_URL`, the absolute URL advertised on the Agent Card (the
+chart defaults it to the in-cluster Service DNS; override with `a2a.agentUrl`).
+`GET /healthz` serves the probes; the Agent Card is at
+`/.well-known/agent-card.json` and the JSON-RPC endpoint is mounted at both `/`
+and `/a2a` (`http://<release>-a2a:8093/a2a` is the fleet's `*_A2A_ENDPOINT`
+convention). With `a2a.route.enabled=true` Kong exposes it at
+`/api/a2a/facility-layout`, rewritten to `/`.
+
+Two skills, both reads (the MCP surface has no write, so the agent has none),
+called as a `SendMessage` data part `{"skill": "<id>", "arguments": {...}}`:
+
+- `site_layout`: `{siteCode}` returns the site's zones, aisles (walk order) and
+  slot codes, plus its fixed structures.
+- `travel_distance`: `{from, to}` (seven-segment location codes) returns the
+  shortest map distance in metres, flagged `estimated` when any leg used a
+  bay-pitch fallback.
+
+Domain rejections come back as an in-band RFC 7807 `problem` with the same status
+classification as REST (404 not found, 400 malformed, 422 no route, 500
+internal). The endpoint is unauthenticated, like REST and MCP.
+
+```sh
+helm upgrade --install facility-layout ./charts/facility-layout \
+  --set database.url="postgres://facility:***@postgres:5432/facility?sslmode=disable" \
+  --set kafka.brokers="kafka:9092" \
+  --set a2a.enabled=true
 ```
 
 Linted in CI with `ct lint --charts charts/facility-layout`.
