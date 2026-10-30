@@ -1,13 +1,5 @@
 # facility-layout
 
-> **⚠️ Study project.** This repository is an educational exercise in
-> Domain-Driven Design applied to warehouse management/execution systems. It
-> follows real industry-standard patterns and terminology (the
-> Site-Area-Zone-Aisle-Bay-Level-Position location-code hierarchy,
-> RFC 7807, hexagonal architecture) but is **not a production system** and
-> is **not affiliated with, endorsed by, or representative of any real-world
-> other company**.
-
 The **Facility Layout** bounded context of the `warehouse-systems` platform:
 the system of record for **where things physically are in the building**.
 
@@ -28,6 +20,13 @@ storage-capacity tally), `wes-work-planning` (`GET /distance`),
 `fulfillment-execution`
 (`GET /locations/{code}` for a location's role), and `warehouse-ops-agent`
 (the MCP tools and the catalog-growth report).
+
+## Disclaimer
+
+This project is a domain-driven design study. It is not associated with,
+endorsed by or affiliated with any company, and it uses no company's code,
+data, logos or trademarks. All names, figures and examples are illustrative
+or synthetic.
 
 ---
 
@@ -1071,3 +1070,13 @@ python3 charts/facility-layout/tests/test_service_selectors.py
 
 which proves every Service selects exactly one Deployment — the OLTP Service
 must never select the frontend, analytics or MCP pods.
+
+## Architecture Decision Records
+
+The ADR index lives at [docs/docs/adr/index.md](docs/docs/adr/index.md) — 42 decisions, from the
+hexagonal layout to the CloudEvents-only envelope and the transactional
+outbox.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
