@@ -1,0 +1,48 @@
+{{- if and .Values.a2a.enabled .Values.a2a.route.enabled -}}
+{{- /*
+A2A exposure through Kong (fleet decision 2026-10-13: Kong config lives in
+the application charts, not warehouse-infra Terraform).
+
+Host contract: /api/a2a/facility-layout -> Service facility-layout-a2a:8093,
+prefix rewritten to / (the JSON-RPC root mount; /.well-known/agent-card.json
+stays reachable under the same prefix, so card discovery works through the
+gateway too). healthz deliberately stays off the host - it is a Kubernetes
+probe concern, not a public endpoint.
+
+Plugins: this chart's cors + prometheus + opentelemetry KongPlugins (see
+kong-plugins.yaml), attached by annotation. NO auth plugin — endpoints are
+unauthenticated by fleet-wide decision.
+*/ -}}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "facility-layout.a2aFullname" . }}
+  labels:
+    {{- include "facility-layout.labels" . | nindent 4 }}
+    app.kubernetes.io/component: a2a
+  annotations:
+    konghq.com/plugins: {{ include "facility-layout.kongPluginNames" . | quote }}
+spec:
+  parentRefs:
+    {{- range .Values.a2a.route.parentRefs }}
+    - name: {{ .name }}
+      namespace: {{ .namespace }}
+      {{- if .sectionName }}
+      sectionName: {{ .sectionName }}
+      {{- end }}
+    {{- end }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: {{ .Values.a2a.route.path }}
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /
+      backendRefs:
+        - name: {{ include "facility-layout.a2aFullname" . }}
+          port: {{ .Values.a2a.service.port }}
+{{- end }}

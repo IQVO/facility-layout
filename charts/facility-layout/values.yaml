@@ -405,6 +405,52 @@ mcp:
       cpu: 100m
       memory: 128Mi
 
+# --- A2A agent (ADR-0043) ---
+# The Agent2Agent (A2A) agent (cmd/a2a): a third driving adapter over the SAME
+# read use cases as the REST and MCP surfaces, a third deployable from the same
+# image (`/app/a2a`). Skills: site_layout and travel_distance, both reads --
+# facility-layout's MCP surface offers no write, so the agent offers none. It
+# reads the SAME OLTP database as the main deployment (database.url /
+# database.existingSecret) and needs no Kafka (nothing here writes or
+# publishes). A2A carries delegation only; facts between contexts still travel
+# as CloudEvents from the api Deployment's outbox relay.
+# Off by default; warehouse-infra turns it on.
+a2a:
+  enabled: false
+  replicaCount: 1
+  # A2A_ADDR the binary listens on; keep in sync with service.targetPort.
+  # (8090 is the MCP server, 8091 the projector admin port and 8092 the
+  # reports API, so 8093.)
+  httpAddr: ":8093"
+  # Absolute URL advertised on the Agent Card. Empty defaults to this
+  # release's in-cluster Service DNS
+  # (http://<release>-a2a.<ns>.svc.cluster.local:8093/); warehouse-infra can
+  # override it with the Kong path when the agent must be reachable off-cluster.
+  agentUrl: ""
+  service:
+    type: ClusterIP
+    port: 8093
+    targetPort: 8093
+  # Kong exposure of the A2A agent (a2a-route.yaml): host path
+  # /api/a2a/<context> rewritten to / (JSON-RPC root; the well-known agent
+  # card stays reachable under the same prefix). Off by default;
+  # warehouse-infra turns it on with the real parentRefs and path.
+  route:
+    enabled: false
+    path: "/api/a2a/facility-layout"
+    parentRefs:
+      - name: ""
+        namespace: ""
+        sectionName: "http"
+  extraEnv: []
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
 # --- frontend (REMOTE Module Federation remote) ---
 # The operator SPA remote, built from web/ and served by its own
 # nginx-unprivileged pod. In the kind cluster it is reached through

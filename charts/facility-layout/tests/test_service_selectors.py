@@ -3,7 +3,7 @@
 
 Why this exists: before the frontend workload was added, every Service in this
 chart selected on the base selector labels alone (name + instance). Those labels
-are identical on the OLTP, analytics projector, analytics reports and MCP pods,
+are identical on the OLTP, analytics projector, analytics reports, MCP and A2A pods,
 so the OLTP Service's EndpointSlice genuinely contained all of them -- verified
 live in the kind cluster, where a Kong request for an OLTP /healthz was
 answered by the analytics reports pod.
@@ -37,6 +37,7 @@ ENABLE_EVERYTHING = [
     "--set", "frontend.enabled=true",
     "--set", "analytics.enabled=true",
     "--set", "mcp.enabled=true",
+    "--set", "a2a.enabled=true",
 ]
 
 
@@ -77,6 +78,11 @@ def main() -> int:
     elif selector_of(services["facility-layout"]).get("app.kubernetes.io/component") != "api":
         failures.append("the OLTP Service selector must pin component=api")
 
+    if "facility-layout-a2a" not in services:
+        failures.append("the A2A Service was not rendered with a2a.enabled=true")
+    elif selector_of(services["facility-layout-a2a"]).get("app.kubernetes.io/component") != "a2a":
+        failures.append("the A2A Service selector must pin component=a2a")
+
     if "facility-layout-frontend" not in services:
         failures.append("the frontend Service was not rendered with frontend.enabled=true")
     elif selector_of(services["facility-layout-frontend"]).get("app.kubernetes.io/component") != "frontend":
@@ -110,6 +116,15 @@ def main() -> int:
     ]
     if stray:
         failures.append(f"frontend resources rendered with default values: {stray}")
+
+    # The A2A agent is off by default too.
+    stray_a2a = [
+        d["metadata"]["name"]
+        for d in render(REQUIRED)
+        if d.get("metadata", {}).get("name", "").endswith("-a2a")
+    ]
+    if stray_a2a:
+        failures.append(f"A2A resources rendered with default values: {stray_a2a}")
 
     if failures:
         for f in failures:

@@ -65,6 +65,48 @@ func TestMCPAdapterDependencyRule(t *testing.T) {
 	})
 }
 
+// TestA2AAdapterDependencyRule encodes ADR-0043: like the MCP adapter, the A2A
+// inbound adapter is additive. It may depend only on the application and
+// domain layers (never on outbound adapters, never on another inbound
+// adapter, never on cmd), and nothing else in this codebase may depend on it.
+func TestA2AAdapterDependencyRule(t *testing.T) {
+	moduleInfo := configuration.Load(modulePath)
+
+	t.Run("a2a adapter depends only on application and domain", func(t *testing.T) {
+		result := archgo.CheckArchitecture(moduleInfo, configuration.Config{
+			DependenciesRules: []*configuration.DependenciesRule{
+				{
+					Package: "**.internal.adapters.inbound.a2a.**",
+					ShouldOnlyDependsOn: &configuration.Dependencies{
+						Internal: []string{
+							"**.internal.adapters.inbound.a2a.**",
+							"**.internal.application.**",
+							"**.internal.domain.**",
+						},
+					},
+				},
+			},
+		})
+
+		assertArchGoPasses(t, result)
+	})
+
+	t.Run("nothing else depends on the a2a adapter", func(t *testing.T) {
+		result := archgo.CheckArchitecture(moduleInfo, configuration.Config{
+			DependenciesRules: []*configuration.DependenciesRule{
+				{
+					Package: "**.internal.**",
+					ShouldNotDependsOn: &configuration.Dependencies{
+						Internal: []string{"**.internal.adapters.inbound.a2a.**"},
+					},
+				},
+			},
+		})
+
+		assertArchGoPasses(t, result)
+	})
+}
+
 // assertArchGoPasses is a shared helper for the two-return-shape arch-go
 // result (DependenciesRuleResult here; architecture_test.go's existing
 // assertPass has the same semantics — kept as a separate function to avoid

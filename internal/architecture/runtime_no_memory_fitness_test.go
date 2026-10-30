@@ -7,7 +7,7 @@ package architecture
 //   - TestRuntimeBinaryHasNoInMemoryAdapters: no non-test file under cmd/**
 //     may import internal/adapters/outbound/memory (or anything below it). The
 //     in-memory adapters are TEST DOUBLES for unit and BDD tests; the shipped
-//     binaries (cmd/facility, cmd/mcp, cmd/facility-projector,
+//     binaries (cmd/facility, cmd/mcp, cmd/a2a, cmd/facility-projector,
 //     cmd/facility-reports) run on real Postgres and real Kafka only. Without
 //     this rule a cmd can fall back to them when DATABASE_URL is unset, start
 //     no relay without KAFKA_BROKERS, so a misconfigured deployment comes up
