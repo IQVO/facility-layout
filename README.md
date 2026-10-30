@@ -1,5 +1,7 @@
 # facility-layout
 
+[![CI](https://github.com/IQVO/facility-layout/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/IQVO/facility-layout/actions/workflows/ci.yml?query=branch%3Adevelop) [![coverage gate](https://img.shields.io/badge/coverage%20gate-90%25-brightgreen)](https://github.com/IQVO/facility-layout/blob/develop/Makefile) [![Go](https://img.shields.io/badge/go-1.26.10-00ADD8?logo=go&logoColor=white)](https://github.com/IQVO/facility-layout/blob/develop/go.mod) [![release](https://img.shields.io/github/v/release/IQVO/facility-layout?sort=semver)](https://github.com/IQVO/facility-layout/releases) [![docs](https://img.shields.io/badge/docs-iqvo.github.io-blue)](https://iqvo.github.io/facility-layout/) [![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/IQVO/facility-layout/blob/develop/LICENSE)
+
 The **Facility Layout** bounded context of the `warehouse-systems` platform:
 the system of record for **where things physically are in the building**.
 
