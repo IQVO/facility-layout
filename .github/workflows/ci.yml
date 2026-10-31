@@ -80,6 +80,39 @@ jobs:
           echo "### gocyclo — functions over 10 (informational; the gate is 15)" >> "$GITHUB_STEP_SUMMARY"
           go list -f '{{.Dir}}' ./... | grep -v '/web/' | xargs -r gocyclo -over 10 | awk '!seen[$0]++' | grep -v '/web/' | tee -a "$GITHUB_STEP_SUMMARY" || true
 
+  # File-length budget: at most 300 lines of code per production Go file
+  # (revive file-length-limit; comments and blank lines are not counted;
+  # settings in .golangci.yml). Pull requests into develop: BLOCKING for every
+  # Go file the PR adds or touches, so an oversized legacy file is split the
+  # next time it changes. Release PRs (develop -> main), push and schedule: an
+  # informational report of the whole backlog, so releases are never blocked.
+  # ============================================================
+  # CLASSIFICATION: LINTERS & STATIC ANALYSIS (file length)
+  # ============================================================
+  file-length:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false          # golangci-lint-action manages its own cache
+      - name: file length of the Go files this PR adds or touches (blocking)
+        if: github.event_name == 'pull_request' && github.base_ref == 'develop'
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
+        with:
+          version: v2.14.0
+          args: --timeout=5m --enable-only revive --new-from-merge-base=origin/develop --whole-files
+      - name: file length backlog (informational)
+        if: github.event_name != 'pull_request' || github.base_ref != 'develop'
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
+        with:
+          version: v2.14.0
+          args: --timeout=5m --enable-only revive --issues-exit-code=0
+
   # ============================================================
   # CLASSIFICATION: UNIT TESTING
   # ============================================================
