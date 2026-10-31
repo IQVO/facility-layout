@@ -34,7 +34,7 @@ jobs:
           cache: false          # golangci-lint-action manages its own cache
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
-          version: v2.13.1
+          version: v2.14.0
           args: --timeout=5m
 
   # Agent-guide sensor (harness-template v3): skills load, references resolve, context budget.
@@ -70,7 +70,7 @@ jobs:
           cache: false          # golangci-lint-action manages its own cache
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
-          version: v2.13.1
+          version: v2.14.0
           args: --timeout=5m --enable-only gocyclo,gocognit,cyclop,funlen,nestif
       - name: gocyclo report (functions over 10 — informational, gate is 15)
         if: always()
