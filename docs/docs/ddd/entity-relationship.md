@@ -31,6 +31,7 @@ erDiagram
         bigint capability_revision "ADR-0035, 0 = never published"
         integer version "ADR-0025/0035 optimistic concurrency"
         text site_role "ADR-0037, default UNSPECIFIED"
+        timestamptz capability_heartbeat_at "ADR-0041, NULL = no heartbeat yet"
     }
     zones {
         text id PK
@@ -226,7 +227,7 @@ Source: `migrations/analytics/0001_report.up.sql`. Omitted: indexes
 
 | Table | Kind | Aggregate / owner | Notes |
 |---|---|---|---|
-| `sites` | aggregate | `Site` | transfer capability + `capability_revision` (ADR-0035); `version` guard (migration `0008`); `site_role` with a CHECK of the 16 values and a one-time backfill from the seeded names (migration `0009`, ADR-0037) |
+| `sites` | aggregate | `Site` | transfer capability + `capability_revision` (ADR-0035); `version` guard (migration `0008`); `site_role` with a CHECK of the 16 values and a one-time backfill from the seeded names (migration `0009`, ADR-0037); nullable `capability_heartbeat_at` = when the last capability heartbeat was raised (migration `0012`, ADR-0041) |
 | `zones` | aggregate | `Zone` | id = `SITE-AREA-ZONE` |
 | `aisles` | aggregate | `Aisle` | id = `ZoneID-AISLE`; centreline columns are the `Segment` value object flattened |
 | `cross_aisles` | aggregate | `CrossAisle` | composite natural key; status stored as a boolean |

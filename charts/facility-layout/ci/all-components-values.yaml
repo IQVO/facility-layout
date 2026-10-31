@@ -10,5 +10,7 @@ analytics:
     projectorUrl: "postgres://projector@example.invalid:5432/analytics"
 mcp:
   enabled: true
+a2a:
+  enabled: true
 frontend:
   enabled: true

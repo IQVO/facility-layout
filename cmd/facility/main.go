@@ -18,6 +18,7 @@
 //	OUTBOX_RELAY_INTERVAL         relay poll interval (default 1s)
 //	OUTBOX_MAX_ATTEMPTS           failures before the relay excludes a row (default 20, 0 = unlimited)
 //	HOUSEKEEPING_INTERVAL, IDEMPOTENCY_KEY_TTL, OUTBOX_RETENTION   sweeper knobs (ADR 0026)
+//	SITE_CAPABILITY_HEARTBEAT_INTERVAL   site capability heartbeat period (default 5m, 0 disables; ADR 0041)
 //	OTEL_EXPORTER_OTLP_ENDPOINT, LOG_LEVEL, SERVICE_VERSION
 //
 // /readyz is the drain gate AND a Postgres ping AND a Kafka metadata check (a
@@ -39,6 +40,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/claudioed/facility-layout/internal/adapters/inbound/heartbeat"
 	inboundhttp "github.com/claudioed/facility-layout/internal/adapters/inbound/http"
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/bootretry"
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/kafka"
@@ -157,6 +159,10 @@ func run(ctx context.Context) error {
 	sweeperDone := startBackground(sigCtx, logger, sweeper, "housekeeping sweeper running", errCh)
 	defer func() { <-sweeperDone }()
 
+	// The site capability heartbeat (ADR 0041); interval 0 disables it.
+	heartbeatDone := startBackground(sigCtx, logger, capabilityHeartbeat(adapters, system.Clock{}, cfg.siteCapabilityHeartbeatInterval, logger), "site capability heartbeat running", errCh)
+	defer func() { <-heartbeatDone }()
+
 	select {
 	case err := <-errCh:
 		return err
@@ -173,6 +179,26 @@ func flushTelemetry(logger *slog.Logger, shutdown func(context.Context) error) {
 	defer cancel()
 	if err := shutdown(shutdownCtx); err != nil {
 		logger.Warn("telemetry shutdown reported an error", "error", err)
+	}
+}
+
+// capabilityHeartbeat builds the ADR 0041 heartbeat loop over the wired
+// adapters, or returns a nil worker (which startBackground skips) when the
+// interval disables it.
+func capabilityHeartbeat(a adapterSet, clock ports.Clock, interval time.Duration, logger *slog.Logger) interface {
+	Run(context.Context) error
+} {
+	if interval <= 0 {
+		logger.Info("site capability heartbeat disabled", "env", "SITE_CAPABILITY_HEARTBEAT_INTERVAL")
+		return nil
+	}
+	return &heartbeat.Loop{
+		Publisher: &usecases.PublishSiteCapabilityHeartbeats{
+			Sites: a.sites, Due: a.capabilityHeartbeatDue, Events: a.publisher, Clock: clock,
+			UnitOfWork: a.unitOfWork, Interval: interval,
+		},
+		Interval: interval,
+		Logger:   logger,
 	}
 }
 
@@ -240,15 +266,18 @@ func gracefulShutdown(logger *slog.Logger, httpServer *http.Server, readiness *i
 // in-memory variant in the binary (internal/architecture
 // TestRuntimeBinaryHasNoInMemoryAdapters).
 type adapterSet struct {
-	sites         ports.SiteRepo
-	zones         ports.ZoneRepo
-	aisles        ports.AisleRepo
-	slots         ports.SlotRepo
-	locationTypes ports.LocationTypeRepo
-	rules         ports.PlacementRuleRepo
-	structures    ports.FixedStructureRepo
-	crossAisles   ports.CrossAisleRepo
-	publisher     ports.EventPublisher
+	sites ports.SiteRepo
+	// capabilityHeartbeatDue lists the sites due for a SiteCapabilityChanged
+	// heartbeat (ADR 0041); the same Postgres repository as sites.
+	capabilityHeartbeatDue ports.SiteCapabilityHeartbeatSource
+	zones                  ports.ZoneRepo
+	aisles                 ports.AisleRepo
+	slots                  ports.SlotRepo
+	locationTypes          ports.LocationTypeRepo
+	rules                  ports.PlacementRuleRepo
+	structures             ports.FixedStructureRepo
+	crossAisles            ports.CrossAisleRepo
+	publisher              ports.EventPublisher
 	// unitOfWork brackets a use case's Save(s) + Publish(es) atomically
 	// (ADR-0018).
 	unitOfWork ports.UnitOfWork
@@ -308,10 +337,11 @@ func newServer(a adapterSet, clock ports.Clock, locationMetrics ports.LocationMe
 		GetSiteLayout: &usecases.GetSiteLayout{Sites: a.sites, Zones: a.zones, Aisles: a.aisles, Slots: a.slots, Structures: a.structures},
 		GetZoneGrid:   &usecases.GetZoneGrid{Zones: a.zones, Aisles: a.aisles, Slots: a.slots},
 
-		SetLocationGeometry:    &usecases.SetLocationGeometry{Slots: a.slots, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork},
-		SetAisleGeometry:       &usecases.SetAisleGeometry{Aisles: a.aisles, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork},
-		RegisterFixedStructure: &usecases.RegisterFixedStructure{Sites: a.sites, Structures: a.structures, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork},
-		ListFixedStructures:    &usecases.ListFixedStructures{Sites: a.sites, Structures: a.structures},
+		SetLocationGeometry:         &usecases.SetLocationGeometry{Slots: a.slots, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork},
+		DeclareLocationHandlingUnit: &usecases.DeclareLocationHandlingUnit{Slots: a.slots, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork},
+		SetAisleGeometry:            &usecases.SetAisleGeometry{Aisles: a.aisles, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork},
+		RegisterFixedStructure:      &usecases.RegisterFixedStructure{Sites: a.sites, Structures: a.structures, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork},
+		ListFixedStructures:         &usecases.ListFixedStructures{Sites: a.sites, Structures: a.structures},
 
 		RegisterCrossAisle: &usecases.RegisterCrossAisle{
 			Zones: a.zones, Aisles: a.aisles, CrossAisles: a.crossAisles, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork,
@@ -370,6 +400,10 @@ type publisherConfig struct {
 	housekeepingInterval time.Duration
 	idempotencyKeyTTL    time.Duration
 	outboxRetention      time.Duration
+	// siteCapabilityHeartbeatInterval is SITE_CAPABILITY_HEARTBEAT_INTERVAL
+	// (ADR 0041): how often a site's capability fact is re-published so
+	// downstream freshness windows hold. Zero disables the heartbeat.
+	siteCapabilityHeartbeatInterval time.Duration
 }
 
 // buildAdapters wires the real adapters: Postgres repositories, the
@@ -396,15 +430,17 @@ func buildAdapters(cfg publisherConfig, logger *slog.Logger) (adapterSet, *postg
 		return adapterSet{}, nil, nil, noopKafkaClose, noop, err
 	}
 
+	siteRepo := postgres.NewSiteRepo(pool)
 	base := adapterSet{
-		sites:         postgres.NewSiteRepo(pool),
-		zones:         postgres.NewZoneRepo(pool),
-		aisles:        postgres.NewAisleRepo(pool),
-		slots:         postgres.NewSlotRepo(pool),
-		locationTypes: postgres.NewLocationTypeRepo(pool),
-		rules:         postgres.NewPlacementRuleRepo(pool),
-		structures:    postgres.NewFixedStructureRepo(pool),
-		crossAisles:   postgres.NewCrossAisleRepo(pool),
+		sites:                  siteRepo,
+		capabilityHeartbeatDue: siteRepo,
+		zones:                  postgres.NewZoneRepo(pool),
+		aisles:                 postgres.NewAisleRepo(pool),
+		slots:                  postgres.NewSlotRepo(pool),
+		locationTypes:          postgres.NewLocationTypeRepo(pool),
+		rules:                  postgres.NewPlacementRuleRepo(pool),
+		structures:             postgres.NewFixedStructureRepo(pool),
+		crossAisles:            postgres.NewCrossAisleRepo(pool),
 	}
 
 	sweeper := postgres.NewSweeper(pool,

@@ -2,12 +2,12 @@
 id: domain-events
 title: Domain events
 sidebar_label: Domain events
-description: The fourteen past-tense facts this context publishes, their CloudEvents type convention, their payload shapes, and who consumes them.
+description: The fifteen past-tense facts this context publishes, their CloudEvents type convention, their payload shapes, and who consumes them.
 ---
 
 # Domain events
 
-This bounded context emits fourteen past-tense domain events. Together they are
+This bounded context emits fifteen past-tense domain events. Together they are
 its **Published Language** — the vocabulary downstream Conformists key off.
 
 :::info[Published to Kafka, specified in AsyncAPI]
@@ -18,7 +18,7 @@ call, to the separate `warehouse.facility.analytics` topic that feeds the
 [analytical data product](../analytics/catalog-growth-report.md)
 ([ADR 0010](../adr/0010-analytical-data-product.md)). The integration topic,
 its CloudEvents 1.0 envelope
-([ADR 0024](../adr/0024-cloudevents-mandatory-envelope.md)) and all fourteen messages are specified in
+([ADR 0024](../adr/0024-cloudevents-mandatory-envelope.md)) and all fifteen messages are specified in
 [`apis/asyncapi.yaml`](https://github.com/IQVO/facility-layout/blob/main/apis/asyncapi.yaml)
 (AsyncAPI 2.6.0).
 
@@ -60,6 +60,7 @@ com.warehouse.wms.facility-layout.placementrule.PlacementRuleDefined
 com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered
 com.warehouse.wms.facility-layout.locationslot.LocationSlotDecommissioned
 com.warehouse.wms.facility-layout.locationslot.FacilityLayoutImported
+com.warehouse.wms.facility-layout.locationslot.LocationSlotHandlingUnitDeclared
 com.warehouse.wms.facility-layout.locationslot.LocationGeometryUpdated
 com.warehouse.wms.facility-layout.aisle.AisleGeometryUpdated
 com.warehouse.wms.facility-layout.structure.FixedStructureRegistered
@@ -97,7 +98,7 @@ Every event embeds the same base, serialized as:
 `time.Now()` inside the domain — which is what makes event timestamps
 deterministic in tests.
 
-## The fourteen events
+## The fifteen events
 
 ### SiteRegistered
 
@@ -128,7 +129,12 @@ publishes none.
 A site's transfer capability changed
 ([ADR 0035](../adr/0035-site-transfer-capability-command.md)). A full
 last-write-wins snapshot raised by `PUT /sites/{siteCode}/transfer-capability`
-(use case `ChangeSiteTransferCapability`) once per real change. Its fields are
+(use case `ChangeSiteTransferCapability`) once per real change, and re-emitted
+by the periodic freshness heartbeat
+([ADR 0041](../adr/0041-site-capability-heartbeat.md), use case
+`PublishSiteCapabilityHeartbeats`) with the current values, a new CloudEvents
+`id`, a fresh `time` (the consumers' `as_of`) and the revision advanced by one.
+Its fields are
 **snake_case**, unlike every other payload here: recasing them would be a
 breaking `.v2` for network-inventory-planning, so ADR 0035 keeps them.
 
@@ -137,7 +143,7 @@ breaking `.v2` for network-inventory-planning, so ADR 0035 keeps them.
 | `site_code` | string |
 | `transfer_origin_enabled` | boolean — the site may donate stock |
 | `transfer_destination_enabled` | boolean — the site may receive stock |
-| `capability_revision` | integer — 1 on the first change, +1 per later change of the same site; keep the highest |
+| `capability_revision` | integer — 1 on the first change, +1 per later event of the same site, change or heartbeat (ADR 0041); keep the highest |
 
 ### ZoneRegistered
 
@@ -242,6 +248,18 @@ The summary event exists so that a consumer can distinguish "the building was
 loaded" from a burst of unrelated single registrations, without having to
 infer it from event volume.
 
+### LocationSlotHandlingUnitDeclared
+
+A slot's handling unit was set or changed
+([ADR 0040](../adr/0040-slot-handling-unit.md)). `LocationSlotRegistered`
+also carries `handlingUnit`, omitted when none was recorded.
+
+| Field | Type |
+|---|---|
+| `locationCode` | string — same identifier as in `LocationSlotRegistered` |
+| `handlingUnit` | string — `EACH`, `CASE` or `PALLET` |
+| `declaredAt` | string — RFC 3339 instant, equals `occurredAt` |
+
 ### LocationGeometryUpdated
 
 A slot's physical position and size were set
@@ -317,6 +335,7 @@ site would need an additive `siteCode` (a contract change) for no benefit
 | `com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered` | `locationCode` | `locationCode` | `RegisterLocationSlot`, `ImportFacilityLayout` | `inventory-storage`, `warehouse-planning`, own projector |
 | `com.warehouse.wms.facility-layout.locationslot.LocationSlotDecommissioned` | `locationCode` | `locationCode` | `DecommissionLocationSlot` | `inventory-storage`, `warehouse-planning`, own projector |
 | `com.warehouse.wms.facility-layout.locationslot.FacilityLayoutImported` | event `id` (batch outcome, no aggregate) | `layout-import` | `ImportFacilityLayout` | own projector |
+| `com.warehouse.wms.facility-layout.locationslot.LocationSlotHandlingUnitDeclared` | `locationCode` | `locationCode` | `DeclareLocationHandlingUnit` | `inventory-storage` |
 | `com.warehouse.wms.facility-layout.locationslot.LocationGeometryUpdated` | `locationCode` | `locationCode` | `SetLocationGeometry`, `ImportFacilityLayout` | none |
 | `com.warehouse.wms.facility-layout.aisle.AisleGeometryUpdated` | `aisleId` | `aisleId` | `SetAisleGeometry` | none |
 | `com.warehouse.wms.facility-layout.structure.FixedStructureRegistered` | `structureId` | `structureId` | `RegisterFixedStructure` | none |
@@ -332,6 +351,7 @@ Source: `internal/domain/shared/events.go`,
 |---|---|
 | `RegisterSite` | `SiteRegistered` |
 | `ChangeSiteTransferCapability` | `SiteCapabilityChanged` (only when the snapshot changed or was never published) |
+| `PublishSiteCapabilityHeartbeats` (timer, not a route) | `SiteCapabilityChanged` heartbeat per active declared site every `SITE_CAPABILITY_HEARTBEAT_INTERVAL` ([ADR 0041](../adr/0041-site-capability-heartbeat.md)) |
 | `ChangeSiteRole` | `SiteRoleChanged` (only when the role changed) |
 | `RegisterZone` | `ZoneRegistered` |
 | `RegisterAisle` | `AisleRegistered` |
@@ -341,6 +361,7 @@ Source: `internal/domain/shared/events.go`,
 | `DecommissionLocationSlot` | `LocationSlotDecommissioned` |
 | `ImportFacilityLayout` | per row: `SiteRegistered` / `ZoneRegistered` / `AisleRegistered` for each parent it creates on first sight, `LocationSlotRegistered` for each successful slot, `LocationGeometryUpdated` when the row carries geometry; then exactly one `FacilityLayoutImported` for the whole call |
 | `SetLocationGeometry` | `LocationGeometryUpdated` |
+| `DeclareLocationHandlingUnit` | `LocationSlotHandlingUnitDeclared` |
 | `SetAisleGeometry` | `AisleGeometryUpdated` |
 | `RegisterFixedStructure` | `FixedStructureRegistered` |
 | `RegisterCrossAisle` | `CrossAisleRegistered` |

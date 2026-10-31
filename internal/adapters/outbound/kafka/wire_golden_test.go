@@ -39,6 +39,7 @@ func wireCases(t *testing.T) []wireCase {
 		wireCase{"SiteRegistered_nonUTC_nanos", shared.NewSiteRegistered(time.Date(2026, 2, 3, 4, 5, 6, 123456789, zone), "WH1", "Main", "UNSPECIFIED")},
 		wireCase{"LocationTypeRegistered_noCapacity", shared.NewLocationTypeRegistered(at, "Dock", "Dock", shared.Capacity{})},
 		wireCase{"LocationSlotRegistered_dock", shared.NewLocationSlotRegistered(at, code, "Dock", "Dock", "Inbound", []string{"Receiving", "Putaway"}, shared.Capacity{})},
+		wireCase{"LocationSlotRegistered_handlingUnit", shared.NewLocationSlotRegistered(at, code, "PalletRack", "Storage", "", nil, shared.Capacity{}).WithHandlingUnit(shared.HandlingUnitCase)},
 		wireCase{"LocationGeometryUpdated_noPickSequence", shared.NewLocationGeometryUpdated(at, code, mustPoint(t, 1, 2, 3), mustDims(t, 1.2, 1, 1.5), nil)},
 		wireCase{"SiteCapabilityChanged_allOff", shared.NewSiteCapabilityChanged(at, "WH1", false, false, 0)},
 		wireCase{"FacilityLayoutImported_zero", shared.NewFacilityLayoutImported(at, 0, 0, 0)},

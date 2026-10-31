@@ -35,6 +35,18 @@ type SiteRepo interface {
 	List(ctx context.Context) ([]*site.Site, error)
 }
 
+// SiteCapabilityHeartbeatSource lists the sites whose capability fact is due
+// for a heartbeat (ADR-0041). It is a separate, narrow port so SiteRepo and
+// every other Site reader stay unchanged.
+type SiteCapabilityHeartbeatSource interface {
+	// ListCapabilityHeartbeatDue returns, ordered by code and at most limit
+	// of them, the codes of ACTIVE sites with a declared capability
+	// (capability_revision > 0) whose last heartbeat is absent or at or
+	// before notAfter. It is a pre-filter: the use case re-checks each site
+	// on the aggregate, and the version guard settles any race.
+	ListCapabilityHeartbeatDue(ctx context.Context, notAfter time.Time, limit int) ([]string, error)
+}
+
 // ZoneRepo persists and retrieves Zone aggregates, keyed by zone id
 // (SITE-AREA-ZONE).
 type ZoneRepo interface {

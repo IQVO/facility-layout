@@ -96,6 +96,14 @@ type locationSlotRegisteredData struct {
 	Activities   []string `json:"activities,omitempty"`
 	MaxWeightKg  float64  `json:"maxWeightKg,omitempty"`
 	MaxVolumeM3  float64  `json:"maxVolumeM3,omitempty"`
+	HandlingUnit string   `json:"handlingUnit,omitempty"`
+}
+
+type locationSlotHandlingUnitDeclaredData struct {
+	wireEnvelope
+	LocationCode string    `json:"locationCode"`
+	HandlingUnit string    `json:"handlingUnit"`
+	DeclaredAt   time.Time `json:"declaredAt"`
 }
 
 type locationSlotDecommissionedData struct {
@@ -191,7 +199,9 @@ func WireData(event shared.DomainEvent) (any, error) {
 	case shared.PlacementRuleDefined:
 		return placementRuleDefinedData{env, e.RuleID, e.LocationType, e.Effect, e.Predicate}, nil
 	case shared.LocationSlotRegistered:
-		return locationSlotRegisteredData{env, e.LocationCode, e.AisleID, e.ZoneID, e.LocationType, e.Role, e.DockFlow, e.Activities, e.MaxWeightKg, e.MaxVolumeM3}, nil
+		return locationSlotRegisteredData{env, e.LocationCode, e.AisleID, e.ZoneID, e.LocationType, e.Role, e.DockFlow, e.Activities, e.MaxWeightKg, e.MaxVolumeM3, string(e.HandlingUnit)}, nil
+	case shared.LocationSlotHandlingUnitDeclared:
+		return locationSlotHandlingUnitDeclaredData{env, e.LocationCode, string(e.HandlingUnit), e.DeclaredAt}, nil
 	case shared.LocationSlotDecommissioned:
 		return locationSlotDecommissionedData{env, e.LocationCode}, nil
 	case shared.FacilityLayoutImported:

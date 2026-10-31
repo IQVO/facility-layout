@@ -222,6 +222,12 @@ const sidebar: SidebarsConfig = {
         },
         {
           type: "doc",
+          id: "api-reference/rest/declare-location-handling-unit",
+          label: "Declare a location slot's handling unit",
+          className: "api-method put",
+        },
+        {
+          type: "doc",
           id: "api-reference/rest/get-location-classification",
           label: "Get a location slot's resolved hazmat/temperature-class attributes",
           className: "api-method get",

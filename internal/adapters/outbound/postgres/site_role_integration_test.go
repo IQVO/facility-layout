@@ -100,6 +100,12 @@ func TestMigration0009_BackfillsTheRoleFromTheSeededNamePattern(t *testing.T) {
 	if err := m.Migrate(9); err != nil {
 		t.Fatalf("migrate to 9: %v", err)
 	}
+	// SiteRepo selects every current sites column, so apply the later
+	// additive migrations (e.g. 0012, ADR-0041) before reading through it;
+	// they do not touch the backfilled rows.
+	if err := m.Up(); err != nil {
+		t.Fatalf("migrate to latest: %v", err)
+	}
 
 	sites := postgres.NewSiteRepo(pool)
 	for code, seeded := range seededSiteNames {

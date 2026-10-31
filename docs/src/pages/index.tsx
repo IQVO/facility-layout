@@ -33,7 +33,7 @@ function StudyDisclaimer() {
       following real industry-standard patterns (the
       Site-Area-Zone-Aisle-Bay-Level-Position location-code hierarchy). Not
       a production system. Not affiliated with, endorsed by, or
-      representative of Amazon or any other company.
+      representative of the reference operator or any other company.
     </div>
   );
 }

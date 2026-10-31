@@ -559,11 +559,21 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/RegisterZoneRequest"
-            example:
-              areaCode: STOR
-              zoneCode: FRZ
-              temperatureClass: Frozen
-              hazmat: false
+            examples:
+              frozenStorage:
+                summary: A frozen storage zone
+                value:
+                  areaCode: STOR
+                  zoneCode: FRZ
+                  temperatureClass: Frozen
+                  hazmat: false
+              casePickFaces:
+                summary: A case-pick (CPK) zone, a convention on the free-form zone code (ADR 0042)
+                value:
+                  areaCode: STOR
+                  zoneCode: CPK
+                  temperatureClass: Ambient
+                  hazmat: false
       responses:
         "201":
           description: Zone registered.
@@ -2025,6 +2035,44 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /locations/{locationCode}/handling-unit:
+    put:
+      operationId: declareLocationHandlingUnit
+      summary: Declare a location slot's handling unit
+      description: >
+        Sets or changes the unit of handling (EACH, CASE or PALLET) the slot
+        accepts (ADR-0040). The slot must already exist and must not be
+        Decommissioned. Naturally idempotent (same body, same state), like
+        the geometry PUT, so it takes no Idempotency-Key. Publishes
+        LocationSlotHandlingUnitDeclared. inventory-storage uses the value
+        to decide whether a sealed case may be stowed in the bin.
+      tags: [Locations]
+      parameters:
+        - $ref: "#/components/parameters/LocationCode"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeclareHandlingUnitRequest"
+      responses:
+        "200":
+          description: The location slot, with its handling unit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocationSlot"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   /locations/{locationCode}/classification:
     get:
       operationId: getLocationClassification
@@ -2391,7 +2439,7 @@ components:
           example: STOR
         zone:
           type: string
-          description: Behavioral class within the area (AMB, CHL, FRZ, HAZ, FWD, RSV).
+          description: Behavioral class within the area (AMB, CHL, FRZ, HAZ, FWD, RSV, CPK). CPK = case-pick faces whose capacity slotting plans in cases (a convention on this free-form string, not validated here; ADR 0042).
           example: AMB
         aisle:
           type: string
@@ -2582,7 +2630,7 @@ components:
         zoneCode:
           type: string
           pattern: "^[A-Z0-9]+$"
-          description: Behavioral zone, e.g. AMB, CHL, FRZ, HAZ, FWD, RSV.
+          description: Behavioral zone, e.g. AMB, CHL, FRZ, HAZ, FWD, RSV, CPK. CPK = case-pick faces whose capacity slotting plans in cases. Free-form, so any [A-Z0-9]+ code is accepted and none is validated against a list (ADR 0042).
           example: FRZ
         temperatureClass:
           $ref: "#/components/schemas/TemperatureClass"
@@ -2703,6 +2751,21 @@ components:
           minimum: 0
           description: Optional explicit pick-path override for this slot. JSON null is treated as omitted.
           example: 42
+
+    HandlingUnit:
+      type: string
+      enum: [EACH, CASE, PALLET]
+      description: >
+        The unit of handling a slot accepts (ADR-0040). Absent on a slot
+        means none was recorded.
+      example: CASE
+
+    DeclareHandlingUnitRequest:
+      type: object
+      required: [handlingUnit]
+      properties:
+        handlingUnit:
+          $ref: "#/components/schemas/HandlingUnit"
 
     SetAisleGeometryRequest:
       type: object
@@ -3056,6 +3119,8 @@ components:
           minimum: 0
           description: Explicit pick-path override, when set (ADR-0017).
           example: 42
+        handlingUnit:
+          $ref: "#/components/schemas/HandlingUnit"
 
     LocationClassification:
       type: object
@@ -3107,6 +3172,8 @@ components:
             - $ref: "#/components/schemas/Capacity"
           description: >
             Optional. Omit to inherit the LocationType's default envelope.
+        handlingUnit:
+          $ref: "#/components/schemas/HandlingUnit"
 
     ImportRow:
       type: object

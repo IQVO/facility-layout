@@ -53,6 +53,7 @@ type harness struct {
 	getSiteLayout             *usecases.GetSiteLayout
 	getZoneGrid               *usecases.GetZoneGrid
 	setLocationGeometry       *usecases.SetLocationGeometry
+	declareHandlingUnit       *usecases.DeclareLocationHandlingUnit
 	setAisleGeometry          *usecases.SetAisleGeometry
 	registerFixedStructure    *usecases.RegisterFixedStructure
 	listFixedStructures       *usecases.ListFixedStructures
@@ -106,6 +107,7 @@ func newHarness(t *testing.T) *harness {
 	h.getSiteLayout = &usecases.GetSiteLayout{Sites: h.sites, Zones: h.zones, Aisles: h.aisles, Slots: h.slots, Structures: h.structures}
 	h.getZoneGrid = &usecases.GetZoneGrid{Zones: h.zones, Aisles: h.aisles, Slots: h.slots}
 	h.setLocationGeometry = &usecases.SetLocationGeometry{Slots: h.slots, Events: h.publisher, Clock: h.clock}
+	h.declareHandlingUnit = &usecases.DeclareLocationHandlingUnit{Slots: h.slots, Events: h.publisher, Clock: h.clock}
 	h.setAisleGeometry = &usecases.SetAisleGeometry{Aisles: h.aisles, Events: h.publisher, Clock: h.clock}
 	h.registerFixedStructure = &usecases.RegisterFixedStructure{Sites: h.sites, Structures: h.structures, Events: h.publisher, Clock: h.clock}
 	h.listFixedStructures = &usecases.ListFixedStructures{Sites: h.sites, Structures: h.structures}

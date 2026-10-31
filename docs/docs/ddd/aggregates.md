@@ -45,10 +45,10 @@ The root of the hierarchy: a physical facility or building.
 | | |
 |---|---|
 | **Identity** | `SiteCode` — non-empty, `[A-Z0-9]` only, unique |
-| **State** | `code`, `name`, `role` (`Role`: one of 15 network roles or `UNSPECIFIED`, [ADR 0037](../adr/0037-site-role-and-siterolechanged-cloudevents.md); `ChangeRole` never touches capability), `status`, `capability` (`TransferCapability` value object: origin/destination enabled), `capabilityRevision` (0 = never published), `version` (optimistic-concurrency token, [ADR 0035](../adr/0035-site-transfer-capability-command.md)) |
+| **State** | `code`, `name`, `role` (`Role`: one of 15 network roles or `UNSPECIFIED`, [ADR 0037](../adr/0037-site-role-and-siterolechanged-cloudevents.md); `ChangeRole` never touches capability), `status`, `capability` (`TransferCapability` value object: origin/destination enabled), `capabilityRevision` (0 = never published), `capabilityHeartbeatAt` (zero = no heartbeat yet, [ADR 0041](../adr/0041-site-capability-heartbeat.md)), `version` (optimistic-concurrency token, [ADR 0035](../adr/0035-site-transfer-capability-command.md)) |
 | **Constructor** | `NewSite(code, name string) (*Site, error)` |
-| **Rehydration** | `RehydrateSite(code, name string, status shared.Status, capability TransferCapability, capabilityRevision int64, version int) *Site` |
-| **Behaviour** | `Decommission() error`, `ChangeTransferCapability(TransferCapability) (changed bool, err error)` — the first change and every real change advance `capabilityRevision` by exactly one; an identical snapshot is a no-op |
+| **Rehydration** | `RehydrateSite(code, name string, role Role, status shared.Status, capability TransferCapability, capabilityRevision int64, version int, opts ...RehydrateOption) *Site` (`CapabilityHeartbeatAt(t)` restores the heartbeat time) |
+| **Behaviour** | `Decommission() error`, `ChangeTransferCapability(TransferCapability) (changed bool, err error)` — the first change and every real change advance `capabilityRevision` by exactly one; an identical snapshot is a no-op; `HeartbeatTransferCapability(now, interval) bool` (ADR 0041) re-asserts the current values for a due, active, declared site by advancing `capabilityRevision` by one and stamping `capabilityHeartbeatAt` — never reachable from the PUT |
 | **Errors** | `ErrEmptySiteCode`, `ErrInvalidSiteCode`, `ErrEmptySiteName`, `ErrAlreadyDecommissioned`, `ErrSiteDecommissioned` |
 
 Uniqueness is enforced at the application/repository layer, not inside the
@@ -74,6 +74,11 @@ aggregate that can never be used alone.
 
 The bay and level pitch are the travel graph's fallback distances when an
 aisle has no real centreline geometry (default bay pitch 1.2 m).
+
+The `zoneCode` is a free-form code (`^[A-Z0-9]+$`), not an enum: the fleet
+convention gives `AMB`, `CHL`, `FRZ`, `HAZ`, `FWD`, `RSV`, `BLK` and `CPK`
+(case-pick faces) their meaning, and the aggregate does not validate any of
+them ([ADR 0042](../adr/0042-case-pick-zone-class-convention.md)).
 
 `TemperatureClass` and `Hazmat` are not decoration. They are the fields a
 `PlacementRule` predicate matches on, and they are what makes a Zone a

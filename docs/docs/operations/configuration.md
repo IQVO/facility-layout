@@ -28,6 +28,9 @@ How values are parsed:
   `OUTBOX_RETENTION`) go through `durationEnvRaw`. Only an unset or malformed
   value falls back. An explicit `0`/`0s` is kept and disables that knob
   (ADR-0026).
+- **`SITE_CAPABILITY_HEARTBEAT_INTERVAL`** goes through `durationEnvRaw` like
+  the housekeeping knobs: unset, empty or malformed falls back to `5m`; an
+  explicit `0`/`0s` disables the heartbeat (ADR-0041).
 - Durations use Go `time.ParseDuration` syntax (`500ms`, `30s`, `1h`, `168h`).
 
 ## Shared by every binary
@@ -59,6 +62,7 @@ Only the default `OTEL_SERVICE_NAME` differs between binaries.
 | `HOUSEKEEPING_INTERVAL` | `1h` | no | How often the housekeeping sweeper wakes up (ADR-0026). `0` disables the sweeper. | `cmd/facility/main.go`, `internal/adapters/outbound/postgres/sweeper.go` |
 | `IDEMPOTENCY_KEY_TTL` | `24h` | no | Age after which `idempotency_keys` rows are deleted. This bounds how late a client retry still gets the cached response (ADR-0019). `0` disables this half of the sweep. | same |
 | `OUTBOX_RETENTION` | `168h` (7 days) | no | Age after which **published** `outbox_events` rows are deleted. Unpublished rows are never swept. `0` disables this half of the sweep. | same |
+| `SITE_CAPABILITY_HEARTBEAT_INTERVAL` | `5m` | no | How often the current `SiteCapabilityChanged` of every active site with a declared transfer capability is re-published through the outbox (fresh `time`, `capability_revision` + 1) so network-inventory-planning's 10 minute freshness window holds ([ADR-0041](../adr/0041-site-capability-heartbeat.md)). Keep it at or below half of that window. `0` disables the heartbeat. Chart: `config.siteCapabilityHeartbeatInterval` (default `5m`, no infra value required). | `cmd/facility/config.go`, `internal/adapters/inbound/heartbeat/heartbeat.go` |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:5186` | no | Comma-separated browser origins allowed by the CORS middleware. The defaults are the warehouse-console shell's dev port and this service's MFE remote dev port. Allowed methods are GET/POST/PUT/DELETE. Allowed headers are `Content-Type`, `Authorization` and `Idempotency-Key`. | `internal/adapters/inbound/http/server.go` |
 
 Wiring (`buildAdapters` in `cmd/facility/main.go`): there is exactly one,
@@ -99,6 +103,18 @@ the drain gate plus a Postgres ping plus a Kafka broker metadata check.
 | `MIGRATIONS_PATH` | `migrations` | no | Directory of the OLTP SQL migrations. | `cmd/mcp/main.go` |
 | `REPORTS_BASE_URL` | *(unset)* | no | Base URL of `facility-reports`, for example `http://facility-reports:8092`. When set, the catalog-growth report tool is registered and calls the reports REST API. When unset, that tool is not registered at all. | `cmd/mcp/main.go` |
 
+## `a2a` (A2A agent, JSON-RPC over HTTP)
+
+| Variable | Default | Required | Effect | Read in |
+|---|---|---|---|---|
+| `A2A_ADDR` | `:8093` | no | Listen address. The JSON-RPC endpoint is mounted at both `/` and `/a2a`, the Agent Card at `/.well-known/agent-card.json`, and `/healthz` answers liveness. | `cmd/a2a/main.go` |
+| `A2A_AGENT_URL` | *(none)* | **yes** | Absolute http(s) URL of this agent's JSON-RPC endpoint, advertised on the Agent Card. If unset or not an absolute http(s) URL, the binary exits at boot with `A2A_AGENT_URL is required` / `is not an absolute http(s) URL`. The chart defaults it to the in-cluster Service DNS. | `cmd/a2a/main.go` |
+| `DATABASE_URL` | *(none)* | **yes** | OLTP Postgres DSN (same database as `facility`, read-only use cases only). If unset, the binary exits at boot with `DATABASE_URL is required`. There is no in-memory store. | `cmd/a2a/main.go` |
+| `MIGRATIONS_DATABASE_URL` | value of `DATABASE_URL` | no | Direct DSN for the migration step (ADR-0023). | `cmd/a2a/main.go` |
+| `MIGRATIONS_PATH` | `migrations` | no | Directory of the OLTP SQL migrations. | `cmd/a2a/main.go` |
+
+`a2a` needs no `KAFKA_BROKERS`: it is read-only and publishes nothing (ADR-0043).
+
 ## Boot-time behaviour that depends on configuration
 
 - **Boot retry.** Each binary retries its first Postgres operations (running
@@ -132,7 +148,7 @@ control.
 release: `HTTP_ADDR`, `MIGRATIONS_PATH`, `EVENT_PUBLISHER`,
 `OUTBOX_RELAY_INTERVAL`, `OUTBOX_MAX_ATTEMPTS` (`config.outboxMaxAttempts`,
 default `20`), `HOUSEKEEPING_INTERVAL`, `IDEMPOTENCY_KEY_TTL`,
-`OUTBOX_RETENTION`, `KAFKA_BROKERS`. The api Deployment mounts it with
+`OUTBOX_RETENTION`, `SITE_CAPABILITY_HEARTBEAT_INTERVAL` (`config.siteCapabilityHeartbeatInterval`, default `5m`), `KAFKA_BROKERS`. The api Deployment mounts it with
 `envFrom: configMapRef` (gap fix D14, 2026-10-12), so every `config.*` value
 reaches `cmd/facility`. Explicit `env` entries (the same values, plus the
 Secret-backed DSNs and the OTel variables) and `extraEnv` win over the

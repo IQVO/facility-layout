@@ -1,12 +1,6 @@
 # facility-layout
 
-> **⚠️ Study project.** This repository is an educational exercise in
-> Domain-Driven Design applied to warehouse management/execution systems. It
-> follows real industry-standard patterns and terminology (the
-> Site-Area-Zone-Aisle-Bay-Level-Position location-code hierarchy,
-> RFC 7807, hexagonal architecture) but is **not a production system** and
-> is **not affiliated with, endorsed by, or representative of any real-world
-> other company**.
+[![CI](https://github.com/IQVO/facility-layout/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/IQVO/facility-layout/actions/workflows/ci.yml?query=branch%3Adevelop) [![coverage gate](https://img.shields.io/badge/coverage%20gate-90%25-brightgreen)](https://github.com/IQVO/facility-layout/blob/develop/Makefile) [![Go](https://img.shields.io/badge/go-1.26.10-00ADD8?logo=go&logoColor=white)](https://github.com/IQVO/facility-layout/blob/develop/go.mod) [![release](https://img.shields.io/github/v/release/IQVO/facility-layout?sort=semver)](https://github.com/IQVO/facility-layout/releases) [![docs](https://img.shields.io/badge/docs-iqvo.github.io-blue)](https://iqvo.github.io/facility-layout/) [![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/IQVO/facility-layout/blob/develop/LICENSE)
 
 The **Facility Layout** bounded context of the `warehouse-systems` platform:
 the system of record for **where things physically are in the building**.
@@ -28,6 +22,13 @@ storage-capacity tally), `wes-work-planning` (`GET /distance`),
 `fulfillment-execution`
 (`GET /locations/{code}` for a location's role), and `warehouse-ops-agent`
 (the MCP tools and the catalog-growth report).
+
+## Disclaimer
+
+This project is a domain-driven design study. It is not associated with,
+endorsed by or affiliated with any company, and it uses no company's code,
+data, logos or trademarks. All names, figures and examples are illustrative
+or synthetic.
 
 ---
 
@@ -54,7 +55,7 @@ Page map (source under `docs/docs/`):
 | Development | [Testing](docs/docs/development/testing.md) |
 | Ecosystem | [Context map](docs/docs/ecosystem/context-map.md), [Consuming this service (integration)](docs/docs/ecosystem/consuming-this-service.md) |
 | DDD | [Use cases](docs/docs/ddd/use-cases.md), [Subdomain classification](docs/docs/ddd/subdomain-classification.md), [Aggregates](docs/docs/ddd/aggregates.md), [Domain events](docs/docs/ddd/domain-events.md), [DDD artifact pack](docs/docs/ddd/ddd-artifacts.md) |
-| MCP & analytics | [MCP governance charter](docs/docs/mcp/governance-charter.md), [Catalog growth report](docs/docs/analytics/catalog-growth-report.md) |
+| MCP, A2A & analytics | [MCP governance charter](docs/docs/mcp/governance-charter.md), [A2A inbound adapter (ADR-0043)](docs/docs/adr/0043-a2a-inbound-adapter.md), [Catalog growth report](docs/docs/analytics/catalog-growth-report.md) |
 | Decisions | [ADR index](docs/docs/adr/index.md) |
 
 ---
@@ -70,7 +71,7 @@ WH1-STOR-AMB-A07-03-02-B
  |    |    |   |   |  `----- Level:    vertical level / shelf
  |    |    |   |   `-------- Bay:      bay / section along the aisle
  |    |    |   `------------ Aisle:    physical corridor
- |    |    `---------------- Zone:     behavioral class (AMB/CHL/FRZ/HAZ/FWD/RSV)
+ |    |    `---------------- Zone:     behavioral class (AMB/CHL/FRZ/HAZ/FWD/RSV/CPK)
  |    `--------------------- Area:     coarse functional area (STOR/RCV/PACK/STAGE)
  `-------------------------- Site:     the physical facility
 ```
@@ -88,11 +89,12 @@ Hexagonal / ports & adapters. Dependencies point **inward only**:
 ```
 cmd/facility/                 main.go — composition root for the REST service (the only place that knows all layers)
 cmd/mcp/                      read-only MCP server (Streamable HTTP)
+cmd/a2a/                      read-only A2A agent (JSON-RPC over HTTP, Agent Card at /.well-known/agent-card.json)
 cmd/facility-projector/       analytics projector (the only analytical-DB writer)
 cmd/facility-reports/         analytics reader (serves /reports/catalog-growth)
 internal/
   domain/                     pure business logic; imports nothing but stdlib and itself
-    shared/                   LocationCode, Capacity, geometry values, enums, the 14 events
+    shared/                   LocationCode, Capacity, geometry values, enums, the 15 events
     site/  zone/  aisle/      the structural aggregates (aisle/ also holds CrossAisle)
     placement/                LocationType, LocationRole, PlacementRule, RuleSet evaluation
     slot/                     LocationSlot — the coded leaf aggregate — and its functional attributes
@@ -104,6 +106,7 @@ internal/
   adapters/
     inbound/http/             chi handlers, DTOs, RFC 7807 error mapping, SVG rendering
     inbound/mcp/              MCP tools, resource template and prompt
+    inbound/a2a/              A2A skills: site_layout, travel_distance (both read; the MCP surface has no write)
     inbound/kafka/            analytics topic consumer (projector)
     outbound/postgres/        pgxpool repos, golang-migrate runner, UnitOfWork, transactional outbox + relay, sweeper
     outbound/memory/          thread-safe in-memory repos: TEST DOUBLES only, never imported by cmd/** (ADR 0039)
@@ -132,7 +135,7 @@ into its sibling, or if `ports` grows a concrete type.
 | **Aisle** | A physical corridor scoped to a Zone. Carries a `SequenceHint` (walk-order position — the concrete travel-distance input the WES tier needs) and a `Direction` (OneWay/TwoWay). |
 | **LocationType** | A reusable classification of slot shape/kind (`PalletRack`, `Shelf`, `ToteWall`, `BulkFloor`, `Staging`, `Amnesty`) with a default capacity envelope and a `LocationRole`. |
 | **LocationRole** | What a location is *for* (ADR-0016): `Storage` (default), `Dock`, `Yard`, `WorkCenter`, `Drop`, `Staging`, `QC`, `Consolidation`, `Shipping`. Capacity is required only for `Storage`/`Staging`/`Drop`/`Consolidation`. A `Dock` slot carries a `dockFlow` (`Inbound`/`Outbound`/`Both`); a `WorkCenter` slot carries `activities` (`Pack`, `Sort`, `QC`, `VAS`, `Deconsolidate`, `Receive`, `Kit`). |
-| **LocationSlot** | The coded leaf aggregate. Its identity **is** its `LocationCode`. Has a LocationType (and so a role), a capacity envelope, optional physical geometry, and a Status (`Active`/`UnderMaintenance`/`Decommissioned`). |
+| **LocationSlot** | The coded leaf aggregate. Its identity **is** its `LocationCode`. Has a LocationType (and so a role), a capacity envelope, optional physical geometry, an optional handling unit (`EACH`/`CASE`/`PALLET`, ADR-0040), and a Status (`Active`/`UnderMaintenance`/`Decommissioned`). |
 | **CrossAisle / FixedStructure** | Physical geometry (ADR-0017): a walkable connection between two aisles of a zone, and a wall/column/office/conveyor footprint on a site. Together with aisle centrelines they form each zone's **travel graph**. |
 | **PlacementRule** | Declares which LocationTypes are legal in which Zones. The mechanism that prevents "ambient product in the frozen zone" — enforced once, at registration time. |
 | **Facility layout** | The readable, drawable projection of the whole structure: zones → aisles → slots, shaped for a UI to render directly. |
@@ -168,10 +171,10 @@ case that sets it.
 `SiteRegistered`, `SiteCapabilityChanged`, `SiteRoleChanged`, `ZoneRegistered`,
 `AisleRegistered`, `LocationTypeRegistered`, `PlacementRuleDefined`,
 `LocationSlotRegistered`, `LocationSlotDecommissioned`, `FacilityLayoutImported`,
-`LocationGeometryUpdated`, `AisleGeometryUpdated`,
-`FixedStructureRegistered`, `CrossAisleRegistered`.
+`LocationSlotHandlingUnitDeclared`, `LocationGeometryUpdated`,
+`AisleGeometryUpdated`, `FixedStructureRegistered`, `CrossAisleRegistered`.
 
-All fourteen are published (through the transactional outbox) to
+All fifteen are published (through the transactional outbox) to
 `warehouse.facility.events` (specified in `apis/asyncapi.yaml`) and to
 `warehouse.facility.analytics`. `inventory-storage` consumes
 `ZoneRegistered`, `LocationSlotRegistered` and `LocationSlotDecommissioned`
@@ -243,6 +246,7 @@ migrate -source file://migrations -database "$DATABASE_URL" up
 | `HOUSEKEEPING_INTERVAL` | `1h` | Housekeeping sweeper interval (ADR-0026; `0` disables; only relevant with `DATABASE_URL`) |
 | `IDEMPOTENCY_KEY_TTL` | `24h` | How long an idempotency_keys row is kept before the sweeper deletes it (ADR-0026; `0` disables) |
 | `OUTBOX_RETENTION` | `168h` | How long a PUBLISHED outbox_events row is kept before the sweeper deletes it (ADR-0026; `0` disables) |
+| `SITE_CAPABILITY_HEARTBEAT_INTERVAL` | `5m` | Site capability heartbeat (ADR-0041): re-publishes the current `SiteCapabilityChanged` of every declared site with a fresh time and `capability_revision` + 1 so downstream freshness windows hold; `0` disables |
 | `MIGRATIONS_PATH` | `migrations` | Directory of golang-migrate SQL files |
 | `LOG_LEVEL` | `info` | `debug`/`info`/`warn`/`error`, case-insensitive |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `localhost:4317` | OTel Collector, `host:port` or a full URL |
@@ -253,6 +257,11 @@ migrate -source file://migrations -database "$DATABASE_URL" up
 
 `cmd/mcp` reads `MCP_ADDR` (default `:8090`), `DATABASE_URL` (**required**,
 boot error when unset), `MIGRATIONS_PATH` and `REPORTS_BASE_URL`.
+
+`cmd/a2a` reads `A2A_ADDR` (default `:8093`), `DATABASE_URL` (**required**),
+`A2A_AGENT_URL` (**required**, the absolute http(s) URL advertised on the Agent
+Card; boot error when unset or relative), `MIGRATIONS_DATABASE_URL` and
+`MIGRATIONS_PATH`.
 
 See [Observability](#observability) for what each of the OTel variables
 actually changes.
@@ -455,6 +464,7 @@ are deliberately excluded. See
 | `POST` | `/locations/{locationCode}/decommission` | DecommissionLocationSlot | `204` |
 | `POST` | `/locations/import` | ImportFacilityLayout (bulk, partial success) | `200` |
 | `PUT` | `/locations/{locationCode}/geometry` | SetLocationGeometry (position, dimensions, pick sequence) | `200` |
+| `PUT` | `/locations/{locationCode}/handling-unit` | DeclareLocationHandlingUnit (`EACH`/`CASE`/`PALLET`, ADR-0040) | `200` |
 | `PUT` | `/zones/{zoneId}/aisles/{aisleCode}/geometry` | SetAisleGeometry (travel centreline) | `200` |
 | `POST` | `/zones/{zoneId}/cross-aisles` | RegisterCrossAisle | `201` |
 | `GET` | `/zones/{zoneId}/cross-aisles` | List a zone's cross-aisles | `200` |
@@ -838,7 +848,7 @@ Content-Type: application/problem+json
 `apis/openapi.yaml` (OpenAPI 3.0.3) documents every route with full
 request/response schemas, a shared `Problem` component, and real
 domain-grounded examples. `apis/asyncapi.yaml` (AsyncAPI 2.6.0) specifies the
-`warehouse.facility.events` topic, its CloudEvents 1.0 envelope (ADR-0024) and all fourteen messages. The
+`warehouse.facility.events` topic, its CloudEvents 1.0 envelope (ADR-0024) and all fifteen messages. The
 OpenAPI document is linted in CI:
 
 ```sh
@@ -976,6 +986,42 @@ helm upgrade --install facility-layout ./charts/facility-layout \
   --set mcp.enabled=true
 ```
 
+### Running the A2A agent in Kubernetes
+
+The A2A agent ([ADR-0043](docs/docs/adr/0043-a2a-inbound-adapter.md)) is another
+binary in the same image, `/app/a2a`, and the Helm chart deploys it as a
+separate Deployment + ClusterIP Service (`<release>-a2a`, port `8093`) when
+`a2a.enabled=true` (default `false`). It runs the same read use cases over the
+same `DATABASE_URL` secret as the main deployment and needs no Kafka (nothing
+in it writes or publishes). It reads `A2A_ADDR` (default `:8093`) and the
+mandatory `A2A_AGENT_URL`, the absolute URL advertised on the Agent Card (the
+chart defaults it to the in-cluster Service DNS; override with `a2a.agentUrl`).
+`GET /healthz` serves the probes; the Agent Card is at
+`/.well-known/agent-card.json` and the JSON-RPC endpoint is mounted at both `/`
+and `/a2a` (`http://<release>-a2a:8093/a2a` is the fleet's `*_A2A_ENDPOINT`
+convention). With `a2a.route.enabled=true` Kong exposes it at
+`/api/a2a/facility-layout`, rewritten to `/`.
+
+Two skills, both reads (the MCP surface has no write, so the agent has none),
+called as a `SendMessage` data part `{"skill": "<id>", "arguments": {...}}`:
+
+- `site_layout`: `{siteCode}` returns the site's zones, aisles (walk order) and
+  slot codes, plus its fixed structures.
+- `travel_distance`: `{from, to}` (seven-segment location codes) returns the
+  shortest map distance in metres, flagged `estimated` when any leg used a
+  bay-pitch fallback.
+
+Domain rejections come back as an in-band RFC 7807 `problem` with the same status
+classification as REST (404 not found, 400 malformed, 422 no route, 500
+internal). The endpoint is unauthenticated, like REST and MCP.
+
+```sh
+helm upgrade --install facility-layout ./charts/facility-layout \
+  --set database.url="postgres://facility:***@postgres:5432/facility?sslmode=disable" \
+  --set kafka.brokers="kafka:9092" \
+  --set a2a.enabled=true
+```
+
 Linted in CI with `ct lint --charts charts/facility-layout`.
 
 ## Operator micro-frontend (`web/`)
@@ -1026,3 +1072,13 @@ python3 charts/facility-layout/tests/test_service_selectors.py
 
 which proves every Service selects exactly one Deployment — the OLTP Service
 must never select the frontend, analytics or MCP pods.
+
+## Architecture Decision Records
+
+The ADR index lives at [docs/docs/adr/index.md](docs/docs/adr/index.md) — 42 decisions, from the
+hexagonal layout to the CloudEvents-only envelope and the transactional
+outbox.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

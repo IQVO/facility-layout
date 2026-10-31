@@ -53,8 +53,8 @@ if grep -Eq 'kind: (Ingress|HTTPRoute)|type: (NodePort|LoadBalancer)' <<<"$front
   fail "frontend render exposes a forbidden public resource"
 fi
 
-all_docs="$(render --set frontend.enabled=true --set mcp.enabled=true "${analytics[@]}")"
-for component in api analytics-projector analytics-reports mcp frontend; do
+all_docs="$(render --set frontend.enabled=true --set mcp.enabled=true --set a2a.enabled=true "${analytics[@]}")"
+for component in api analytics-projector analytics-reports mcp a2a frontend; do
   grep -q "app.kubernetes.io/component: $component" <<<"$all_docs" || fail "component $component is not rendered when enabled"
 done
 
@@ -67,7 +67,7 @@ grep -q 'name: facility-layout-frontend' <<<"$enabled_render" || fail "frontend 
 
 # D14 (2026-10-12): every config.* value is rendered into the chart ConfigMap,
 # and the api Deployment -- the only workload that reads those variables
-# (OUTBOX_RELAY_INTERVAL, OUTBOX_MAX_ATTEMPTS, HOUSEKEEPING_INTERVAL,
+# (OUTBOX_RELAY_INTERVAL, OUTBOX_MAX_ATTEMPTS, HOUSEKEEPING_INTERVAL, SITE_CAPABILITY_HEARTBEAT_INTERVAL,
 # IDEMPOTENCY_KEY_TTL, OUTBOX_RETENTION, ...) -- must mount it with envFrom, or
 # the values silently do nothing.
 configmap_name="$(awk '/^  name:/ {print $2; exit}' <<<"$configmap")"
@@ -77,6 +77,13 @@ grep -A3 'envFrom:' <<<"$api_deployment" | grep -q "name: $configmap_name" || fa
 tuned="$(render --set config.outboxRelayInterval=7s --set config.outboxMaxAttempts=5 --show-only templates/configmap.yaml)"
 grep -q 'OUTBOX_RELAY_INTERVAL: "7s"' <<<"$tuned" || fail "config.outboxRelayInterval is not rendered into the ConfigMap"
 grep -q 'OUTBOX_MAX_ATTEMPTS: "5"' <<<"$tuned" || fail "config.outboxMaxAttempts is not rendered into the ConfigMap"
+# ADR 0041: the site capability heartbeat defaults to 5m (half of NIP's 10 minute
+# freshness window) with no infra value required, is tunable, and "0s" disables it.
+grep -q 'SITE_CAPABILITY_HEARTBEAT_INTERVAL: "5m"' <<<"$configmap" || fail "SITE_CAPABILITY_HEARTBEAT_INTERVAL must default to 5m (ADR 0041)"
+beat_tuned="$(render --set config.siteCapabilityHeartbeatInterval=90s --show-only templates/configmap.yaml)"
+grep -q 'SITE_CAPABILITY_HEARTBEAT_INTERVAL: "90s"' <<<"$beat_tuned" || fail "config.siteCapabilityHeartbeatInterval is not rendered into the ConfigMap"
+beat_off="$(render --set config.siteCapabilityHeartbeatInterval=0s --show-only templates/configmap.yaml)"
+grep -q 'SITE_CAPABILITY_HEARTBEAT_INTERVAL: "0s"' <<<"$beat_off" || fail "config.siteCapabilityHeartbeatInterval=0s must render so the heartbeat can be disabled"
 # D12 (2026-10-12, ADR 0036): the outbox relay attempt cap defaults to 20.
 grep -q 'OUTBOX_MAX_ATTEMPTS: "20"' <<<"$configmap" || fail "OUTBOX_MAX_ATTEMPTS must default to 20 (ADR 0036)"
 
@@ -112,8 +119,8 @@ grace="$(awk '/terminationGracePeriodSeconds:/ {print $2; exit}' <<<"$api_deploy
 
 # The other workloads read their own explicit env and must NOT inherit the
 # api's HTTP_ADDR (reports would bind :8080) or OTEL_SERVICE_NAME from it.
-for template in reports-deployment.yaml projector-deployment.yaml mcp-deployment.yaml; do
-  rendered="$(render --set mcp.enabled=true "${analytics[@]}" --show-only "templates/$template")"
+for template in reports-deployment.yaml projector-deployment.yaml mcp-deployment.yaml a2a-deployment.yaml; do
+  rendered="$(render --set mcp.enabled=true --set a2a.enabled=true "${analytics[@]}" --show-only "templates/$template")"
   if grep -q 'configMapRef:' <<<"$rendered"; then
     fail "$template must not mount the api ConfigMap"
   fi
@@ -122,6 +129,19 @@ done
 # --- the mandatory env of every binary is rendered -----------------------------------
 mcp_dep="$(render --set mcp.enabled=true --show-only templates/mcp-deployment.yaml)"
 grep -A4 'name: DATABASE_URL$' <<<"$mcp_dep" | grep -q 'secretKeyRef:' || fail "the mcp DATABASE_URL must come from a Secret"
+a2a_dep="$(render --set a2a.enabled=true --show-only templates/a2a-deployment.yaml)"
+grep -A4 'name: DATABASE_URL$' <<<"$a2a_dep" | grep -q 'secretKeyRef:' || fail "the a2a DATABASE_URL must come from a Secret"
+[[ "$(env_value "$a2a_dep" A2A_ADDR)" == ":8093" ]] || fail "the a2a agent must listen on :8093 (8090 is the mcp server, 8091 the projector admin, 8092 the reports API)"
+grep -q 'command: \["/app/a2a"\]' <<<"$a2a_dep" || fail "the a2a Deployment must run /app/a2a"
+# The Agent Card must advertise a dialable absolute URL: it defaults to the
+# release's in-cluster Service DNS (namespace-derived, so pattern-match) and
+# stays overridable.
+a2a_url="$(env_value "$a2a_dep" A2A_AGENT_URL || true)" # a missing var must reach the fail message below, not abort under set -e
+[[ "$a2a_url" =~ ^http://[a-z0-9.-]+-a2a\.[a-z0-9-]+\.svc\.cluster\.local:8093/$ ]] || fail "A2A_AGENT_URL default is not the in-cluster Service DNS: $a2a_url"
+a2a_override="$(render --set a2a.enabled=true --set a2a.agentUrl=http://gw.example/api/a2a/facility-layout/ --show-only templates/a2a-deployment.yaml)"
+[[ "$(env_value "$a2a_override" A2A_AGENT_URL || true)" == "http://gw.example/api/a2a/facility-layout/" ]] || fail "a2a.agentUrl does not override A2A_AGENT_URL"
+# A2A is off by default: no a2a resource renders unless asked for.
+if render --show-only templates/a2a-deployment.yaml 2>/dev/null | grep -q 'kind: Deployment'; then fail "the a2a Deployment rendered with default values"; fi
 proj="$(render "${analytics[@]}" --show-only templates/projector-deployment.yaml)"
 reports="$(render "${analytics[@]}" --show-only templates/reports-deployment.yaml)"
 [[ "$(env_value "$proj" ANALYTICS_CONSUMER_GROUP)" == "facility-analytics" ]] || fail "ANALYTICS_CONSUMER_GROUP must default to the projector's historical group facility-analytics"
@@ -137,6 +157,17 @@ for var in DATABASE_URL KAFKA_BROKERS EVENT_PUBLISHER; do
   grep -q "name: $var\$" <<<"$api_deployment" || fail "the api Deployment does not render $var"
 done
 grep -q 'name: DATABASE_URL$' <<<"$mcp_dep" || fail "the mcp Deployment does not render DATABASE_URL"
+# Every variable cmd/a2a's boot config names as REQUIRED is rendered, derived
+# from the Go source (non-test files) so a new mandatory variable fails until
+# the chart has it. The regex allows digits: A2A_AGENT_URL must not be read as
+# A_AGENT_URL.
+a2a_sources="$(ls "$repo_dir"/cmd/a2a/*.go | grep -v '_test\.go$')"
+a2a_vars="$(grep -hoE '[A-Z][A-Z0-9_]{2,} is required' $a2a_sources | sed -E 's/ is required//' | sort -u || true)"
+[[ -n "$a2a_vars" ]] || fail "found no mandatory variables in cmd/a2a; the scan is looking in the wrong place"
+[[ "$a2a_vars" == *A2A_AGENT_URL* ]] || fail "the cmd/a2a scan did not find A2A_AGENT_URL (found: $a2a_vars)"
+for var in $a2a_vars; do
+  grep -q "name: $var\$" <<<"$a2a_dep" || fail "the a2a Deployment does not render $var, which cmd/a2a requires"
+done
 grep -q 'name: ANALYTICS_DATABASE_URL$' <<<"$proj" || fail "the projector Deployment does not render ANALYTICS_DATABASE_URL"
 grep -q 'name: ANALYTICS_DATABASE_URL$' <<<"$reports" || fail "the reports Deployment does not render ANALYTICS_DATABASE_URL"
 for bin in facility-projector facility-reports; do
@@ -184,8 +215,10 @@ infra_api="$(helm template "$release" "$chart_dir" "${infra[@]}" --show-only tem
 grep -q 'facility-layout-db' <<<"$infra_api" || fail "infra values: DATABASE_URL must come from the facility-layout-db secret"
 infra_proj="$(helm template "$release" "$chart_dir" "${infra[@]}" --show-only templates/projector-deployment.yaml)"
 [[ "$(env_value "$infra_proj" ANALYTICS_CONSUMER_GROUP)" == "facility-analytics" ]] || fail "infra values: ANALYTICS_CONSUMER_GROUP"
-for component in api analytics-projector analytics-reports mcp frontend; do
+for component in api analytics-projector analytics-reports mcp a2a frontend; do
   grep -q "app.kubernetes.io/component: $component" <<<"$infra_all" || fail "infra values: component $component not rendered"
 done
+helm template "$release" "$chart_dir" "${infra[@]}" --show-only templates/a2a-deployment.yaml >/dev/null || fail "infra values: a2a"
+helm template "$release" "$chart_dir" "${infra[@]}" --show-only templates/a2a-route.yaml | grep -q "replacePrefixMatch: /$" || fail "infra values: the a2a route must rewrite to /"
 
 echo "PASS: facility-layout chart render assertions"

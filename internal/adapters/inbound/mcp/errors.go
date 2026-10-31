@@ -90,6 +90,7 @@ var errorCatalog = []errorEntry{
 	{shared.ErrInvalidMaxVolume, "invalid-max-volume"},
 	{shared.ErrUnknownTemperatureClass, "unknown-temperature-class"},
 	{shared.ErrUnknownDirection, "unknown-direction"},
+	{shared.ErrUnknownHandlingUnit, "unknown-handling-unit"},
 	{shared.ErrUnknownStatus, "unknown-status"},
 	{shared.ErrInvalidZ, "invalid-z"},
 	{shared.ErrInvalidDimensions, "invalid-dimensions"},

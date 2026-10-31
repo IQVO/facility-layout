@@ -36,7 +36,7 @@ The code on `develop` wins over every page in this pack. The pages were
 derived from:
 
 - `internal/domain/**` — aggregates, value objects, enums, domain errors and
-  the fourteen domain events (`internal/domain/shared/events.go`).
+  the fifteen domain events (`internal/domain/shared/events.go`).
 - `internal/application/usecases/**` and `internal/application/ports/ports.go`
   — the 31 use cases and the 12 outbound ports.
 - `internal/adapters/**` — the REST router (`inbound/http/server.go`), MCP

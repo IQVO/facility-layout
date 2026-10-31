@@ -21,6 +21,9 @@ func TestSiteCapabilityChangedContractPublishesFullLWWState(t *testing.T) {
 		"transfer_origin_enabled:",
 		"transfer_destination_enabled:",
 		"capability_revision:",
+		// ADR-0041: the heartbeat is documented in the contract.
+		"freshness HEARTBEAT (ADR-0041)",
+		"SITE_CAPABILITY_HEARTBEAT_INTERVAL",
 	} {
 		if !strings.Contains(string(contract), want) {
 			t.Errorf("AsyncAPI contract missing %q", want)
