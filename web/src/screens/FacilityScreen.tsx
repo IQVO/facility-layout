@@ -2,6 +2,7 @@ import { useState } from "react";
 import { FACILITY_API_BASE } from "../config";
 import type { LocationRole, Site, SiteLayout } from "../types";
 import { Card, StatusPill, DataTable, useFetch } from "@warehouse/ui-kit";
+import { useFetchAll } from "../useFetchAll";
 import { RoleBadge, RoleFilterChips } from "../components/RoleBadge";
 
 /**
@@ -31,7 +32,7 @@ export function FacilityScreen() {
     data: sites,
     loading: sitesLoading,
     error: sitesError,
-  } = useFetch<Site[]>(`${FACILITY_API_BASE}/sites`);
+  } = useFetchAll<Site>(`${FACILITY_API_BASE}/sites`);
 
   const layoutUrl = selectedSite
     ? `${FACILITY_API_BASE}/sites/${encodeURIComponent(selectedSite)}/layout`

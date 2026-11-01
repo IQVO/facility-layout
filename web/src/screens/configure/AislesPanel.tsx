@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
-import { Card, DataTable, StatusPill, useFetch } from "@warehouse/ui-kit";
+import { Card, DataTable, StatusPill } from "@warehouse/ui-kit";
+import { useFetchAll } from "../../useFetchAll";
 import { apiPost, ApiError } from "../../api";
 import { FACILITY_API_BASE } from "../../config";
 import type { Aisle, Site, Zone } from "../../types";
@@ -29,12 +30,10 @@ export function AislesPanel() {
   const [success, setSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const { data: sites } = useFetch<Site[]>(`${FACILITY_API_BASE}/sites`);
-  const { data: zones } = useFetch<Zone[]>(
-    siteCode ? `${FACILITY_API_BASE}/sites/${encodeURIComponent(siteCode)}/zones` : null,
+  const { data: sites } = useFetchAll<Site>(`${FACILITY_API_BASE}/sites`);
+  const { data: zones } = useFetchAll<Zone>(siteCode ? `${FACILITY_API_BASE}/sites/${encodeURIComponent(siteCode)}/zones` : null,
   );
-  const { data: aisles, loading, error: listError } = useFetch<Aisle[]>(
-    zoneId ? `${FACILITY_API_BASE}/zones/${encodeURIComponent(zoneId)}/aisles?_r=${refreshKey}` : null,
+  const { data: aisles, loading, error: listError } = useFetchAll<Aisle>(zoneId ? `${FACILITY_API_BASE}/zones/${encodeURIComponent(zoneId)}/aisles` : null, refreshKey,
   );
 
   async function onSubmit(e: FormEvent) {

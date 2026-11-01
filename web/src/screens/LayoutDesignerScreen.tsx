@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Card, StatusPill, useFetch } from "@warehouse/ui-kit";
+import { useFetchAll } from "../useFetchAll";
 import { ZoneCanvas } from "../components/ZoneCanvas";
 import {
   FormRow,
@@ -64,11 +65,10 @@ export function LayoutDesignerScreen() {
   const [probeError, setProbeError] = useState<string | null>(null);
   const [measuring, setMeasuring] = useState(false);
 
-  const { data: sites } = useFetch<Site[]>(`${FACILITY_API_BASE}/sites`);
-  const { data: zones } = useFetch<Zone[]>(
-    siteCode ? `${FACILITY_API_BASE}/sites/${encodeURIComponent(siteCode)}/zones` : null,
+  const { data: sites } = useFetchAll<Site>(`${FACILITY_API_BASE}/sites`);
+  const { data: zones } = useFetchAll<Zone>(siteCode ? `${FACILITY_API_BASE}/sites/${encodeURIComponent(siteCode)}/zones` : null,
   );
-  const { data: types } = useFetch<LocationType[]>(`${FACILITY_API_BASE}/location-types`);
+  const { data: types } = useFetchAll<LocationType>(`${FACILITY_API_BASE}/location-types`);
   const { data: grid, loading: gridLoading, error: gridError } = useFetch<ZoneGrid>(
     zoneId ? `${FACILITY_API_BASE}/zones/${encodeURIComponent(zoneId)}/grid?_r=${refreshKey}` : null,
   );

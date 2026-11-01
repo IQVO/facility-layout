@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
-import { Card, DataTable, StatusPill, useFetch } from "@warehouse/ui-kit";
+import { Card, DataTable, StatusPill } from "@warehouse/ui-kit";
+import { useFetchAll } from "../../useFetchAll";
 import { apiGet, apiPut, ApiError } from "../../api";
 import { FACILITY_API_BASE } from "../../config";
 import { ASSIGNABLE_SITE_ROLES, siteRoleLabel } from "../../siteRoles";
@@ -39,10 +40,8 @@ export function SiteNetworkPanel() {
   const [savingRole, setSavingRole] = useState(false);
   const [savingCap, setSavingCap] = useState(false);
 
-  const { data: sites } = useFetch<Site[]>(`${FACILITY_API_BASE}/sites`);
-  const { data: defaults } = useFetch<SiteRoleTransferDefault[]>(
-    `${FACILITY_API_BASE}/site-roles/transfer-defaults`,
-  );
+  const { data: sites } = useFetchAll<Site>(`${FACILITY_API_BASE}/sites`);
+  const { data: defaults } = useFetchAll<SiteRoleTransferDefault>(`${FACILITY_API_BASE}/site-roles/transfer-defaults`);
 
   async function onLoadSite(e: FormEvent) {
     e.preventDefault();

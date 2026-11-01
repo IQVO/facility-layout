@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
-import { Card, DataTable, useFetch } from "@warehouse/ui-kit";
+import { Card, DataTable } from "@warehouse/ui-kit";
+import { useFetchAll } from "../../useFetchAll";
 import { apiPost, ApiError } from "../../api";
 import { FACILITY_API_BASE } from "../../config";
 import type { LocationType, PlacementRule } from "../../types";
@@ -35,10 +36,8 @@ export function PlacementRulesPanel() {
   const [success, setSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const { data: types } = useFetch<LocationType[]>(`${FACILITY_API_BASE}/location-types`);
-  const { data: rules, loading, error: listError } = useFetch<PlacementRule[]>(
-    `${FACILITY_API_BASE}/placement-rules?_r=${refreshKey}`,
-  );
+  const { data: types } = useFetchAll<LocationType>(`${FACILITY_API_BASE}/location-types`);
+  const { data: rules, loading, error: listError } = useFetchAll<PlacementRule>(`${FACILITY_API_BASE}/placement-rules`, refreshKey);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
