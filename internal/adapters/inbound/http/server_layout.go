@@ -157,6 +157,10 @@ func (s *Server) handleRegisterFixedStructure(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) handleListFixedStructures(w http.ResponseWriter, r *http.Request) {
+	limit, after, ok := pageParams(w, r)
+	if !ok {
+		return
+	}
 	structures, err := s.ListFixedStructures.Execute(r.Context(), chi.URLParam(r, "siteCode"))
 	if err != nil {
 		writeError(w, r, err)
@@ -166,5 +170,5 @@ func (s *Server) handleListFixedStructures(w http.ResponseWriter, r *http.Reques
 	for _, f := range structures {
 		out = append(out, toFixedStructureResponse(f))
 	}
-	writeJSON(w, http.StatusOK, out)
+	writePage(w, out, limit, after, fixedStructureAt)
 }

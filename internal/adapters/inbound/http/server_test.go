@@ -146,6 +146,21 @@ func (r response) decode(t *testing.T, dest any) {
 	}
 }
 
+// decodeItems decodes a paged collection response ({items,nextCursor}) and
+// stores its items into dest; a bare JSON array fails the test.
+func (r response) decodeItems(t *testing.T, dest any) {
+	t.Helper()
+	var env struct {
+		Items json.RawMessage `json:"items"`
+	}
+	if err := json.Unmarshal(r.body, &env); err != nil || env.Items == nil {
+		t.Fatalf("response is not a paged {items} envelope (%v): %s", err, string(r.body))
+	}
+	if err := json.Unmarshal(env.Items, dest); err != nil {
+		t.Fatalf("items are not valid JSON (%v): %s", err, string(r.body))
+	}
+}
+
 func (r response) assertStatus(t *testing.T, want int) response {
 	t.Helper()
 	if r.status != want {

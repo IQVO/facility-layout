@@ -32,6 +32,10 @@ func (s *Server) handleRegisterSite(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListSites(w http.ResponseWriter, r *http.Request) {
+	limit, after, ok := pageParams(w, r)
+	if !ok {
+		return
+	}
 	sites, err := s.ListSites.Execute(r.Context())
 	if err != nil {
 		writeError(w, r, err)
@@ -41,7 +45,7 @@ func (s *Server) handleListSites(w http.ResponseWriter, r *http.Request) {
 	for _, site := range sites {
 		out = append(out, toSiteResponse(site))
 	}
-	writeJSON(w, http.StatusOK, out)
+	writePage(w, out, limit, after, siteAt)
 }
 
 func (s *Server) handleGetSite(w http.ResponseWriter, r *http.Request) {
@@ -113,13 +117,22 @@ func (s *Server) handleChangeSiteRole(w http.ResponseWriter, r *http.Request) {
 // capability table (ADR-0037): the one source of truth the warehouse-infra
 // seed and operators read instead of hard-coding it.
 func (s *Server) handleListSiteRoleTransferDefaults(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, toSiteRoleTransferDefaultsResponse(s.ListSiteRoleTransferDefaults.Execute(r.Context())))
+	limit, after, ok := pageParams(w, r)
+	if !ok {
+		return
+	}
+	rows := toSiteRoleTransferDefaultsResponse(s.ListSiteRoleTransferDefaults.Execute(r.Context()))
+	writePage(w, rows, limit, after, siteRoleDefaultAt(rows))
 }
 
 // handleListLocationsByRole answers "where are this site's dock doors" (or
 // any other LocationRole) without walking the full nested site layout
 // (ADR-0016). The role query parameter is required.
 func (s *Server) handleListLocationsByRole(w http.ResponseWriter, r *http.Request) {
+	limit, after, ok := pageParams(w, r, "role")
+	if !ok {
+		return
+	}
 	role, err := placement.ParseLocationRole(r.URL.Query().Get("role"))
 	if err != nil {
 		writeError(w, r, err)
@@ -134,5 +147,5 @@ func (s *Server) handleListLocationsByRole(w http.ResponseWriter, r *http.Reques
 	for _, sl := range slots {
 		out = append(out, toLocationSlotResponse(sl))
 	}
-	writeJSON(w, http.StatusOK, out)
+	writePage(w, out, limit, after, locationSlotAt)
 }

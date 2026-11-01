@@ -38,7 +38,7 @@ func TestSiteRoleAtRegistration(t *testing.T) {
 			t.Fatalf("GET siteRole = %q", one.SiteRole)
 		}
 		var all []siteBody
-		ts.do(http.MethodGet, "/sites", nil).assertStatus(t, http.StatusOK).decode(t, &all)
+		ts.do(http.MethodGet, "/sites", nil).assertStatus(t, http.StatusOK).decodeItems(t, &all)
 		if len(all) != 1 || all[0].SiteRole != "NON_SORTABLE_FC" {
 			t.Fatalf("list = %+v", all)
 		}
@@ -98,7 +98,7 @@ func TestChangeSiteRole(t *testing.T) {
 func TestSiteRoleTransferDefaults(t *testing.T) {
 	ts := newTestServer(t)
 	var out []transferDefaultBody
-	ts.do(http.MethodGet, "/site-roles/transfer-defaults", nil).assertStatus(t, http.StatusOK).decode(t, &out)
+	ts.do(http.MethodGet, "/site-roles/transfer-defaults", nil).assertStatus(t, http.StatusOK).decodeItems(t, &out)
 	if len(out) != 15 {
 		t.Fatalf("got %d rows, want 15: %+v", len(out), out)
 	}

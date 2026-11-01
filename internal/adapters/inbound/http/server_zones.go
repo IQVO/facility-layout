@@ -33,6 +33,10 @@ func (s *Server) handleRegisterZone(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListZones(w http.ResponseWriter, r *http.Request) {
+	limit, after, ok := pageParams(w, r)
+	if !ok {
+		return
+	}
 	zones, err := s.ListZones.Execute(r.Context(), chi.URLParam(r, "siteCode"))
 	if err != nil {
 		writeError(w, r, err)
@@ -42,7 +46,7 @@ func (s *Server) handleListZones(w http.ResponseWriter, r *http.Request) {
 	for _, z := range zones {
 		out = append(out, toZoneResponse(z))
 	}
-	writeJSON(w, http.StatusOK, out)
+	writePage(w, out, limit, after, zoneAt)
 }
 
 func (s *Server) handleGetZone(w http.ResponseWriter, r *http.Request) {
@@ -84,6 +88,10 @@ func (s *Server) handleRegisterAisle(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListAisles(w http.ResponseWriter, r *http.Request) {
+	limit, after, ok := pageParams(w, r)
+	if !ok {
+		return
+	}
 	aisles, err := s.ListAisles.Execute(r.Context(), chi.URLParam(r, "zoneId"))
 	if err != nil {
 		writeError(w, r, err)
@@ -93,7 +101,7 @@ func (s *Server) handleListAisles(w http.ResponseWriter, r *http.Request) {
 	for _, a := range aisles {
 		out = append(out, toAisleResponse(a))
 	}
-	writeJSON(w, http.StatusOK, out)
+	writePage(w, out, limit, after, aisleAt)
 }
 
 func (s *Server) handleGetAisle(w http.ResponseWriter, r *http.Request) {

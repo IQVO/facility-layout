@@ -47,6 +47,10 @@ func (s *Server) handleRegisterLocationType(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) handleListLocationTypes(w http.ResponseWriter, r *http.Request) {
+	limit, after, ok := pageParams(w, r)
+	if !ok {
+		return
+	}
 	types, err := s.ListLocationTypes.Execute(r.Context())
 	if err != nil {
 		writeError(w, r, err)
@@ -56,7 +60,7 @@ func (s *Server) handleListLocationTypes(w http.ResponseWriter, r *http.Request)
 	for _, t := range types {
 		out = append(out, toLocationTypeResponse(t))
 	}
-	writeJSON(w, http.StatusOK, out)
+	writePage(w, out, limit, after, locationTypeAt)
 }
 
 func (s *Server) handleGetLocationType(w http.ResponseWriter, r *http.Request) {
@@ -98,6 +102,10 @@ func (s *Server) handleDefinePlacementRule(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleListPlacementRules(w http.ResponseWriter, r *http.Request) {
+	limit, after, ok := pageParams(w, r)
+	if !ok {
+		return
+	}
 	rules, err := s.ListPlacementRules.Execute(r.Context())
 	if err != nil {
 		writeError(w, r, err)
@@ -107,7 +115,7 @@ func (s *Server) handleListPlacementRules(w http.ResponseWriter, r *http.Request
 	for _, rule := range rules {
 		out = append(out, toPlacementRuleResponse(rule))
 	}
-	writeJSON(w, http.StatusOK, out)
+	writePage(w, out, limit, after, placementRuleAt)
 }
 
 func (s *Server) handleGetPlacementRule(w http.ResponseWriter, r *http.Request) {
