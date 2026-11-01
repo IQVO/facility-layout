@@ -138,6 +138,12 @@ func newIdempotencyRouter(t *testing.T, pool *pgxpool.Pool) http.Handler {
 			Zones: zones, CrossAisles: crossAisles,
 		},
 
+		DecommissionLocationSlot: &usecases.DecommissionLocationSlot{Slots: slots, Events: publisher, Clock: clock, UnitOfWork: uow},
+		ImportFacilityLayout: &usecases.ImportFacilityLayout{
+			Sites: sites, Zones: zones, Aisles: aisles, Slots: slots,
+			LocationTypes: locationTypes, Rules: rules, Events: publisher, Clock: clock, UnitOfWork: uow,
+		},
+
 		IdempotencyPool: pool,
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
