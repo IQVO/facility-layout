@@ -40,7 +40,7 @@ The forces:
 
 ## Decision
 
-We will make `POST /locations/import` **atomic per row, with a partial-success
+We will make `POST /location-imports` **atomic per row, with a partial-success
 report** — never all-or-nothing.
 
 - Every row is processed independently and validated **in full**, using the

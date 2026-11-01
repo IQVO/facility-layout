@@ -77,7 +77,7 @@ re-registering it, and rejects the row with `ErrSiteNotActive` otherwise.
 ### 6. Handled Commands
 
 `RegisterSite` (`POST /sites`), and implicitly `ImportFacilityLayout`
-(`POST /locations/import`) for a site seen for the first time.
+(`POST /location-imports`) for a site seen for the first time.
 
 ### 7. Created Events
 
@@ -340,9 +340,9 @@ decommissioned code is never re-registered (`ErrDuplicateLocationCode`).
 ### 6. Handled Commands
 
 `RegisterLocationSlot` (`POST /locations`), `DecommissionLocationSlot`
-(`POST /locations/{locationCode}/decommission`), `SetLocationGeometry`
+(`POST /locations/{locationCode}/decommissionings`), `SetLocationGeometry`
 (`PUT /locations/{locationCode}/geometry`), `ImportFacilityLayout`
-(`POST /locations/import`).
+(`POST /location-imports`).
 
 ### 7. Created Events
 

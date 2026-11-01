@@ -375,7 +375,7 @@ the in-cluster Collector Service
 
 `facility.location_slot.registrations` is recorded in the
 `RegisterLocationSlot` **use case**, not in the HTTP handler, so a slot
-created by `POST /locations/import` counts exactly like one created by
+created by `POST /location-imports` counts exactly like one created by
 `POST /locations`. Its `outcome` attribute is one of:
 
 - `accepted` — the slot now exists on the map
@@ -427,17 +427,16 @@ one. Every `201` carries a `Location` header that resolves.
 
 ### Idempotency
 
-Every true resource-creation `POST` (`/sites`, `/sites/{siteCode}/zones`,
+Every `POST` (`/sites`, `/sites/{siteCode}/zones`,
 `/sites/{siteCode}/structures`, `/zones/{zoneId}/aisles`,
 `/zones/{zoneId}/cross-aisles`, `/location-types`, `/placement-rules`,
-`/locations`) requires a caller-supplied `Idempotency-Key` header, always
+`/locations`, `/location-imports`, `/locations/{locationCode}/decommissionings`) requires a caller-supplied `Idempotency-Key` header, always
 (Postgres-backed `IdempotencyPool`; there is no database-less run). A
-retry with the same key and the same request body replays the original
-response verbatim instead of double-creating; the same key with a
-different body is rejected `422`. Missing the header on a protected route is
-`400`. `POST /locations/import` (bulk, partial-success) and
-`POST /locations/{locationCode}/decommission` (acts on an existing resource)
-are deliberately excluded. See
+retry with the same key and the same request replays the original
+response verbatim (with `Idempotency-Replayed: true`) instead of double-creating; the same key with a
+different request is rejected `409` (`idempotency-key-reused`). Missing the header is `400` `idempotency-key-required`; a key that is not
+1-128 printable ASCII characters is `400` `idempotency-key-invalid`. The key is global
+(a fingerprint of method + path + body), so reusing it on another route is the same `409`. See
 [ADR-0019](docs/docs/adr/0019-idempotency-key-middleware.md).
 
 ### Structural (write side)
@@ -461,8 +460,8 @@ are deliberately excluded. See
 | `GET` | `/placement-rules/{ruleId}` | Get one placement rule | `200` |
 | `POST` | `/locations` | RegisterLocationSlot | `201` + `Location` |
 | `GET` | `/locations/{locationCode}` | Get one slot | `200` |
-| `POST` | `/locations/{locationCode}/decommission` | DecommissionLocationSlot | `204` |
-| `POST` | `/locations/import` | ImportFacilityLayout (bulk, partial success) | `200` |
+| `POST` | `/locations/{locationCode}/decommissionings` | DecommissionLocationSlot | `204` |
+| `POST` | `/location-imports` | ImportFacilityLayout (bulk, partial success) | `200` |
 | `PUT` | `/locations/{locationCode}/geometry` | SetLocationGeometry (position, dimensions, pick sequence) | `200` |
 | `PUT` | `/locations/{locationCode}/handling-unit` | DeclareLocationHandlingUnit (`EACH`/`CASE`/`PALLET`, ADR-0040) | `200` |
 | `PUT` | `/zones/{zoneId}/aisles/{aisleCode}/geometry` | SetAisleGeometry (travel centreline) | `200` |
@@ -504,7 +503,7 @@ same path in `apis/openapi.yaml` (33 operations over 26 paths).
 | `400` | Malformed input: bad JSON, a location code that is not seven `[A-Z0-9]` segments, a missing required identifier, a resource-creation POST missing its required `Idempotency-Key` header |
 | `404` | The named site/zone/aisle/slot/type/rule does not exist |
 | `409` | State conflict: a code already taken, a parent that exists but is not Active, a slot already decommissioned |
-| `422` | Semantically invalid: non-positive capacity, unknown enum value, **PlacementRule violation**, missing `dockFlow`/`activities` for a Dock/WorkCenter, no route between two locations, an `Idempotency-Key` reused with a different request body |
+| `422` | Semantically invalid: non-positive capacity, unknown enum value, **PlacementRule violation**, missing `dockFlow`/`activities` for a Dock/WorkCenter, no route between two locations |
 
 ---
 
@@ -770,14 +769,14 @@ consumes the same read model the JSON endpoint does.
 
 ## Bulk import
 
-`POST /locations/import` takes a JSON array of fully-specified rows and
+`POST /location-imports` takes a JSON array of fully-specified rows and
 bootstraps a whole building in one call, creating the Site/Zone/Aisle
 structure on first sight. Validation is **atomic per row**: every row is
 processed, and the report says exactly which rows failed and why. A 500-row
 export with 3 bad rows still creates the other 497.
 
 ```sh
-curl -X POST localhost:8080/locations/import -H 'Content-Type: application/json' -d '[
+curl -X POST localhost:8080/location-imports -H 'Content-Type: application/json' -d '[
  {"siteCode":"WH1","siteName":"Fulfilment Centre One","areaCode":"STOR","zoneCode":"FRZ","temperatureClass":"Frozen","hazmat":false,"aisleCode":"A02","sequenceHint":2,"direction":"TwoWay","bay":"01","level":"01","position":"A","locationType":"PalletRack"},
  {"siteCode":"WH1","areaCode":"STOR","zoneCode":"FRZ","temperatureClass":"Frozen","hazmat":false,"aisleCode":"A02","sequenceHint":2,"direction":"TwoWay","bay":"01","level":"01","position":"b","locationType":"PalletRack"}
 ]'

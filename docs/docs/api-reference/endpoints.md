@@ -109,8 +109,8 @@ Language for cross-context placement validation (see [ADR
 | `POST` | `/locations` | [Register a location slot](./rest/register-location-slot.api.mdx) | `201` + `Location` |
 | `GET` | `/locations/{locationCode}` | [Get one slot](./rest/get-location-slot.api.mdx) | `200` |
 | `GET` | `/locations/{locationCode}/classification` | [Get a slot's resolved hazmat/temperature classification](./rest/get-location-classification.api.mdx) | `200` |
-| `POST` | `/locations/{locationCode}/decommission` | [Decommission a slot](./rest/decommission-location-slot.api.mdx) | `204` |
-| `POST` | `/locations/import` | [Import a facility layout](./rest/import-facility-layout.api.mdx) | `200` (partial-success report) |
+| `POST` | `/locations/{locationCode}/decommissionings` | [Decommission a slot](./rest/decommission-location-slot.api.mdx) | `204` |
+| `POST` | `/location-imports` | [Import a facility layout](./rest/import-facility-layout.api.mdx) | `200` (partial-success report) |
 | `PUT` | `/locations/{locationCode}/geometry` | [Set a slot's physical geometry](./rest/set-location-geometry.api.mdx) | `200` |
 
 `POST /locations` is the endpoint where the whole
@@ -119,11 +119,10 @@ Language for cross-context placement validation (see [ADR
 are enforced. See [Bulk import](./bulk-import.md) for the import report
 shape.
 
-`POST /locations` — along with every other true resource-creation `POST`
-in this catalogue except `/locations/import` and the decommission action
-below — requires a caller-supplied `Idempotency-Key` header when the
-service runs with `DATABASE_URL` set (ADR-0019); see
-[Conventions](./conventions.md#idempotency-key-on-resource-creation-posts).
+Every `POST` in this catalogue, `/location-imports` and the decommissioning
+below included, requires a caller-supplied `Idempotency-Key` header when the
+service runs with `DATABASE_URL` set (ADR-0019, ADR-0044); see
+[Conventions](./conventions.md#idempotency-key-on-every-post).
 
 ## Layout — "draw the warehouse"
 
@@ -211,7 +210,7 @@ r.Route("/locations", func(r chi.Router) {
     r.Post("/import", s.handleImportFacilityLayout)
     r.Get("/{locationCode}", s.handleGetLocationSlot)
     r.Get("/{locationCode}/classification", s.handleGetLocationClassification)
-    r.Post("/{locationCode}/decommission", s.handleDecommissionLocationSlot)
+    r.Post("/{locationCode}/decommissionings", s.handleDecommissionLocationSlot)
     r.Put("/{locationCode}/geometry", s.handleSetLocationGeometry)
 })
 ```

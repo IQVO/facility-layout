@@ -59,7 +59,7 @@ The ecosystem decision (E2) fixes the capability each role needs:
 2. **Set at registration.** `POST /sites` takes an optional `siteRole`;
    omitted means `UNSPECIFIED`. `SiteRegistered` carries it as an additive
    `siteRole` field (camelCase, like the rest of that payload). A site
-   created by the bulk import (`POST /locations/import`) is `UNSPECIFIED`.
+   created by the bulk import (`POST /location-imports`) is `UNSPECIFIED`.
 3. **Changed by command.** `PUT /sites/{siteCode}/role` with
    `{"siteRole": "<ROLE>"}`. `Site.ChangeRole`:
    - rejects `UNSPECIFIED`, an unknown or a missing role
