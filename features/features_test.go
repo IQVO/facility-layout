@@ -315,7 +315,7 @@ func (w *world) iRegisterTheSlot(ctx context.Context, locationCode, locationType
 }
 
 func (w *world) iDecommissionTheSlot(ctx context.Context, locationCode string) error {
-	return w.record(ctx, http.MethodPost, "/locations/"+locationCode+"/decommission", nil)
+	return w.record(ctx, http.MethodPost, "/locations/"+locationCode+"/decommissionings", nil)
 }
 
 // iImportTheRows turns the Gherkin data table into the JSON array the import
@@ -350,7 +350,7 @@ func (w *world) iImportTheRows(ctx context.Context, table *godog.Table) error {
 		rows = append(rows, payload)
 	}
 
-	return w.record(ctx, http.MethodPost, "/locations/import", rows)
+	return w.record(ctx, http.MethodPost, "/location-imports", rows)
 }
 
 func (w *world) iRequestTheLayoutOfSite(ctx context.Context, siteCode string) error {

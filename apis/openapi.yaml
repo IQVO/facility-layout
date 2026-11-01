@@ -2245,7 +2245,7 @@ components:
       required: true
       description: >-
         Caller-generated key (a UUID per logical submit, 1-128 printable
-        ASCII characters) that makes a retried POST safe (ADR 0019, ADR 0050).
+        ASCII characters) that makes a retried POST safe (ADR 0019, ADR 0044).
         Clients MUST always send it: the service runs on Postgres in every
         deployment (ADR 0039), so the header is always enforced and an absent
         key is answered 400 `idempotency-key-required`, a malformed one 400

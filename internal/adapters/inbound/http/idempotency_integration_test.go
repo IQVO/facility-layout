@@ -230,13 +230,19 @@ func TestIdempotency_Sites_Replay_SameKeySameBody_ReturnsIdenticalResponseNoDupl
 	if second.Header().Get("Location") != first.Header().Get("Location") {
 		t.Fatalf("replay Location = %q, want %q", second.Header().Get("Location"), first.Header().Get("Location"))
 	}
+	if got := first.Header().Get(inboundhttp.IdempotencyReplayedHeader); got != "" {
+		t.Fatalf("the first execution must not carry Idempotency-Replayed, got %q", got)
+	}
+	if got := second.Header().Get(inboundhttp.IdempotencyReplayedHeader); got != "true" {
+		t.Fatalf("replay Idempotency-Replayed = %q, want true", got)
+	}
 	if got := countRows(t, pool, "sites"); got != 1 {
 		t.Fatalf("sites rows after replay = %d, want exactly 1 (no duplicate site created)", got)
 	}
 }
 
-// (c) same key + different body -> 422.
-func TestIdempotency_Sites_SameKeyDifferentBody_Returns422(t *testing.T) {
+// (c) same key + different body -> 409 idempotency-key-reused.
+func TestIdempotency_Sites_SameKeyDifferentBody_Returns409(t *testing.T) {
 	pool := idempotencyDB(t)
 	router := newIdempotencyRouter(t, pool)
 
@@ -247,8 +253,8 @@ func TestIdempotency_Sites_SameKeyDifferentBody_Returns422(t *testing.T) {
 
 	differentBody := `{"siteCode":"WH2","name":"Different Site"}`
 	second := idempotentPost(t, router, "/sites", "sites-mismatch-1", differentBody)
-	if second.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("status = %d, want 422 (body: %s)", second.Code, second.Body.String())
+	if second.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 (body: %s)", second.Code, second.Body.String())
 	}
 	if got := problemSlug(t, second.Body.Bytes()); got != "idempotency-key-reused" {
 		t.Fatalf("problem slug = %q, want idempotency-key-reused", got)
@@ -414,7 +420,7 @@ func TestIdempotency_LocationSlots_Replay_SameKeySameBody_ReturnsIdenticalRespon
 }
 
 // (c)
-func TestIdempotency_LocationSlots_SameKeyDifferentBody_Returns422(t *testing.T) {
+func TestIdempotency_LocationSlots_SameKeyDifferentBody_Returns409(t *testing.T) {
 	pool := idempotencyDB(t)
 	router := newIdempotencyRouter(t, pool)
 	seedLocationChain(t, router)
@@ -425,8 +431,8 @@ func TestIdempotency_LocationSlots_SameKeyDifferentBody_Returns422(t *testing.T)
 	}
 	differentBody := `{"locationCode":"WH1-STOR-AMB-A07-03-02-C","locationType":"PalletRack"}`
 	second := idempotentPost(t, router, "/locations", "slots-mismatch-1", differentBody)
-	if second.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("status = %d, want 422 (body: %s)", second.Code, second.Body.String())
+	if second.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 (body: %s)", second.Code, second.Body.String())
 	}
 	if got := problemSlug(t, second.Body.Bytes()); got != "idempotency-key-reused" {
 		t.Fatalf("problem slug = %q, want idempotency-key-reused", got)

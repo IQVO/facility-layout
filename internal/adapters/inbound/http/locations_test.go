@@ -262,7 +262,7 @@ func TestDecommissionEndpoint(t *testing.T) {
 		ts.seedStorageAisle()
 		ts.seedSlot("WH1-STOR-AMB-A07-03-02-B", "PalletRack")
 
-		res := ts.do(http.MethodPost, "/locations/WH1-STOR-AMB-A07-03-02-B/decommission", nil).
+		res := ts.do(http.MethodPost, "/locations/WH1-STOR-AMB-A07-03-02-B/decommissionings", nil).
 			assertStatus(t, http.StatusNoContent)
 		if len(res.body) != 0 {
 			t.Fatalf("expected an empty 204 body, got %q", string(res.body))
@@ -283,16 +283,16 @@ func TestDecommissionEndpoint(t *testing.T) {
 		ts.seedStorageAisle()
 		ts.seedSlot("WH1-STOR-AMB-A07-03-02-B", "PalletRack")
 
-		ts.do(http.MethodPost, "/locations/WH1-STOR-AMB-A07-03-02-B/decommission", nil).assertStatus(t, http.StatusNoContent)
-		ts.do(http.MethodPost, "/locations/WH1-STOR-AMB-A07-03-02-B/decommission", nil).
+		ts.do(http.MethodPost, "/locations/WH1-STOR-AMB-A07-03-02-B/decommissionings", nil).assertStatus(t, http.StatusNoContent)
+		ts.do(http.MethodPost, "/locations/WH1-STOR-AMB-A07-03-02-B/decommissionings", nil).
 			assertProblem(t, http.StatusConflict, "already-decommissioned")
 	})
 
 	t.Run("404s for an unknown slot and 400s for a malformed code", func(t *testing.T) {
 		ts := newTestServer(t)
-		ts.do(http.MethodPost, "/locations/WH1-STOR-AMB-A07-03-02-B/decommission", nil).
+		ts.do(http.MethodPost, "/locations/WH1-STOR-AMB-A07-03-02-B/decommissionings", nil).
 			assertProblem(t, http.StatusNotFound, "location-slot-not-found")
-		ts.do(http.MethodPost, "/locations/NOPE/decommission", nil).
+		ts.do(http.MethodPost, "/locations/NOPE/decommissionings", nil).
 			assertProblem(t, http.StatusBadRequest, "malformed-location-code")
 	})
 }
@@ -311,7 +311,7 @@ func TestImportEndpoint(t *testing.T) {
 		ts := newTestServer(t)
 		ts.seedLocationType("PalletRack", 1200, 2.4)
 
-		res := ts.do(http.MethodPost, "/locations/import", []map[string]any{
+		res := ts.do(http.MethodPost, "/location-imports", []map[string]any{
 			importRow("STOR", "AMB", "Ambient", "A07", 7, "03", "01", "A", "PalletRack"),
 			importRow("STOR", "AMB", "Ambient", "A07", 7, "03", "02", "B", "PalletRack"),
 			importRow("STOR", "FRZ", "Frozen", "A02", 2, "01", "01", "A", "PalletRack"),
@@ -349,7 +349,7 @@ func TestImportEndpoint(t *testing.T) {
 		bad := importRow("STOR", "AMB", "Ambient", "A07", 7, "03", "02", "b", "PalletRack")
 		unknownType := importRow("STOR", "AMB", "Ambient", "A07", 7, "03", "03", "A", "Hovercraft")
 
-		res := ts.do(http.MethodPost, "/locations/import", []map[string]any{
+		res := ts.do(http.MethodPost, "/location-imports", []map[string]any{
 			importRow("STOR", "AMB", "Ambient", "A07", 7, "03", "01", "A", "PalletRack"),
 			bad,
 			unknownType,
@@ -386,7 +386,7 @@ func TestImportEndpoint(t *testing.T) {
 		row := importRow("STOR", "AMB", "Ambient", "A07", 7, "03", "01", "A", "PalletRack")
 		row["capacityOverride"] = map[string]any{"maxWeightKg": 750, "maxVolumeM3": 1.8}
 
-		ts.do(http.MethodPost, "/locations/import", []map[string]any{row}).assertStatus(t, http.StatusOK)
+		ts.do(http.MethodPost, "/location-imports", []map[string]any{row}).assertStatus(t, http.StatusOK)
 
 		read := ts.do(http.MethodGet, "/locations/WH1-STOR-AMB-A07-03-01-A", nil).assertStatus(t, http.StatusOK)
 		var slot struct {
@@ -401,12 +401,12 @@ func TestImportEndpoint(t *testing.T) {
 	})
 
 	t.Run("rejects an empty import with 400", func(t *testing.T) {
-		newTestServer(t).do(http.MethodPost, "/locations/import", []map[string]any{}).
+		newTestServer(t).do(http.MethodPost, "/location-imports", []map[string]any{}).
 			assertProblem(t, http.StatusBadRequest, "empty-import")
 	})
 
 	t.Run("rejects a malformed body with 400", func(t *testing.T) {
-		newTestServer(t).doRaw(http.MethodPost, "/locations/import", "{}").
+		newTestServer(t).doRaw(http.MethodPost, "/location-imports", "{}").
 			assertProblem(t, http.StatusBadRequest, "malformed-request-body")
 	})
 }

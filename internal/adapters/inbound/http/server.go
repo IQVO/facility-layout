@@ -150,17 +150,15 @@ func NewRouter(s *Server, logger *slog.Logger, opts ...RouterOption) http.Handle
 	r.Get("/readyz", HandleReadyz(s.Readiness))
 
 	// idempotent wraps a chi router handler behind RequireIdempotencyKey
-	// when a Postgres-backed IdempotencyPool is configured — every true
-	// resource-creation POST in this router (server-generated or
-	// natural-key id, caller does not supply the resource's identity in
-	// a way that makes a retry naturally safe) is wrapped this way, so a
-	// client retry after a lost response never double-creates. Bulk
-	// import (POST /locations/import) and decommission (POST
-	// /locations/{locationCode}/decommission) are deliberately excluded
-	// — see docs/docs/adr/0019-idempotency-key-middleware.md. IdempotencyPool
-	// nil (in-memory dev/test configuration, no transactional Postgres
-	// backing) is a no-op passthrough, mirroring order-management's
-	// identical nil convention.
+	// when a Postgres-backed IdempotencyPool is configured — EVERY POST in
+	// this router is wrapped this way (REST API guideline 2.1, ADR 0044), so
+	// a client retry after a lost response never repeats the effect: the
+	// resource-creation POSTs, the bulk layout import
+	// (POST /location-imports) and the decommission transition
+	// (POST /locations/{locationCode}/decommissionings). PUT routes are
+	// idempotent by method and take no key. IdempotencyPool nil (in-memory
+	// dev/test configuration, no transactional Postgres backing) is a no-op
+	// passthrough, mirroring order-management's identical nil convention.
 	idempotent := func(r chi.Router) chi.Router {
 		if s.IdempotencyPool != nil {
 			return r.With(RequireIdempotencyKey(s.IdempotencyPool))
@@ -201,6 +199,9 @@ func NewRouter(s *Server, logger *slog.Logger, opts ...RouterOption) http.Handle
 
 	r.Get("/distance", s.handleEstimateTravelDistance)
 	r.Get("/site-roles/transfer-defaults", s.handleListSiteRoleTransferDefaults)
+	// POST /location-imports is the batch-import job noun (guideline 1.3 e):
+	// partial-success semantics (ADR-0006), idempotent through the key.
+	idempotent(r).Post("/location-imports", s.handleImportFacilityLayout)
 
 	r.Route("/location-types", func(r chi.Router) {
 		idempotent(r).Post("/", s.handleRegisterLocationType)
@@ -216,15 +217,11 @@ func NewRouter(s *Server, logger *slog.Logger, opts ...RouterOption) http.Handle
 
 	r.Route("/locations", func(r chi.Router) {
 		idempotent(r).Post("/", s.handleRegisterLocationSlot)
-		// POST /locations/import is a BULK/batch import over many rows
-		// (partial-success semantics, ADR-0006) — deliberately excluded,
-		// see the idempotent helper's doc comment above.
-		r.Post("/import", s.handleImportFacilityLayout)
 		r.Get("/{locationCode}", s.handleGetLocationSlot)
 		r.Get("/{locationCode}/classification", s.handleGetLocationClassification)
-		// POST /locations/{locationCode}/decommission acts on an
-		// EXISTING caller-supplied resource, not a creation — excluded.
-		r.Post("/{locationCode}/decommission", s.handleDecommissionLocationSlot)
+		// POST /locations/{locationCode}/decommissionings is the
+		// decommission transition resource (guideline 1.3 d, ADR 0044).
+		idempotent(r).Post("/{locationCode}/decommissionings", s.handleDecommissionLocationSlot)
 		s.mountSlotUpdates(r)
 	})
 
