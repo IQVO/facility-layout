@@ -1,7 +1,16 @@
 extends: ["spectral:oas"]
+functionsDir: ".spectral/functions"
+functions: [restGuideline]
 rules:
   operation-operationId: error
   operation-description: error
   operation-tags: error
   info-description: error
   oas3-api-servers: error
+  rest-guideline:
+    description: "Warehouse REST API guideline R1-R8 (nouns not verbs, idempotent POST/PATCH, 409 key reuse, Idempotency-Replayed, keyset pagination)."
+    message: "{{error}}"
+    severity: error
+    given: "$"
+    then:
+      function: restGuideline
