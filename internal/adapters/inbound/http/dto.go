@@ -1,6 +1,6 @@
 // Package http is the inbound chi adapter: DTOs, handlers, routing, and
 // domain-error-to-HTTP-status mapping. Domain structs never cross this
-// boundary — every response here is a DTO defined in this file.
+// boundary — every response here is a DTO defined in this package (dto*.go).
 package http
 
 // ------------------------------------------------------------- requests ----
