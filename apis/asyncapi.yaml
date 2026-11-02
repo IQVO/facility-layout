@@ -203,9 +203,18 @@ channels:
         per-process-unique consumer group, FirstOffset replay,
         idempotent projection keyed on the CloudEvent `id`, readiness
         gated on catching up to the high watermark observed at start.
+        The topic carries every event type; the projector derives its
+        report from SiteRegistered, ZoneRegistered, AisleRegistered,
+        LocationTypeRegistered, PlacementRuleDefined,
+        LocationSlotRegistered, LocationSlotDecommissioned and
+        FacilityLayoutImported, and ignores the other types. A message
+        that fails CloudEvents validation goes to the `.dlq` topic
+        (`warehouse.facility.analytics.dlq`).
       message:
         oneOf:
           - $ref: '#/components/messages/siteRegistered'
+          - $ref: '#/components/messages/siteCapabilityChanged'
+          - $ref: '#/components/messages/siteRoleChanged'
           - $ref: '#/components/messages/zoneRegistered'
           - $ref: '#/components/messages/aisleRegistered'
           - $ref: '#/components/messages/locationTypeRegistered'
@@ -330,7 +339,7 @@ components:
                 allOf:
                   - $ref: '#/components/schemas/eventDataBase'
                   - type: object
-                    required: [siteCode, siteName]
+                    required: [siteCode, siteName, siteRole]
                     properties:
                       siteCode:
                         type: string
@@ -540,7 +549,7 @@ components:
                 allOf:
                   - $ref: '#/components/schemas/eventDataBase'
                   - type: object
-                    required: [locationType, maxWeightKg, maxVolumeM3]
+                    required: [locationType, role]
                     properties:
                       locationType:
                         type: string
@@ -623,7 +632,7 @@ components:
                 allOf:
                   - $ref: '#/components/schemas/eventDataBase'
                   - type: object
-                    required: [locationCode, aisleId, zoneId, locationType, maxWeightKg, maxVolumeM3]
+                    required: [locationCode, aisleId, zoneId, locationType, role]
                     properties:
                       locationCode:
                         type: string
