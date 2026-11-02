@@ -29,11 +29,11 @@ func rejectNUL(next http.Handler) http.Handler {
 			body, err := io.ReadAll(r.Body)
 			_ = r.Body.Close()
 			if err != nil {
-				writeProblem(w, http.StatusBadRequest, problemInfo{"malformed-request-body", "The request body could not be read"}, err.Error(), r.URL.Path)
+				writeProblem(w, http.StatusBadRequest, problemInfo{slugMalformedRequestBody, "The request body could not be read"}, err.Error(), r.URL.Path)
 				return
 			}
 			if containsNUL(body) {
-				writeProblem(w, http.StatusBadRequest, problemInfo{"malformed-request-body", "The request body contains a NUL character"}, "a NUL character (U+0000) is not allowed in a request body", r.URL.Path)
+				writeProblem(w, http.StatusBadRequest, problemInfo{slugMalformedRequestBody, "The request body contains a NUL character"}, "a NUL character (U+0000) is not allowed in a request body", r.URL.Path)
 				return
 			}
 			r.Body = io.NopCloser(bytes.NewReader(body))

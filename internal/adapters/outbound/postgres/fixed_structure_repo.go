@@ -87,13 +87,7 @@ func (r *FixedStructureRepo) ListBySite(ctx context.Context, siteCode string) ([
 	return out, rows.Err()
 }
 
-// fixedStructureScanner is the shared shape of pgx.Row and pgx.Rows for a
-// single-row scan that already knows its id from the query argument.
-type fixedStructureScanner interface {
-	Scan(dest ...any) error
-}
-
-func scanFixedStructure(id string, row fixedStructureScanner) (*structure.FixedStructure, error) {
+func scanFixedStructure(id string, row scanner) (*structure.FixedStructure, error) {
 	var siteCode, kind, label string
 	var xM, yM, zM, widthM, depthM, heightM float64
 	if err := row.Scan(&siteCode, &kind, &xM, &yM, &zM, &widthM, &depthM, &heightM, &label); err != nil {

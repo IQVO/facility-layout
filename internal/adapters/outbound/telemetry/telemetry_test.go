@@ -17,7 +17,7 @@ func TestSetupDoesNotBlockOnAnUnreachableCollector(t *testing.T) {
 	defer cancel()
 
 	done := make(chan error, 1)
-	var shutdown func(context.Context) error
+	var shutdown func(context.Context)
 
 	go func() {
 		var err error
@@ -40,19 +40,16 @@ func TestSetupDoesNotBlockOnAnUnreachableCollector(t *testing.T) {
 	}
 
 	// A shutdown that cannot reach a Collector must still complete
-	// promptly and report success: the flush failing is telemetry's
-	// problem, not an unclean exit.
+	// promptly: the flush failing is telemetry's problem (logged inside
+	// shutdown), never an unclean exit.
 	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancelShutdown()
 
-	shutdownDone := make(chan error, 1)
-	go func() { shutdownDone <- shutdown(shutdownCtx) }()
+	shutdownDone := make(chan struct{}, 1)
+	go func() { shutdown(shutdownCtx); shutdownDone <- struct{}{} }()
 
 	select {
-	case err := <-shutdownDone:
-		if err != nil {
-			t.Fatalf("shutdown reported an error: %v", err)
-		}
+	case <-shutdownDone:
 	case <-time.After(10 * time.Second):
 		t.Fatal("shutdown hung with no collector running")
 	}
@@ -69,9 +66,7 @@ func TestSetupDefaultsTheEndpoint(t *testing.T) {
 	t.Cleanup(func() {
 		shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancelShutdown()
-		if err := shutdown(shutdownCtx); err != nil {
-			t.Errorf("shutdown reported an error: %v", err)
-		}
+		shutdown(shutdownCtx)
 	})
 }
 
@@ -101,9 +96,7 @@ func TestSetupAcceptsBothEndpointForms(t *testing.T) {
 			}
 			shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancelShutdown()
-			if err := shutdown(shutdownCtx); err != nil {
-				t.Fatalf("shutdown reported an error: %v", err)
-			}
+			shutdown(shutdownCtx)
 		})
 	}
 }

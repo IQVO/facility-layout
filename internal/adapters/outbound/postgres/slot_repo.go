@@ -134,7 +134,8 @@ func (r *SlotRepo) list(ctx context.Context, query, arg string) ([]*slot.Locatio
 	return out, rows.Err()
 }
 
-// scanner is the shared shape of pgx.Row and pgx.Rows.
+// scanner is the shared shape of pgx.Row and pgx.Rows; every repo in
+// this package types its scan helper with it.
 type scanner interface {
 	Scan(dest ...any) error
 }

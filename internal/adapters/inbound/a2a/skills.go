@@ -31,8 +31,13 @@ const (
 // adapter reports for the same condition, so the status and title come from
 // the shared table (TestArgumentSlugsExistInTheRESTTable pins that).
 const (
-	slugInvalidSiteCode     = "invalid-site-code"
-	slugMissingLocationCode = "missing-location-code"
+	slugInvalidSiteCode       = "invalid-site-code"
+	slugAlreadyDecommissioned = "already-decommissioned"
+	slugMalformedLocationCode = "malformed-location-code"
+	slugInvalidZoneCode       = "invalid-zone-code"
+	slugInvalidAisleCode      = "invalid-aisle-code"
+	slugInvalidLocationType   = "invalid-location-type"
+	slugMissingLocationCode   = "missing-location-code"
 )
 
 // skillRequest is the wire contract of every skill call: the first meaningful

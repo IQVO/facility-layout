@@ -59,7 +59,7 @@ const exportTimeout = 5 * time.Second
 // from the graceful-shutdown path. It is safe to call once.
 //
 // Setup never blocks on the Collector being reachable.
-func Setup(ctx context.Context, serviceName, serviceVersion, otlpEndpoint string) (func(context.Context) error, error) {
+func Setup(ctx context.Context, serviceName, serviceVersion, otlpEndpoint string) (func(context.Context), error) {
 	otlpEndpoint = normalizeEndpoint(otlpEndpoint)
 
 	// Route the SDK's own diagnostics through slog before anything can
@@ -77,20 +77,19 @@ func Setup(ctx context.Context, serviceName, serviceVersion, otlpEndpoint string
 	// a service must not report an unclean exit just because its telemetry
 	// backend was unreachable. Bound the context you pass in — the flush
 	// otherwise retries for as long as the exporters are willing to.
-	shutdown := func(ctx context.Context) error {
+	shutdown := func(ctx context.Context) {
 		for _, fn := range shutdowns {
 			if err := fn(ctx); err != nil {
 				slog.WarnContext(ctx, "telemetry provider shutdown did not flush cleanly", "error", err)
 			}
 		}
-		return nil
 	}
 	// Any failure after a provider is already built must still tear that
 	// provider down, or Setup leaks a background exporter goroutine.
-	fail := func(err error) (func(context.Context) error, error) {
+	fail := func(err error) (func(context.Context), error) {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), exportTimeout)
 		defer cancel()
-		_ = shutdown(shutdownCtx)
+		shutdown(shutdownCtx)
 		return nil, err
 	}
 

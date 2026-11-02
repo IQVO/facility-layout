@@ -84,12 +84,7 @@ func (r *AisleRepo) ListByZone(ctx context.Context, zoneID string) ([]*aisle.Ais
 	return out, rows.Err()
 }
 
-// aisleScanner is the shared shape of pgx.Row and pgx.Rows.
-type aisleScanner interface {
-	Scan(dest ...any) error
-}
-
-func scanAisle(row aisleScanner) (*aisle.Aisle, error) {
+func scanAisle(row scanner) (*aisle.Aisle, error) {
 	var zoneID, aisleCode, direction, status string
 	var sequenceHint int
 	var startXM, startYM, startZM, endXM, endYM, endZM *float64

@@ -26,6 +26,17 @@ type problemInfo struct {
 
 // errorCategory ties one typed sentinel error to both facets of its problem:
 // the HTTP-style status and the fixed (slug, title) pair.
+// Problem titles reused by several catalog rows below; the slug+title pair
+// is fixed per problem type, so several sentinels share one title.
+const (
+	msgAlreadyDecommissioned = "This structure is already decommissioned"
+	msgMalformedLocationCode = "Malformed location code"
+	msgInvalidSiteCode       = "Invalid site code"
+	msgInvalidZoneCode       = "Invalid area or zone code"
+	msgInvalidAisleCode      = "Invalid aisle code"
+	msgInvalidLocationType   = "Invalid location type"
+)
+
 type errorCategory struct {
 	err     error
 	status  int
@@ -66,13 +77,13 @@ var errorCategories = []errorCategory{
 	{usecases.ErrAisleNotActive, http.StatusConflict, problemInfo{"aisle-not-active", "Aisle is not active"}},
 
 	// 409 Conflict: already decommissioned.
-	{aisle.ErrAlreadyDecommissioned, http.StatusConflict, problemInfo{"already-decommissioned", "This structure is already decommissioned"}},
-	{aisle.ErrAisleDecommissioned, http.StatusConflict, problemInfo{"already-decommissioned", "This structure is already decommissioned"}},
-	{aisle.ErrCrossAisleAlreadyDecommissioned, http.StatusConflict, problemInfo{"already-decommissioned", "This structure is already decommissioned"}},
-	{site.ErrAlreadyDecommissioned, http.StatusConflict, problemInfo{"already-decommissioned", "This structure is already decommissioned"}},
-	{zone.ErrAlreadyDecommissioned, http.StatusConflict, problemInfo{"already-decommissioned", "This structure is already decommissioned"}},
-	{slot.ErrAlreadyDecommissioned, http.StatusConflict, problemInfo{"already-decommissioned", "This structure is already decommissioned"}},
-	{slot.ErrSlotDecommissioned, http.StatusConflict, problemInfo{"already-decommissioned", "This structure is already decommissioned"}},
+	{aisle.ErrAlreadyDecommissioned, http.StatusConflict, problemInfo{slugAlreadyDecommissioned, msgAlreadyDecommissioned}},
+	{aisle.ErrAisleDecommissioned, http.StatusConflict, problemInfo{slugAlreadyDecommissioned, msgAlreadyDecommissioned}},
+	{aisle.ErrCrossAisleAlreadyDecommissioned, http.StatusConflict, problemInfo{slugAlreadyDecommissioned, msgAlreadyDecommissioned}},
+	{site.ErrAlreadyDecommissioned, http.StatusConflict, problemInfo{slugAlreadyDecommissioned, msgAlreadyDecommissioned}},
+	{zone.ErrAlreadyDecommissioned, http.StatusConflict, problemInfo{slugAlreadyDecommissioned, msgAlreadyDecommissioned}},
+	{slot.ErrAlreadyDecommissioned, http.StatusConflict, problemInfo{slugAlreadyDecommissioned, msgAlreadyDecommissioned}},
+	{slot.ErrSlotDecommissioned, http.StatusConflict, problemInfo{slugAlreadyDecommissioned, msgAlreadyDecommissioned}},
 
 	// 409 Conflict: optimistic-concurrency guard (ADR-0025) — another
 	// writer modified the row between this caller's load and its Save.
@@ -115,24 +126,24 @@ var errorCategories = []errorCategory{
 	{zone.ErrInvalidPitch, http.StatusUnprocessableEntity, problemInfo{"invalid-pitch", "Bay pitch and level pitch must both be greater than zero"}},
 
 	// 400 Bad Request: malformed input.
-	{shared.ErrMalformedLocationCode, http.StatusBadRequest, problemInfo{"malformed-location-code", "Malformed location code"}},
-	{shared.ErrEmptyLocationSegment, http.StatusBadRequest, problemInfo{"malformed-location-code", "Malformed location code"}},
-	{shared.ErrInvalidLocationSegment, http.StatusBadRequest, problemInfo{"malformed-location-code", "Malformed location code"}},
-	{site.ErrEmptySiteCode, http.StatusBadRequest, problemInfo{"invalid-site-code", "Invalid site code"}},
-	{site.ErrInvalidSiteCode, http.StatusBadRequest, problemInfo{"invalid-site-code", "Invalid site code"}},
-	{zone.ErrEmptySiteCode, http.StatusBadRequest, problemInfo{"invalid-site-code", "Invalid site code"}},
+	{shared.ErrMalformedLocationCode, http.StatusBadRequest, problemInfo{slugMalformedLocationCode, msgMalformedLocationCode}},
+	{shared.ErrEmptyLocationSegment, http.StatusBadRequest, problemInfo{slugMalformedLocationCode, msgMalformedLocationCode}},
+	{shared.ErrInvalidLocationSegment, http.StatusBadRequest, problemInfo{slugMalformedLocationCode, msgMalformedLocationCode}},
+	{site.ErrEmptySiteCode, http.StatusBadRequest, problemInfo{slugInvalidSiteCode, msgInvalidSiteCode}},
+	{site.ErrInvalidSiteCode, http.StatusBadRequest, problemInfo{slugInvalidSiteCode, msgInvalidSiteCode}},
+	{zone.ErrEmptySiteCode, http.StatusBadRequest, problemInfo{slugInvalidSiteCode, msgInvalidSiteCode}},
 	{site.ErrEmptySiteName, http.StatusBadRequest, problemInfo{"empty-site-name", "Site name must not be empty"}},
-	{zone.ErrEmptyAreaCode, http.StatusBadRequest, problemInfo{"invalid-zone-code", "Invalid area or zone code"}},
-	{zone.ErrEmptyZoneCode, http.StatusBadRequest, problemInfo{"invalid-zone-code", "Invalid area or zone code"}},
-	{zone.ErrInvalidCode, http.StatusBadRequest, problemInfo{"invalid-zone-code", "Invalid area or zone code"}},
-	{aisle.ErrEmptyZoneID, http.StatusBadRequest, problemInfo{"invalid-aisle-code", "Invalid aisle code"}},
-	{aisle.ErrEmptyAisleCode, http.StatusBadRequest, problemInfo{"invalid-aisle-code", "Invalid aisle code"}},
-	{aisle.ErrInvalidAisleCode, http.StatusBadRequest, problemInfo{"invalid-aisle-code", "Invalid aisle code"}},
-	{placement.ErrEmptyLocationTypeName, http.StatusBadRequest, problemInfo{"invalid-location-type", "Invalid location type"}},
+	{zone.ErrEmptyAreaCode, http.StatusBadRequest, problemInfo{slugInvalidZoneCode, msgInvalidZoneCode}},
+	{zone.ErrEmptyZoneCode, http.StatusBadRequest, problemInfo{slugInvalidZoneCode, msgInvalidZoneCode}},
+	{zone.ErrInvalidCode, http.StatusBadRequest, problemInfo{slugInvalidZoneCode, msgInvalidZoneCode}},
+	{aisle.ErrEmptyZoneID, http.StatusBadRequest, problemInfo{slugInvalidAisleCode, msgInvalidAisleCode}},
+	{aisle.ErrEmptyAisleCode, http.StatusBadRequest, problemInfo{slugInvalidAisleCode, msgInvalidAisleCode}},
+	{aisle.ErrInvalidAisleCode, http.StatusBadRequest, problemInfo{slugInvalidAisleCode, msgInvalidAisleCode}},
+	{placement.ErrEmptyLocationTypeName, http.StatusBadRequest, problemInfo{slugInvalidLocationType, msgInvalidLocationType}},
 	{placement.ErrEmptyRuleID, http.StatusBadRequest, problemInfo{"empty-placement-rule-id", "Placement rule id must not be empty"}},
-	{placement.ErrEmptyRuleLocationType, http.StatusBadRequest, problemInfo{"invalid-location-type", "Invalid location type"}},
+	{placement.ErrEmptyRuleLocationType, http.StatusBadRequest, problemInfo{slugInvalidLocationType, msgInvalidLocationType}},
 	{slot.ErrMissingLocationCode, http.StatusBadRequest, problemInfo{"missing-location-code", "Location code is required"}},
-	{slot.ErrMissingLocationType, http.StatusBadRequest, problemInfo{"invalid-location-type", "Invalid location type"}},
+	{slot.ErrMissingLocationType, http.StatusBadRequest, problemInfo{slugInvalidLocationType, msgInvalidLocationType}},
 	{structure.ErrEmptyID, http.StatusBadRequest, problemInfo{"empty-fixed-structure-id", "Fixed structure requires an id"}},
 	{structure.ErrEmptySiteCode, http.StatusBadRequest, problemInfo{"empty-fixed-structure-site-code", "Fixed structure must be scoped to a site code"}},
 	{structure.ErrEmptyLabel, http.StatusBadRequest, problemInfo{"empty-fixed-structure-label", "Fixed structure requires a label"}},
