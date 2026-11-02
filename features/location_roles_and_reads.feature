@@ -35,10 +35,10 @@ Feature: Locations by role and single-resource reads
     And a registered LocationSlot "WH1-STOR-AMB-A01-01-01-A" of type "PalletRack"
     When a GET request is sent to "/sites/WH1/locations?role=Dock"
     Then the response status is 200
-    And the response list "" has 2 items
-    And the "locationCode" of each item in "" are "WH1-RCV-DOCK-D01-01-01-A,WH1-RCV-DOCK-D01-02-01-A"
-    And the "dockFlow" of each item in "" are "Inbound,Outbound"
-    And the "role" of each item in "" are "Dock,Dock"
+    And the response list "items" has 2 items
+    And the "locationCode" of each item in "items" are "WH1-RCV-DOCK-D01-01-01-A,WH1-RCV-DOCK-D01-02-01-A"
+    And the "dockFlow" of each item in "items" are "Inbound,Outbound"
+    And the "role" of each item in "items" are "Dock,Dock"
 
   @bdd
   Scenario: Storage slots are the default role
@@ -46,22 +46,22 @@ Feature: Locations by role and single-resource reads
     And a POST to "/locations" with the JSON body {"locationCode":"WH1-RCV-DOCK-D01-01-01-A","locationType":"DockDoor","dockFlow":"Both"} has been accepted
     When a GET request is sent to "/sites/WH1/locations?role=Storage"
     Then the response status is 200
-    And the "locationCode" of each item in "" are "WH1-STOR-AMB-A01-01-01-A"
+    And the "locationCode" of each item in "items" are "WH1-STOR-AMB-A01-01-01-A"
 
   @bdd
   Scenario: A work center lists the activities it performs
     Given a POST to "/locations" with the JSON body {"locationCode":"WH1-STOR-AMB-A01-01-01-A","locationType":"PackStation","activities":["Pack","QC"]} has been accepted
     When a GET request is sent to "/sites/WH1/locations?role=WorkCenter"
     Then the response status is 200
-    And the response list "" has 1 item
-    And the response field "0.activities.0" is "Pack"
-    And the response field "0.activities.1" is "QC"
+    And the response list "items" has 1 item
+    And the response field "items.0.activities.0" is "Pack"
+    And the response field "items.0.activities.1" is "QC"
 
   @bdd
   Scenario: A role nobody holds lists an empty array
     When a GET request is sent to "/sites/WH1/locations?role=Yard"
     Then the response status is 200
-    And the response list "" has 0 items
+    And the response list "items" has 0 items
 
   @bdd
   Scenario: Listing by role for an unknown site is not found

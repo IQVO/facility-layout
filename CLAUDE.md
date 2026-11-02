@@ -32,11 +32,13 @@ language everywhere. Module `github.com/claudioed/facility-layout`, Go 1.26.
   log/outbox publisher; `kafka` publishes to `warehouse.facility.events`.
 - **No auth layer (ADR-0014 reverted by ADR-0015)**: do not re-add
   `AUTH_MODE`/`API_READ_KEY`/etc. on REST or MCP without re-reading ADR-0015.
-- **Idempotency (ADR-0019)**: every true resource-creation POST (sites,
-  zones, fixed structures, aisles, cross-aisles, location types, placement
-  rules, location slots) requires a caller-supplied `Idempotency-Key` header
-  when `DATABASE_URL` is set. Bulk import and decommission are excluded.
-  No database ⇒ check skipped (`IdempotencyPool` nil ⇒ passthrough).
+- **Idempotency (ADR-0019, ADR-0044)**: EVERY POST requires a caller-supplied
+  `Idempotency-Key` header, including `POST /location-imports` and
+  `POST /locations/{code}/decommissionings`. The key is GLOBAL (looked up
+  alone, fingerprint = method + path + body hash); key reuse with a different
+  request is 409 `idempotency-key-reused`; a replayed answer carries
+  `Idempotency-Replayed: true`. List responses are `{items,nextCursor}` with
+  `limit` + keyset `cursor` (fleet REST guideline, ADR-0044).
 - **Errors**: typed domain errors mapped to HTTP status in the adapter; RFC
   7807 `application/problem+json` for every error (ADR-0004) — never a
   bespoke `{"error": ...}` shape.

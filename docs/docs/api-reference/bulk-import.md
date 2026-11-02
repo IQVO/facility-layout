@@ -2,12 +2,12 @@
 id: bulk-import
 title: Bulk import
 sidebar_label: Bulk import
-description: POST /locations/import — bootstrapping a real building's layout, with atomic per-row validation and a partial-success report.
+description: POST /location-imports — bootstrapping a real building's layout, with atomic per-row validation and a partial-success report.
 ---
 
 # Bulk import
 
-`POST /locations/import` is the bootstrap mechanism: it loads a real
+`POST /location-imports` is the bootstrap mechanism: it loads a real
 building's layout from a CSV/JSON export in one call, reproducibly, instead
 of somebody typing in slots one at a time.
 
@@ -53,7 +53,7 @@ Three rows: one good, one that violates a placement rule, one with a
 malformed location code.
 
 ```bash
-curl -X POST localhost:8080/locations/import -H 'Content-Type: application/json' -d '[
+curl -X POST localhost:8080/location-imports -H 'Content-Type: application/json' -d '[
  {"siteCode":"WH1","siteName":"Fulfilment Centre One","areaCode":"STOR","zoneCode":"AMB","temperatureClass":"Ambient","hazmat":false,"aisleCode":"A08","sequenceHint":8,"direction":"TwoWay","bay":"01","level":"01","position":"A","locationType":"PalletRack"},
  {"siteCode":"WH1","areaCode":"STOR","zoneCode":"FRZ","temperatureClass":"Frozen","hazmat":false,"aisleCode":"A02","sequenceHint":2,"direction":"OneWay","bay":"01","level":"01","position":"A","locationType":"PalletRack"},
  {"siteCode":"WH1","areaCode":"STOR","zoneCode":"AMB","temperatureClass":"Ambient","hazmat":false,"aisleCode":"A08","sequenceHint":8,"direction":"TwoWay","bay":"01","level":"01","position":"b","locationType":"PalletRack"}

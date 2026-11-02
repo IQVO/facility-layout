@@ -27,8 +27,8 @@ const DEFAULTS = [
 
 function mockBasics() {
   server.use(
-    http.get(`${FACILITY_API_BASE}/sites`, () => HttpResponse.json([SITE])),
-    http.get(`${FACILITY_API_BASE}/site-roles/transfer-defaults`, () => HttpResponse.json(DEFAULTS)),
+    http.get(`${FACILITY_API_BASE}/sites`, () => HttpResponse.json({ items: [SITE] })),
+    http.get(`${FACILITY_API_BASE}/site-roles/transfer-defaults`, () => HttpResponse.json({ items: DEFAULTS })),
   );
 }
 

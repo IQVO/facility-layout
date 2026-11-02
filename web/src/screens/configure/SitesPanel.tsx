@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
-import { Card, DataTable, StatusPill, useFetch } from "@warehouse/ui-kit";
+import { Card, DataTable, StatusPill } from "@warehouse/ui-kit";
+import { useFetchAll } from "../../useFetchAll";
 import { apiPost, ApiError } from "../../api";
 import { FACILITY_API_BASE } from "../../config";
 import type { Site } from "../../types";
@@ -19,9 +20,7 @@ export function SitesPanel({ onChanged }: { onChanged?: () => void }) {
   // useFetch has no refetch(); bump a cache-busting query param to force a
   // re-fetch after a successful mutation instead.
   const [refreshKey, setRefreshKey] = useState(0);
-  const { data: sites, loading, error: listError } = useFetch<Site[]>(
-    `${FACILITY_API_BASE}/sites?_r=${refreshKey}`,
-  );
+  const { data: sites, loading, error: listError } = useFetchAll<Site>(`${FACILITY_API_BASE}/sites`, refreshKey);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();

@@ -92,3 +92,7 @@ bounded context and its own service, not a package bolted onto
 - [Context map](../ecosystem/context-map.md) — how this fits the other
   warehouse-systems services, and which of them consume it today.
 - [Architecture Decision Records](../adr/index.md) — the decisions, and why.
+
+:::note[Disclaimer]
+This project is a domain-driven design study. It is not associated with, endorsed by or affiliated with any company, and it uses no company's code, data, logos or trademarks. All names, figures and examples are illustrative or synthetic.
+:::

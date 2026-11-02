@@ -34,7 +34,7 @@ jobs:
           cache: false          # golangci-lint-action manages its own cache
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
-          version: v2.13.1
+          version: v2.14.0
           args: --timeout=5m
 
   # Agent-guide sensor (harness-template v3): skills load, references resolve, context budget.
@@ -70,7 +70,7 @@ jobs:
           cache: false          # golangci-lint-action manages its own cache
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
-          version: v2.13.1
+          version: v2.14.0
           args: --timeout=5m --enable-only gocyclo,gocognit,cyclop,funlen,nestif
       - name: gocyclo report (functions over 10 — informational, gate is 15)
         if: always()
@@ -79,6 +79,39 @@ jobs:
           go install github.com/fzipp/gocyclo/cmd/gocyclo@v0.6.0
           echo "### gocyclo — functions over 10 (informational; the gate is 15)" >> "$GITHUB_STEP_SUMMARY"
           go list -f '{{.Dir}}' ./... | grep -v '/web/' | xargs -r gocyclo -over 10 | awk '!seen[$0]++' | grep -v '/web/' | tee -a "$GITHUB_STEP_SUMMARY" || true
+
+  # File-length budget: at most 300 lines of code per production Go file
+  # (revive file-length-limit; comments and blank lines are not counted;
+  # settings in .golangci.yml). Pull requests into develop: BLOCKING for every
+  # Go file the PR adds or touches, so an oversized legacy file is split the
+  # next time it changes. Release PRs (develop -> main), push and schedule: an
+  # informational report of the whole backlog, so releases are never blocked.
+  # ============================================================
+  # CLASSIFICATION: LINTERS & STATIC ANALYSIS (file length)
+  # ============================================================
+  file-length:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false          # golangci-lint-action manages its own cache
+      - name: file length of the Go files this PR adds or touches (blocking)
+        if: github.event_name == 'pull_request' && github.base_ref == 'develop'
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
+        with:
+          version: v2.14.0
+          args: --timeout=5m --enable-only revive --new-from-merge-base=origin/develop --whole-files
+      - name: file length backlog (informational)
+        if: github.event_name != 'pull_request' || github.base_ref != 'develop'
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
+        with:
+          version: v2.14.0
+          args: --timeout=5m --enable-only revive --issues-exit-code=0
 
   # ============================================================
   # CLASSIFICATION: UNIT TESTING
@@ -176,7 +209,7 @@ jobs:
         with:
           python-version: "3.13"
       - name: Install Schemathesis (pinned)
-        run: python3 -m pip install "schemathesis==4.28.0"
+        run: python3 -m pip install --require-hashes -r .github/requirements/schemathesis.txt
       - name: Contract tests (Schemathesis over apis/openapi.yaml)
         env:
           DATABASE_URL: "postgres://facility:facility@localhost:5432/facility?sslmode=disable"

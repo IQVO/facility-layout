@@ -16,11 +16,11 @@ sibling services did historically.
 Every path is a resource collection or a member of one. Two verb-suffixed
 action endpoints exist and both are deliberate:
 
-- **`POST /locations/{locationCode}/decommission`** — a genuine domain
+- **`POST /locations/{locationCode}/decommissionings`** — a genuine domain
   command on a single slot, not a CRUD update. Forcing it into
   `PATCH {"status":"Decommissioned"}` would misrepresent a one-way state
   transition as a field assignment.
-- **`POST /locations/import`** — a collection-level action scoped to the
+- **`POST /location-imports`** — a collection-level action scoped to the
   `/locations` resource, rather than dangling off an unscoped `/admin/...`
   path.
 
@@ -64,7 +64,7 @@ fixed structure (use `GET /sites/{siteCode}/structures`).
 | `400` | Malformed input: bad JSON, a location code that is not seven `[A-Z0-9]` segments, a missing required identifier, a resource-creation POST missing its required `Idempotency-Key` header |
 | `404` | The named site/zone/aisle/slot/type/rule does not exist |
 | `409` | State conflict: a code already taken, a parent that exists but is not Active, a slot already decommissioned |
-| `422` | Semantically invalid: non-positive capacity, unknown enum value, **PlacementRule violation**, an `Idempotency-Key` reused with a different request body |
+| `422` | Semantically invalid: non-positive capacity, unknown enum value, **PlacementRule violation** |
 
 The 409/422 split is the one worth internalising:
 
@@ -75,27 +75,29 @@ The 409/422 split is the one worth internalising:
   unknown temperature class, a location type that is not legal in that zone.
   The caller has to change the request.
 
-`POST /locations/import` answers **`200`**, not `201`: a bulk import is a
+`POST /location-imports` answers **`200`**, not `201`: a bulk import is a
 partial-success report over many rows, not the creation of one addressable
 resource, so there is no single `Location` to hand back.
 
-## Idempotency-Key on resource-creation POSTs
+## Idempotency-Key on every POST
 
-Every true resource-creation `POST` — `/sites`, `/sites/{siteCode}/zones`,
+Every `POST` — `/sites`, `/sites/{siteCode}/zones`,
 `/sites/{siteCode}/structures`, `/zones/{zoneId}/aisles`,
 `/zones/{zoneId}/cross-aisles`, `/location-types`, `/placement-rules`,
-`/locations` — requires a caller-supplied `Idempotency-Key` header, always
-(ADR-0019, ADR 0039). The middleware is Postgres-backed and always on; there
-is no database-less run that skips the check. `POST /locations/import` (bulk, partial-success
-semantics) and `POST /locations/{locationCode}/decommission` (acts on an
-existing resource, not a creation) are deliberately excluded.
+`/locations`, `/location-imports` and
+`/locations/{locationCode}/decommissionings` — requires a caller-supplied
+`Idempotency-Key` header (1-128 printable ASCII characters), always (ADR-0019,
+ADR 0039, ADR 0044). The middleware is Postgres-backed and always on; there is
+no database-less run that skips the check. The key is global and the request
+fingerprint is method + path + SHA-256 of the body. `PUT` takes no key.
 
 | Outcome | Status |
 |---|---|
-| Header missing on a protected route | `400` (`idempotency-key-required`) |
+| Header missing | `400` (`idempotency-key-required`) |
+| Header not 1-128 printable ASCII | `400` (`idempotency-key-invalid`) |
 | Fresh key | the real response, cached verbatim |
-| Same key, byte-identical request | the original cached response, replayed, handler not re-run |
-| Same key, different request body | `422` (`idempotency-key-reused`) |
+| Same key, same request | the original cached response, replayed with `Idempotency-Replayed: true`, handler not re-run |
+| Same key, different method, path or body | `409` (`idempotency-key-reused`) |
 
 ## RFC 7807 problem details
 

@@ -49,7 +49,7 @@ sequenceDiagram
     MFE->>FL: cmd: POST /placement-rules DefinePlacementRule
     FL-->>K: evt: placementrule.PlacementRuleDefined
     Op->>MFE: upload slot rows
-    MFE->>FL: cmd: POST /locations/import ImportFacilityLayout
+    MFE->>FL: cmd: POST /location-imports ImportFacilityLayout
     FL-->>K: evt: locationslot.LocationSlotRegistered per accepted row
     K-->>IS: evt: locationslot.LocationSlotRegistered - add active slot to cache
     K-->>WPL: evt: locationslot.LocationSlotRegistered - add to capacity tally
@@ -114,7 +114,7 @@ sequenceDiagram
     participant WPL as warehouse-planning
     participant FE as fulfillment-execution
 
-    Op->>FL: cmd: POST /locations/WH1-STOR-AMB-A07-03-02-B/decommission
+    Op->>FL: cmd: POST /locations/WH1-STOR-AMB-A07-03-02-B/decommissionings
     FL-->>K: evt: locationslot.LocationSlotDecommissioned
     K-->>IS: evt: locationslot.LocationSlotDecommissioned - delete slot from cache
     K-->>WPL: evt: locationslot.LocationSlotDecommissioned - decrement tally
@@ -174,9 +174,9 @@ event is produced (read model).
 | 3 | RegisterAisle | cmd | `POST /zones/{zoneId}/aisles` |
 | 4 | RegisterLocationType | cmd | `POST /location-types` |
 | 5 | DefinePlacementRule | cmd | `POST /placement-rules` |
-| 6 | ImportFacilityLayout | cmd | `POST /locations/import` |
+| 6 | ImportFacilityLayout | cmd | `POST /location-imports` |
 | 7 | RegisterLocationSlot | cmd | `POST /locations` |
-| 8 | DecommissionLocationSlot | cmd | `POST /locations/{locationCode}/decommission` |
+| 8 | DecommissionLocationSlot | cmd | `POST /locations/{locationCode}/decommissionings` |
 | 9 | GetLocationClassification | qry | `GET /locations/{locationCode}/classification` |
 | 10 | GetLocationSlot | qry | `GET /locations/{locationCode}` |
 | 11 | EstimateTravelDistance | qry | `GET /distance`, MCP `estimate_travel_distance` |

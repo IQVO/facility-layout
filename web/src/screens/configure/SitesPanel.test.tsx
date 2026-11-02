@@ -9,7 +9,7 @@ describe("SitesPanel", () => {
   it("lists sites returned by GET /sites", async () => {
     server.use(
       http.get(`${FACILITY_API_BASE}/sites`, () =>
-        HttpResponse.json([{ siteCode: "WH1", name: "Fulfilment Centre One", status: "Active" }]),
+        HttpResponse.json({ items: [{ siteCode: "WH1", name: "Fulfilment Centre One", status: "Active" }] }),
       ),
     );
 
@@ -21,7 +21,7 @@ describe("SitesPanel", () => {
 
   it("registers a new site and shows a success message", async () => {
     server.use(
-      http.get(`${FACILITY_API_BASE}/sites`, () => HttpResponse.json([])),
+      http.get(`${FACILITY_API_BASE}/sites`, () => HttpResponse.json({ items: [] })),
       http.post(`${FACILITY_API_BASE}/sites`, async ({ request }) => {
         const body = (await request.json()) as { siteCode: string; name: string };
         return HttpResponse.json(
@@ -43,7 +43,7 @@ describe("SitesPanel", () => {
 
   it("shows the RFC 7807 problem detail on a 409 conflict", async () => {
     server.use(
-      http.get(`${FACILITY_API_BASE}/sites`, () => HttpResponse.json([])),
+      http.get(`${FACILITY_API_BASE}/sites`, () => HttpResponse.json({ items: [] })),
       http.post(`${FACILITY_API_BASE}/sites`, () =>
         HttpResponse.json(
           {

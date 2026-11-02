@@ -440,10 +440,12 @@ func phaseWrites(t *testing.T, s *service) {
 	if slot.LocationCode != "WH1-STOR-FRZ-A07-01-01-A" || slot.LocationType != "PalletRack" {
 		t.Fatalf("GET /locations/... = %+v", slot)
 	}
-	var sites []struct {
-		SiteCode string `json:"siteCode"`
+	var sites struct {
+		Items []struct {
+			SiteCode string `json:"siteCode"`
+		} `json:"items"`
 	}
-	if err := json.Unmarshal([]byte(s.call(http.MethodGet, "/sites", "", http.StatusOK)), &sites); err != nil || len(sites) != 1 || sites[0].SiteCode != "WH1" {
+	if err := json.Unmarshal([]byte(s.call(http.MethodGet, "/sites", "", http.StatusOK)), &sites); err != nil || len(sites.Items) != 1 || sites.Items[0].SiteCode != "WH1" {
 		t.Fatalf("GET /sites = %+v (%v)", sites, err)
 	}
 }

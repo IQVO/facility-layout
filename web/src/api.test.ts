@@ -51,7 +51,7 @@ describe("apiPost", () => {
       status: 204,
     }) as unknown as typeof fetch;
 
-    const result = await apiPost("/locations/WH1-STOR-AMB-A07-03-02-B/decommission", {});
+    const result = await apiPost("/locations/WH1-STOR-AMB-A07-03-02-B/decommissionings", {});
     expect(result).toBeUndefined();
   });
 

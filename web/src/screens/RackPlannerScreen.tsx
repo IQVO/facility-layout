@@ -1,5 +1,6 @@
 import { useMemo, useState, type FormEvent } from "react";
-import { Card, StatusPill, useFetch } from "@warehouse/ui-kit";
+import { Card, StatusPill } from "@warehouse/ui-kit";
+import { useFetchAll } from "../useFetchAll";
 import { RackPlanCanvas, type PlannedCell } from "../components/RackPlanCanvas";
 import {
   CheckboxField,
@@ -50,7 +51,7 @@ function parseCodes(raw: string): string[] {
  * Rack Planner: sketch a brand-new (or extend an existing) Site/Zone/Aisle
  * as a BLANK rack shape -- bay range x level range x positions -- entirely
  * client-side, then deploy the whole thing in one call to
- * POST /locations/import. This is the actual "draw a warehouse and then
+ * POST /location-imports. This is the actual "draw a warehouse and then
  * deploy it" workflow: unlike the Layout Designer (which places one slot
  * at a time into an already-live grid), nothing here touches the backend
  * until Deploy is pressed, and Deploy is one atomic bulk call that creates
@@ -84,10 +85,9 @@ export function RackPlannerScreen() {
   const [report, setReport] = useState<ImportReport | null>(null);
   const [deploying, setDeploying] = useState(false);
 
-  const { data: sites } = useFetch<Site[]>(`${FACILITY_API_BASE}/sites`);
-  const { data: types } = useFetch<LocationType[]>(`${FACILITY_API_BASE}/location-types`);
-  const { data: existingZones } = useFetch<Zone[]>(
-    siteCode ? `${FACILITY_API_BASE}/sites/${encodeURIComponent(siteCode)}/zones` : null,
+  const { data: sites } = useFetchAll<Site>(`${FACILITY_API_BASE}/sites`);
+  const { data: types } = useFetchAll<LocationType>(`${FACILITY_API_BASE}/location-types`);
+  const { data: existingZones } = useFetchAll<Zone>(siteCode ? `${FACILITY_API_BASE}/sites/${encodeURIComponent(siteCode)}/zones` : null,
   );
 
   const bays = useMemo(() => parseCodes(bayRange), [bayRange]);
@@ -164,7 +164,7 @@ export function RackPlannerScreen() {
           position: c.position,
           locationType: c.locationType,
         }));
-      const result = await apiPost<ImportReport>("/locations/import", rows);
+      const result = await apiPost<ImportReport>("/location-imports", rows);
       setReport(result);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to deploy rack.");

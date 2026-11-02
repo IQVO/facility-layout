@@ -167,7 +167,7 @@ sequenceDiagram
     participant UOW as UnitOfWork
     participant OB as OutboxPublisher
 
-    C->>H: POST /locations/CODE/decommission or PUT /locations/CODE/geometry
+    C->>H: POST /locations/CODE/decommissionings or PUT /locations/CODE/geometry
     H->>UC: Execute
     UC->>SR: FindByCode - loads row with version N
     alt not found
@@ -217,7 +217,7 @@ sequenceDiagram
     participant SLG as SetLocationGeometry
     participant OB as OutboxPublisher
 
-    C->>H: POST /locations/import rows
+    C->>H: POST /location-imports rows
     H->>UC: Execute rows
     alt no rows
         UC-->>H: ErrEmptyImport 400

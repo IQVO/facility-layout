@@ -55,3 +55,7 @@ docusaurus.config.ts      site config, openapi-docs + mermaid plugins
 
 `.github/workflows/docs.yml` builds this site and deploys it to GitHub Pages
 on every push to `main` that touches `docs/**`.
+
+## Disclaimer
+
+This project is a domain-driven design study. It is not associated with, endorsed by or affiliated with any company, and it uses no company's code, data, logos or trademarks. All names, figures and examples are illustrative or synthetic.

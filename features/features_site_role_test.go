@@ -6,7 +6,6 @@ package features_test
 // response body.
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/cucumber/godog"
@@ -55,7 +54,7 @@ type transferDefaultRow struct {
 
 func (w *world) theTransferDefaultIs(role, origin, destination string) error {
 	var rows []transferDefaultRow
-	if err := json.Unmarshal(w.body, &rows); err != nil {
+	if err := w.decodeItems(&rows); err != nil {
 		return fmt.Errorf("decode transfer defaults: %w (body %s)", err, w.body)
 	}
 	for _, row := range rows {

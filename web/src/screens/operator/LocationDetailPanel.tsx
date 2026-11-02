@@ -20,7 +20,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 /** Location detail (GET /locations/{locationCode}): the code exploded into
  *  its typed segments, the slot's classification (role + location type),
  *  its zone/aisle chain-of-custody, its recorded geometry, and -- behind
- *  an explicit two-step confirm -- POST /locations/{locationCode}/decommission.
+ *  an explicit two-step confirm -- POST /locations/{locationCode}/decommissionings.
  *  Decommission is one-way (a second call is a 409), which is exactly why
  *  the button demands a confirmation step; the server's RFC 7807
  *  problem detail is rendered verbatim for 404 (unknown code) and 409
@@ -62,7 +62,7 @@ export function LocationDetailPanel() {
     try {
       // apiPost mints the per-submit Idempotency-Key per the remote's
       // own convention (ADR-0019); a 204 with no body means done.
-      await apiPost<void>(`/locations/${encodeURIComponent(slot.locationCode)}/decommission`, {});
+      await apiPost<void>(`/locations/${encodeURIComponent(slot.locationCode)}/decommissionings`, {});
       setDecommissionSuccess(`Location ${slot.locationCode} decommissioned. The transition is one-way.`);
       setConfirming(false);
       setSlot({ ...slot, status: "Decommissioned" });

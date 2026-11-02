@@ -4,5 +4,8 @@
   "description": "Pinned, lockfile-installable Spectral CLI for the api-lint CI job. Exists so the job can run `npm ci` (hash-verified via package-lock.json) instead of an unpinned `npm install -g`, which is what Scorecard's Pinned-Dependencies check requires to treat an npm install as pinned.",
   "devDependencies": {
     "@stoplight/spectral-cli": "6.16.3"
+  },
+  "overrides": {
+    "fast-uri": "^3.1.9"
   }
 }

@@ -81,7 +81,7 @@ describe("LocationDetailPanel", () => {
   it("decommissions behind a confirm and reports the one-way result", async () => {
     server.use(
       http.get(`${FACILITY_API_BASE}/locations/${CODE}`, () => HttpResponse.json(SLOT)),
-      http.post(`${FACILITY_API_BASE}/locations/${CODE}/decommission`, ({ request }) => {
+      http.post(`${FACILITY_API_BASE}/locations/${CODE}/decommissionings`, ({ request }) => {
         // The remote's convention: every POST carries a per-submit
         // Idempotency-Key (ADR-0019).
         const key = request.headers.get("Idempotency-Key");
@@ -126,7 +126,7 @@ describe("LocationDetailPanel", () => {
   it("renders the 409 problem detail when decommissioning twice", async () => {
     server.use(
       http.get(`${FACILITY_API_BASE}/locations/${CODE}`, () => HttpResponse.json(SLOT)),
-      http.post(`${FACILITY_API_BASE}/locations/${CODE}/decommission`, () =>
+      http.post(`${FACILITY_API_BASE}/locations/${CODE}/decommissionings`, () =>
         HttpResponse.json(
           {
             type: "https://errors.facility-layout.warehouse-systems.dev/slot-already-decommissioned",

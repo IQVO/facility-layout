@@ -1,6 +1,6 @@
 module github.com/claudioed/facility-layout
 
-go 1.26.10
+go 1.27.3
 
 require (
 	github.com/a2aproject/a2a-go/v2 v2.7.0

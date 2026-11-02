@@ -30,8 +30,25 @@ linters:
       statements: 50
     nestif:
       min-complexity: 5
+    # File-length budget (fleet rule, 2026-10-31): at most 300 lines of CODE per
+    # production Go file; comments and blank lines are not counted, so documentation
+    # is never penalised. revive is deliberately NOT listed under `enable:`, so the
+    # `lint` job and the git hooks are unaffected: the `file-length` CI job runs it
+    # with --enable-only revive and, on pull requests, fails only for files the PR
+    # adds or touches (split the file, never raise the limit).
+    revive:
+      rules:
+        - name: file-length-limit
+          severity: error
+          arguments:
+            - max: 300
+              skip-comments: true
+              skip-blank-lines: true
   exclusions:
     rules:
+      - path: _test\.go
+        linters:
+          - revive
       - path: _test\.go
         linters:
           - errcheck

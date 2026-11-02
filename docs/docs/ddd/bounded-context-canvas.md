@@ -172,8 +172,8 @@ verified in their own repositories' `develop` (see the
 | Operator via `facility-mfe` | RegisterLocationType | Command | REST `POST /location-types` | Customer of own OHS |
 | Operator via `facility-mfe` | DefinePlacementRule | Command | REST `POST /placement-rules` | Customer of own OHS |
 | Operator via `facility-mfe` | RegisterLocationSlot | Command | REST `POST /locations` | Customer of own OHS |
-| Operator via `facility-mfe` | ImportFacilityLayout | Command | REST `POST /locations/import` | Customer of own OHS |
-| Operator / REST client | DecommissionLocationSlot | Command | REST `POST /locations/{locationCode}/decommission` | Customer of own OHS |
+| Operator via `facility-mfe` | ImportFacilityLayout | Command | REST `POST /location-imports` | Customer of own OHS |
+| Operator / REST client | DecommissionLocationSlot | Command | REST `POST /locations/{locationCode}/decommissionings` | Customer of own OHS |
 | Operator / REST client | SetLocationGeometry | Command | REST `PUT /locations/{locationCode}/geometry` | Customer of own OHS |
 | Operator / REST client | SetAisleGeometry | Command | REST `PUT /zones/{zoneId}/aisles/{aisleCode}/geometry` | Customer of own OHS |
 | Operator / REST client | RegisterCrossAisle | Command | REST `POST /zones/{zoneId}/cross-aisles` | Customer of own OHS |
