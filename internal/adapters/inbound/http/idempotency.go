@@ -276,6 +276,21 @@ func runFreshRequest(w http.ResponseWriter, r *http.Request, ctx context.Context
 		}
 	}()
 
+	// The handler runs behind a SAVEPOINT. A mapped domain conflict — a
+	// statement failing on the server and the repository translating it
+	// to a typed error — leaves the transaction ABORTED even though the
+	// handler answers a truthful 4xx. Releasing the savepoint exposes
+	// that: the release fails, ROLLBACK TO SAVEPOINT discards the
+	// half-done work and heals the transaction, and the 4xx outcome is
+	// recorded and committed like any other. A 2xx answer behind a
+	// failed release is a lie (its writes are gone), so it rolls
+	// everything back and fails the request instead.
+	if _, err := tx.Exec(ctx, "SAVEPOINT handler_run"); err != nil {
+		_ = tx.Rollback(ctx)
+		writeProblem(w, http.StatusInternalServerError, internalErrorProblem, err.Error(), r.URL.Path)
+		return
+	}
+
 	txCtx := pgtx.WithTx(ctx, tx)
 	rec := httptest.NewRecorder()
 	next.ServeHTTP(rec, r.WithContext(txCtx))
@@ -287,6 +302,27 @@ func runFreshRequest(w http.ResponseWriter, r *http.Request, ctx context.Context
 		_ = tx.Rollback(ctx)
 		writeRecorded(w, rec)
 		return
+	}
+
+	if _, err := tx.Exec(ctx, "RELEASE SAVEPOINT handler_run"); err != nil {
+		// A statement inside the handler failed on the server: the
+		// transaction is aborted. Rolling back to the savepoint discards
+		// the handler's partial writes — the correct all-or-nothing
+		// semantics for an error answer — and returns the transaction to
+		// health.
+		if _, rerr := tx.Exec(ctx, "ROLLBACK TO SAVEPOINT handler_run"); rerr != nil {
+			_ = tx.Rollback(ctx)
+			writeProblem(w, http.StatusInternalServerError, internalErrorProblem, err.Error(), r.URL.Path)
+			return
+		}
+		if rec.Code < http.StatusBadRequest {
+			// A success answer whose writes cannot be committed must
+			// neither be returned nor cached: fail the request so the
+			// key retries the real work.
+			_ = tx.Rollback(ctx)
+			writeProblem(w, http.StatusInternalServerError, internalErrorProblem, err.Error(), r.URL.Path)
+			return
+		}
 	}
 
 	// Every other NORMAL (non-panic) response is cached here, including a
