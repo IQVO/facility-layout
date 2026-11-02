@@ -3,8 +3,10 @@ name: CodeQL
 on:
   push:
     branches: [main, develop]
+    paths-ignore: ["docs/**", "**/*.md"]
   pull_request:
     branches: [main, develop]
+    paths-ignore: ["docs/**", "**/*.md"]
   schedule:
     # Weekly deep scan catches newly-published query packs even with no
     # code changes (CodeQL's rule set updates independently of this repo).
@@ -13,6 +15,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   analyze:
