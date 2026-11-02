@@ -166,7 +166,7 @@ func TestRegisterFixedStructure(t *testing.T) {
 		var list []struct {
 			ID string `json:"id"`
 		}
-		listResp.decode(t, &list)
+		listResp.decodeItems(t, &list)
 		if len(list) != 1 || list[0].ID != "STR-1" {
 			t.Fatalf("expected one structure STR-1, got %v", list)
 		}

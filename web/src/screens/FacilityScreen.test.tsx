@@ -95,7 +95,7 @@ const LAYOUT: SiteLayout = {
 function mockSiteAndLayout() {
   server.use(
     http.get(`${FACILITY_API_BASE}/sites`, () =>
-      HttpResponse.json([{ siteCode: "WH1", name: "Fulfilment Centre One", status: "Active" }]),
+      HttpResponse.json({ items: [{ siteCode: "WH1", name: "Fulfilment Centre One", status: "Active" }] }),
     ),
     http.get(`${FACILITY_API_BASE}/sites/WH1/layout`, () => HttpResponse.json(LAYOUT)),
   );

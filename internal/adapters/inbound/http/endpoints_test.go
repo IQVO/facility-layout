@@ -63,7 +63,7 @@ func TestSitesEndpoints(t *testing.T) {
 		var sites []struct {
 			SiteCode string `json:"siteCode"`
 		}
-		res.decode(t, &sites)
+		res.decodeItems(t, &sites)
 		if len(sites) != 1 || sites[0].SiteCode != "WH1" {
 			t.Fatalf("unexpected sites %+v", sites)
 		}
@@ -129,7 +129,7 @@ func TestZonesEndpoints(t *testing.T) {
 		var zones []struct {
 			ZoneID string `json:"zoneId"`
 		}
-		res.decode(t, &zones)
+		res.decodeItems(t, &zones)
 		if len(zones) != 1 || zones[0].ZoneID != "WH1-STOR-AMB" {
 			t.Fatalf("unexpected zones %+v", zones)
 		}
@@ -222,7 +222,7 @@ func TestAislesEndpoints(t *testing.T) {
 		var aisles []struct {
 			AisleCode string `json:"aisleCode"`
 		}
-		res.decode(t, &aisles)
+		res.decodeItems(t, &aisles)
 		if len(aisles) != 2 || aisles[0].AisleCode != "A07" {
 			t.Fatalf("expected walk order, got %+v", aisles)
 		}
@@ -285,7 +285,7 @@ func TestLocationTypesEndpoints(t *testing.T) {
 				MaxWeightKg float64 `json:"maxWeightKg"`
 			} `json:"defaultCapacity"`
 		}
-		res.decode(t, &types)
+		res.decodeItems(t, &types)
 		if len(types) != 1 || types[0].Name != "PalletRack" || types[0].DefaultCapacity.MaxWeightKg != 1200 {
 			t.Fatalf("unexpected types %+v", types)
 		}
@@ -375,7 +375,7 @@ func TestPlacementRulesEndpoints(t *testing.T) {
 				TemperatureClass string `json:"temperatureClass"`
 			} `json:"zone"`
 		}
-		res.decode(t, &rules)
+		res.decodeItems(t, &rules)
 		if len(rules) != 1 || rules[0].Zone.TemperatureClass != "Frozen" {
 			t.Fatalf("unexpected rules %+v", rules)
 		}

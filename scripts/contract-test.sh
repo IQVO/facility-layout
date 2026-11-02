@@ -133,7 +133,7 @@ curl -sf "${BASE_URL}/readyz" >/dev/null # fail loudly if it never became ready
 #   (internal/adapters/inbound/http/geometry_test.go).
 #
 # allow_header_conformance is excluded as a CHECK (not an operation): chi
-# answers OPTIONS /locations/import with `Allow: POST, GET` because the
+# answers OPTIONS /location-imports with `Allow: POST, GET` because the
 # templated GET /locations/{locationCode} route also matches that concrete
 # path (and that GET IS documented — under the templated path). The OpenAPI
 # path model cannot express this shadowing, so the check false-positives

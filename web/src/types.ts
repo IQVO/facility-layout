@@ -273,7 +273,7 @@ export interface TravelDistance {
 /** importRowRequest -- one fully-specified row of a facility layout
  *  import: a whole Site/Area/Zone/Aisle/Bay/Level/Position address plus
  *  the LocationType for the slot at it. Structural parents named by a row
- *  are created on first sight (POST /locations/import), which is what
+ *  are created on first sight (POST /location-imports), which is what
  *  lets the Rack Planner deploy a brand-new Site/Zone/Aisle and all its
  *  slots in one call instead of requiring each to be pre-registered. */
 export interface ImportRow {
@@ -300,7 +300,7 @@ export interface ImportRowResult {
   error?: string;
 }
 
-/** importReportResponse -- the full outcome of POST /locations/import:
+/** importReportResponse -- the full outcome of POST /location-imports:
  *  every row is processed, partial success is reported per row rather
  *  than aborting the whole import on the first bad row. */
 export interface ImportReport {

@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
-import { Card, DataTable, useFetch } from "@warehouse/ui-kit";
+import { Card, DataTable } from "@warehouse/ui-kit";
+import { useFetchAll } from "../../useFetchAll";
 import { apiPost, ApiError } from "../../api";
 import { FACILITY_API_BASE } from "../../config";
 import type { LocationType } from "../../types";
@@ -27,9 +28,7 @@ export function LocationTypesPanel() {
   const [success, setSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const { data: types, loading, error: listError } = useFetch<LocationType[]>(
-    `${FACILITY_API_BASE}/location-types?_r=${refreshKey}`,
-  );
+  const { data: types, loading, error: listError } = useFetchAll<LocationType>(`${FACILITY_API_BASE}/location-types`, refreshKey);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();

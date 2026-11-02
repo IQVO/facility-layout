@@ -387,7 +387,7 @@ func testSVGZoneColours(t *testing.T) {
 	ts.seedAisle("WH1-STOR-FRZ", "A02", 2, "TwoWay")
 	ts.seedLocationType("PalletRack", 1200, 2.4)
 	ts.seedSlot("WH1-STOR-FRZ-A02-01-01-A", "PalletRack")
-	ts.do(http.MethodPost, "/locations/WH1-STOR-FRZ-A02-01-01-A/decommission", nil).assertStatus(t, http.StatusNoContent)
+	ts.do(http.MethodPost, "/locations/WH1-STOR-FRZ-A02-01-01-A/decommissionings", nil).assertStatus(t, http.StatusNoContent)
 
 	res := ts.do(http.MethodGet, "/sites/WH1/layout?format=svg", nil).assertStatus(t, http.StatusOK)
 	document := string(res.body)

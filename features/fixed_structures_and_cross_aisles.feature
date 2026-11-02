@@ -81,14 +81,14 @@ Feature: Registering fixed structures and cross-aisles
     And a POST to "/sites/WH2/structures" with the JSON body {"id":"STR-Z","kind":"Wall","footprint":{"origin":{"xM":0,"yM":0,"zM":0},"size":{"widthM":1,"depthM":1,"heightM":1}},"label":"Elsewhere"} has been accepted
     When a GET request is sent to "/sites/WH1/structures"
     Then the response status is 200
-    And the response list "" has 2 items
-    And the "id" of each item in "" are "STR-A,STR-B"
+    And the response list "items" has 2 items
+    And the "id" of each item in "items" are "STR-A,STR-B"
 
   @bdd
   Scenario: A site with no structures lists an empty array
     When a GET request is sent to "/sites/WH1/structures"
     Then the response status is 200
-    And the response list "" has 0 items
+    And the response list "items" has 0 items
 
   @bdd
   Scenario: Structures cannot be registered or listed for an unknown site
@@ -198,15 +198,15 @@ Feature: Registering fixed structures and cross-aisles
     And a POST to "/zones/WH1-STOR-AMB/cross-aisles" with the JSON body {"fromAisle":"A07","toAisle":"A08","atBay":"02"} has been accepted
     When a GET request is sent to "/zones/WH1-STOR-AMB/cross-aisles"
     Then the response status is 200
-    And the response list "" has 3 items
-    And the "fromAisle" of each item in "" are "A07,A07,A08"
-    And the "toAisle" of each item in "" are "A08,A09,A09"
+    And the response list "items" has 3 items
+    And the "fromAisle" of each item in "items" are "A07,A07,A08"
+    And the "toAisle" of each item in "items" are "A08,A09,A09"
 
   @bdd
   Scenario: A zone with no cross-aisles lists an empty array and an unknown zone is not found
     When a GET request is sent to "/zones/WH1-STOR-AMB/cross-aisles"
     Then the response status is 200
-    And the response list "" has 0 items
+    And the response list "items" has 0 items
     When a GET request is sent to "/zones/WH9-STOR-AMB/cross-aisles"
     Then the response status is 404
 

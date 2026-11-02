@@ -14,13 +14,13 @@ checks those repos used, and the decisions taken.
 
 Two verb-suffixed action endpoints exist, and both are deliberate:
 
-- `POST /locations/{locationCode}/decommission` — a genuine domain command
+- `POST /locations/{locationCode}/decommissionings` — a genuine domain command
   on a single slot, not a CRUD update. This is the same
   `/tasks/{id}/complete`, `/reservations/{id}/confirm-pick` pattern the rest
   of the fleet uses, and correct DDD/REST practice for a non-CRUD command.
   Forcing it into `PATCH {"status":"Decommissioned"}` would misrepresent a
   one-way state transition as a field assignment.
-- `POST /locations/import` — a collection-level action on the `/locations`
+- `POST /location-imports` — a collection-level action on the `/locations`
   resource, scoped to it rather than dangling off an unscoped `/admin/...`
   path.
 
@@ -85,7 +85,7 @@ resolves:
 Each is covered by a test that follows the returned `Location` header and
 asserts a `200`.
 
-`POST /locations/import` deliberately returns `200`, not `201`: a bulk
+`POST /location-imports` deliberately returns `200`, not `201`: a bulk
 import is a partial-success report over many rows, not the creation of one
 addressable resource, so there is no single `Location` to hand back.
 
@@ -94,7 +94,7 @@ addressable resource, so there is no single `Location` to hand back.
 Documented, not changed:
 
 - **Naturally idempotent:** every `GET`.
-  `POST /locations/{locationCode}/decommission` is idempotent in *effect*
+  `POST /locations/{locationCode}/decommissionings` is idempotent in *effect*
   but not in *status*: the second call returns `409`, because v1 treats
   double-decommission as a conflict a caller should know about rather than
   silently absorb. This is a deliberate design choice, recorded here and in
@@ -105,7 +105,7 @@ Documented, not changed:
   duplicate `409` rather than creating a second copy. That is the correct
   behaviour for this domain — there is no scenario where re-registering an
   existing coded location should silently succeed.
-- `POST /locations/import` is idempotent per-row in the sense that a row
+- `POST /location-imports` is idempotent per-row in the sense that a row
   naming existing structure reuses it; a row whose *slot* already exists is
   reported as a rejected row, not a silent overwrite.
 

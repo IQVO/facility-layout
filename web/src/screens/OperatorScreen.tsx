@@ -12,7 +12,7 @@ const TABS = [
 
 /** The note every operator screen carries: structural authoring (registering
  *  zones, aisles, cross-aisles, fixed structures, whole sites) stays on the
- *  documented bulk-import path (POST /locations/import, see the Rack
+ *  documented bulk-import path (POST /location-imports, see the Rack
  *  planner); these screens are the OPERATOR surface -- classify a site,
  *  set its transfer capability, inspect and retire locations, and correct
  *  recorded geometry. */

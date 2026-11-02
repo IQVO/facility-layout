@@ -21,7 +21,7 @@ it has no generated page in this section.
 | [Conventions](./conventions.md) | REST maturity level 2, RFC 7807 errors, status-code semantics, `Location` headers |
 | [Endpoint catalogue](./endpoints.md) | Every route, grouped by OpenAPI tag, cross-checked against the router |
 | [Drawing the warehouse](./drawing-the-warehouse.md) | The two headline read endpoints, with real JSON and real SVG output |
-| [Bulk import](./bulk-import.md) | `POST /locations/import` and the partial-success report |
+| [Bulk import](./bulk-import.md) | `POST /location-imports` and the partial-success report |
 | **REST API (from `openapi.yaml`)** | The interactive, per-operation reference **generated from the real specification** — request/response schemas, examples, and a try-it console |
 | **Reports API (from `openapi-reports.yaml`)** | The analytical read API served by the separate `cmd/facility-reports` binary (`/reports/catalog-growth`, `/reports/catalog-growth/freshness`, probes), generated from [`apis/openapi-reports.yaml`](https://github.com/IQVO/facility-layout/blob/main/apis/openapi-reports.yaml) |
 
@@ -62,7 +62,7 @@ graph LR
         A --> L["/locations"]
         LT --> L
         PR -.gates.-> L
-        L --> IMP["/locations/import<br/>bulk bootstrap"]
+        L --> IMP["/location-imports<br/>bulk bootstrap"]
     end
 
     subgraph R["Read side — draw the warehouse"]

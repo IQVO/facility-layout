@@ -32,14 +32,14 @@ uniqueness check instead of a clean, deterministic replay).
 Two endpoints are deliberately excluded, matching the rollout's stated
 "which endpoints need this" rule:
 
-- **`POST /locations/import`** (`handleImportFacilityLayout`) is a
+- **`POST /location-imports`** (`handleImportFacilityLayout`) is a
   BULK/batch import over many rows with partial-success semantics
   (ADR-0006) — a retry's semantics for "some rows already landed, some
   didn't" do not fit this middleware's whole-request replay model, and
   bolting it on would need a very different design (per-row
   idempotency, not per-request). Left for a dedicated follow-up if ever
   needed.
-- **`POST /locations/{locationCode}/decommission`** acts on an
+- **`POST /locations/{locationCode}/decommissionings`** acts on an
   EXISTING, caller-supplied resource, not a creation. It is not
   naturally susceptible to the double-create problem this middleware
   exists to solve (ADR-0005 already makes decommission one-way and
@@ -141,7 +141,7 @@ transaction:
   empty transaction (it never wrote anything) and fall through to a
   plain, non-transactional `SELECT` (§6 explains why this is safe
   without additional locking):
-  - `request_hash` mismatch → `422` (`idempotency-key-reused`).
+  - `request_hash` mismatch → `409` (`idempotency-key-reused`; was `422` before ADR 0044).
   - `request_hash` match → a genuine retry: write the stored
     headers/status/body VERBATIM to the real `http.ResponseWriter`,
     without calling the real handler at all.
@@ -218,7 +218,7 @@ least once against a real database and a real HTTP request.
   sweeper (default 24h TTL, `IDEMPOTENCY_KEY_TTL`; the `created_at`
   index below exists precisely for it). A retry after the TTL is
   treated as a new request, which re-validates against current state.
-- `POST /locations/import` and `POST /locations/{locationCode}/decommission`
+- `POST /location-imports` and `POST /locations/{locationCode}/decommissionings`
   remain unprotected by design (see Context); a future change adding
   per-row idempotency to bulk import, or revisiting decommission's
   semantics, is a separate decision.

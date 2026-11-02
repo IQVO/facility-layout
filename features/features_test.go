@@ -212,6 +212,18 @@ func (w *world) seed(ctx context.Context, method, path string, payload any, want
 	return nil
 }
 
+// decodeItems decodes a paged collection response ({items,nextCursor}) and
+// stores its items into dest; a bare JSON array is an error.
+func (w *world) decodeItems(dest any) error {
+	var env struct {
+		Items json.RawMessage `json:"items"`
+	}
+	if err := json.Unmarshal(w.body, &env); err != nil || env.Items == nil {
+		return fmt.Errorf("response body is not a paged {items} envelope (%v): %s", err, string(w.body))
+	}
+	return json.Unmarshal(env.Items, dest)
+}
+
 func (w *world) decode(dest any) error {
 	if err := json.Unmarshal(w.body, dest); err != nil {
 		return fmt.Errorf("response body is not valid JSON (%w): %s", err, string(w.body))
@@ -315,7 +327,7 @@ func (w *world) iRegisterTheSlot(ctx context.Context, locationCode, locationType
 }
 
 func (w *world) iDecommissionTheSlot(ctx context.Context, locationCode string) error {
-	return w.record(ctx, http.MethodPost, "/locations/"+locationCode+"/decommission", nil)
+	return w.record(ctx, http.MethodPost, "/locations/"+locationCode+"/decommissionings", nil)
 }
 
 // iImportTheRows turns the Gherkin data table into the JSON array the import
@@ -350,7 +362,7 @@ func (w *world) iImportTheRows(ctx context.Context, table *godog.Table) error {
 		rows = append(rows, payload)
 	}
 
-	return w.record(ctx, http.MethodPost, "/locations/import", rows)
+	return w.record(ctx, http.MethodPost, "/location-imports", rows)
 }
 
 func (w *world) iRequestTheLayoutOfSite(ctx context.Context, siteCode string) error {
@@ -797,7 +809,7 @@ func (w *world) theListedSitesAre(expected string) error {
 	var listed []struct {
 		SiteCode string `json:"siteCode"`
 	}
-	if err := w.decode(&listed); err != nil {
+	if err := w.decodeItems(&listed); err != nil {
 		return err
 	}
 	got := make([]string, 0, len(listed))
@@ -811,7 +823,7 @@ func (w *world) theListedZonesAre(expected string) error {
 	var listed []struct {
 		ZoneID string `json:"zoneId"`
 	}
-	if err := w.decode(&listed); err != nil {
+	if err := w.decodeItems(&listed); err != nil {
 		return err
 	}
 	got := make([]string, 0, len(listed))
@@ -825,7 +837,7 @@ func (w *world) theListedAislesAre(expected string) error {
 	var listed []struct {
 		AisleCode string `json:"aisleCode"`
 	}
-	if err := w.decode(&listed); err != nil {
+	if err := w.decodeItems(&listed); err != nil {
 		return err
 	}
 	got := make([]string, 0, len(listed))
@@ -839,7 +851,7 @@ func (w *world) theListedLocationTypesAre(expected string) error {
 	var listed []struct {
 		Name string `json:"name"`
 	}
-	if err := w.decode(&listed); err != nil {
+	if err := w.decodeItems(&listed); err != nil {
 		return err
 	}
 	got := make([]string, 0, len(listed))
@@ -853,7 +865,7 @@ func (w *world) theListedPlacementRulesAre(expected string) error {
 	var listed []struct {
 		RuleID string `json:"ruleId"`
 	}
-	if err := w.decode(&listed); err != nil {
+	if err := w.decodeItems(&listed); err != nil {
 		return err
 	}
 	got := make([]string, 0, len(listed))

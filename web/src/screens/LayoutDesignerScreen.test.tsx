@@ -50,9 +50,9 @@ const GRID: ZoneGrid = {
 
 function mockCommonFetches() {
   server.use(
-    http.get(`${FACILITY_API_BASE}/sites`, () => HttpResponse.json(SITES)),
-    http.get(`${FACILITY_API_BASE}/sites/WH1/zones`, () => HttpResponse.json(ZONES)),
-    http.get(`${FACILITY_API_BASE}/location-types`, () => HttpResponse.json(TYPES)),
+    http.get(`${FACILITY_API_BASE}/sites`, () => HttpResponse.json({ items: SITES })),
+    http.get(`${FACILITY_API_BASE}/sites/WH1/zones`, () => HttpResponse.json({ items: ZONES })),
+    http.get(`${FACILITY_API_BASE}/location-types`, () => HttpResponse.json({ items: TYPES })),
     http.get(`${FACILITY_API_BASE}/zones/WH1-STOR-AMB/grid`, () => HttpResponse.json(GRID)),
   );
 }

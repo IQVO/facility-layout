@@ -87,7 +87,7 @@ func TestDeclareHandlingUnit(t *testing.T) {
 		ts := newTestServer(t)
 		ts.seedStorageAisle()
 		ts.seedSlot(huSlot, "PalletRack")
-		ts.do(http.MethodPost, "/locations/"+huSlot+"/decommission", nil).assertStatus(t, http.StatusNoContent)
+		ts.do(http.MethodPost, "/locations/"+huSlot+"/decommissionings", nil).assertStatus(t, http.StatusNoContent)
 		ts.do(http.MethodPut, "/locations/"+huSlot+"/handling-unit", map[string]any{"handlingUnit": "CASE"}).assertProblem(t, http.StatusConflict, "already-decommissioned")
 	})
 }

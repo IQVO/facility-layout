@@ -27,7 +27,7 @@ func TestListCrossAislesHTTP(t *testing.T) {
 			AtBay     string `json:"atBay"`
 			Active    bool   `json:"active"`
 		}
-		resp.decode(t, &body)
+		resp.decodeItems(t, &body)
 		if len(body) != 2 {
 			t.Fatalf("expected 2 cross-aisles, got %d", len(body))
 		}
@@ -44,7 +44,7 @@ func TestListCrossAislesHTTP(t *testing.T) {
 		var body []struct {
 			ZoneID string `json:"zoneId"`
 		}
-		resp.decode(t, &body)
+		resp.decodeItems(t, &body)
 		if body == nil || len(body) != 0 {
 			t.Fatalf("expected a non-nil empty JSON array, got %s", string(resp.body))
 		}

@@ -30,6 +30,10 @@ func (s *Server) handleRegisterCrossAisle(w http.ResponseWriter, r *http.Request
 // (ADR-0017): every declared connection in the zone, ordered from-aisle,
 // to-aisle, bay — the read half the POST already deserved.
 func (s *Server) handleListCrossAisles(w http.ResponseWriter, r *http.Request) {
+	limit, after, ok := pageParams(w, r)
+	if !ok {
+		return
+	}
 	connections, err := s.ListCrossAisles.Execute(r.Context(), chi.URLParam(r, "zoneId"))
 	if err != nil {
 		writeError(w, r, err)
@@ -39,7 +43,7 @@ func (s *Server) handleListCrossAisles(w http.ResponseWriter, r *http.Request) {
 	for _, c := range connections {
 		out = append(out, toCrossAisleResponse(c))
 	}
-	writeJSON(w, http.StatusOK, out)
+	writePage(w, out, limit, after, crossAisleAt)
 }
 
 // handleGetZoneTravelGraph returns one zone's travel graph as nodes +

@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
-import { Card, DataTable, StatusPill, useFetch } from "@warehouse/ui-kit";
+import { Card, DataTable, StatusPill } from "@warehouse/ui-kit";
+import { useFetchAll } from "../../useFetchAll";
 import { apiPost, ApiError } from "../../api";
 import { FACILITY_API_BASE } from "../../config";
 import type { Site, Zone } from "../../types";
@@ -31,9 +32,8 @@ export function ZonesPanel() {
   const [success, setSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const { data: sites } = useFetch<Site[]>(`${FACILITY_API_BASE}/sites`);
-  const { data: zones, loading, error: listError } = useFetch<Zone[]>(
-    siteCode ? `${FACILITY_API_BASE}/sites/${encodeURIComponent(siteCode)}/zones?_r=${refreshKey}` : null,
+  const { data: sites } = useFetchAll<Site>(`${FACILITY_API_BASE}/sites`);
+  const { data: zones, loading, error: listError } = useFetchAll<Zone>(siteCode ? `${FACILITY_API_BASE}/sites/${encodeURIComponent(siteCode)}/zones` : null, refreshKey,
   );
 
   async function onSubmit(e: FormEvent) {
