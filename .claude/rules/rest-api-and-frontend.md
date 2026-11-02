@@ -39,9 +39,9 @@ ADR 0039; Postgres is mandatory):
 - `GET    /locations/{locationCode}/classification`   -> Zone Hazmat/TemperatureClass
   (denormalized read; Published Language for placement-rule consumers like
   `inventory-storage` — see ADR-0008)
-- `POST   /locations/{locationCode}/decommission`     -> DecommissionLocationSlot
+- `POST   /locations/{locationCode}/decommissionings`     -> DecommissionLocationSlot
   (NOT idempotency-protected: acts on an existing resource, not a creation)
-- `POST   /locations/import`                          -> ImportFacilityLayout
+- `POST   /location-imports`                          -> ImportFacilityLayout
   (bulk; NOT idempotency-protected — partial-success semantics don't fit the
   whole-request replay model, see ADR-0019; request body is a JSON array of
   rows, each row fully specifying a site/area/zone/aisle/bay/level/position +
