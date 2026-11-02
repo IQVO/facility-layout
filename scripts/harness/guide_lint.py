@@ -39,6 +39,8 @@ HISTORY_WORDS = re.compile(
     r"\b(removed|deleted|retired|no longer|formerly|previously|planned|future|not yet|deferred|proposed|"
     r"would|e\.g\.|for example|example|such as|renamed|legacy|used to|was)\b", re.I)
 IGNORE = "guide-lint: ignore"
+# Trees that exist only in an instantiated service, never in the template repository itself.
+SERVICE_ROOTS = ("internal", "cmd", "apis", "charts", "web", "docs", "migrations", "features", "deploy", "pkg")
 
 
 def read(path: str) -> list[str]:
@@ -89,6 +91,10 @@ class Lint:
                 m = re.match(r"^\.PHONY:\s*(.*)", ln)
                 if m:
                     self.make_targets.update(m.group(1).split())
+        # In the template repository itself (it ships ci.yml as ci.yml.template) the guides describe the
+        # SERVICE a new repo becomes: its internal/, cmd/, apis/, docs/ trees, its CLAUDE.md and its Makefile
+        # targets do not exist here yet. Those citations are checked in every instantiated service instead.
+        self.is_template = bool(glob.glob(os.path.join(root, ".github", "workflows", "*.template")))
         adr_dir = os.path.join(root, "docs", "docs", "adr")
         self.adr_dir_exists = os.path.isdir(adr_dir)
         self.adrs = set(re.findall(r"(\d{4})", " ".join(os.listdir(adr_dir)))) if self.adr_dir_exists else set()
@@ -192,7 +198,7 @@ class Lint:
         m = re.match(r"^make\s+([A-Za-z0-9_.-]+)", tok)
         if m:
             t = m.group(1)
-            if self.make_targets and t not in self.make_targets and not t.startswith("-"):
+            if self.make_targets and t not in self.make_targets and not t.startswith("-") and not self.is_template:
                 self.err(f, n, f"`make {t}` is not a Makefile target. FIX: use a real target "
                                f"({', '.join(sorted(self.make_targets)[:8])} ...) or drop the reference.")
             return
@@ -210,6 +216,9 @@ class Lint:
         sym = re.match(r"^(.*?)\.([A-Z][A-Za-z0-9_]*)$", path)
         if not os.path.exists(full) and sym and os.path.exists(os.path.join(self.root, sym.group(1))):
             return  # Go symbol reference: internal/domain/charge.NewChargeForecast
+        if not os.path.exists(full) and self.is_template and (
+                first in SERVICE_ROOTS or path in ("CLAUDE.md", "AGENTS.md") or os.path.exists(full + ".template")):
+            return  # template repo: a path of the future service (see __init__)
         if not os.path.exists(full):
             self.err(f, n, f"cites `{path}` which does not exist. FIX: update the reference to the current path "
                            "(grep/git log --follow) or delete it; stale guides mislead agents.")
