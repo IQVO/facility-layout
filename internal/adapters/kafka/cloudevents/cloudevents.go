@@ -97,13 +97,13 @@ func ContentTypeHeader() kafkago.Header {
 func Decode(value []byte) (ce.Event, error) {
 	var e ce.Event
 	if err := json.Unmarshal(value, &e); err != nil {
-		return ce.Event{}, fmt.Errorf("%w: %v", ErrNotCloudEvent, err)
+		return ce.Event{}, fmt.Errorf("%w: %w", ErrNotCloudEvent, err)
 	}
 	if e.SpecVersion() != SpecVersion {
 		return ce.Event{}, fmt.Errorf("%w: specversion %q", ErrNotCloudEvent, e.SpecVersion())
 	}
 	if err := e.Validate(); err != nil {
-		return ce.Event{}, fmt.Errorf("%w: %v", ErrNotCloudEvent, err)
+		return ce.Event{}, fmt.Errorf("%w: %w", ErrNotCloudEvent, err)
 	}
 	return e, nil
 }

@@ -276,7 +276,7 @@ func dialPostgres(cfg publisherConfig, logger *slog.Logger) (*pgxpool.Pool, erro
 // logged with the right service identity. An unreachable Collector is not
 // an error: the OTLP exporters are non-blocking, and telemetry is dropped
 // rather than the service failing to start.
-func setupServiceTelemetry(logger *slog.Logger, serviceName string) (func(context.Context) error, error) {
+func setupServiceTelemetry(logger *slog.Logger, serviceName string) (func(context.Context), error) {
 	shutdown, err := telemetry.Setup(
 		context.Background(),
 		serviceName,

@@ -116,7 +116,7 @@ func TestMapError(t *testing.T) {
 		{"missing location code", slot.ErrMissingLocationCode, "missing-location-code: " + slot.ErrMissingLocationCode.Error()},
 		{"no route between zones", usecases.ErrNoRouteBetweenZones, "no-route-between-zones: " + usecases.ErrNoRouteBetweenZones.Error()},
 		{"concurrent modification", ports.ErrConcurrentModification, "concurrent-modification: " + ports.ErrConcurrentModification.Error()},
-		{"already slugged tool error passes through", toolError("invalid-site-code", "siteCode is required"), "invalid-site-code: siteCode is required"},
+		{"already slugged tool error passes through", newToolError("invalid-site-code", "siteCode is required"), "invalid-site-code: siteCode is required"},
 		{"unmapped error becomes internal-error", errors.New("dial tcp 10.0.0.1:5432: connection refused"), generic},
 		{"unmapped wrapped error does not leak", fmt.Errorf("pgx: %w", errors.New("password=hunter2")), generic},
 	}

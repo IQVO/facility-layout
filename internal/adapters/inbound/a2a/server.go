@@ -33,6 +33,9 @@ import (
 	"github.com/claudioed/facility-layout/internal/application/usecases"
 )
 
+// contentTypeJSON is the one media type every mode list carries.
+const contentTypeJSON = "application/json"
+
 // Config carries the deployment-specific identity of this agent: the absolute
 // URL clients use to reach its JSON-RPC endpoint (advertised on the Agent
 // Card) and the card version. It is supplied by the composition root from
@@ -77,8 +80,8 @@ func Card(cfg Config) *a2a.AgentCard {
 		SupportedInterfaces: []*a2a.AgentInterface{
 			a2a.NewAgentInterface(cfg.AgentURL, a2a.TransportProtocolJSONRPC),
 		},
-		DefaultInputModes:  []string{"application/json", "text/plain"},
-		DefaultOutputModes: []string{"application/json", "text/plain"},
+		DefaultInputModes:  []string{contentTypeJSON, "text/plain"},
+		DefaultOutputModes: []string{contentTypeJSON, "text/plain"},
 		Capabilities:       a2a.AgentCapabilities{Streaming: false},
 		Skills: []a2a.AgentSkill{
 			{
@@ -86,7 +89,7 @@ func Card(cfg Config) *a2a.AgentCard {
 				Name:        "Layout of a site",
 				Description: "Read: one site's full drawable structure as a compact nested map -- zones, then aisles in walk order, then slot codes, with each zone's temperature class and hazmat flag, each aisle's direction and sequence hint, the site's fixed structures, and the site header (name, role in the fulfilment network, transfer capability). Identify the site with siteCode (the canonical Site code, e.g. WH1). Answers a 404 problem when the site does not exist. Changes nothing.",
 				Tags:        []string{"facility", "layout", "read"},
-				InputModes:  []string{"application/json"},
+				InputModes:  []string{contentTypeJSON},
 				Examples: []string{
 					`{"skill":"site_layout","arguments":{"siteCode":"WH1"}}`,
 				},
@@ -96,7 +99,7 @@ func Card(cfg Config) *a2a.AgentCard {
 				Name:        "Travel distance between two locations",
 				Description: "Read: the shortest travel distance, in metres, between two coded locations (seven-segment codes, e.g. WH1-STOR-AMB-A07-01-01-A). Within one zone it routes over the zone's travel graph honouring one-way aisles and cross-aisles; the result is flagged estimated when any leg used a bay-pitch fallback instead of real geometry. Across zones it answers the straight-line distance, always flagged estimated, only when both locations have recorded position geometry, otherwise a 422 problem (it does not guess). Reports map TOPOLOGY only, never travel time or congestion. Changes nothing.",
 				Tags:        []string{"facility", "travel", "read"},
-				InputModes:  []string{"application/json"},
+				InputModes:  []string{contentTypeJSON},
 				Examples: []string{
 					`{"skill":"travel_distance","arguments":{"from":"WH1-STOR-AMB-A07-01-01-A","to":"WH1-STOR-AMB-A07-02-01-A"}}`,
 				},

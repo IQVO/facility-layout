@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -219,7 +220,7 @@ func (w *world) decodeItems(dest any) error {
 		Items json.RawMessage `json:"items"`
 	}
 	if err := json.Unmarshal(w.body, &env); err != nil || env.Items == nil {
-		return fmt.Errorf("response body is not a paged {items} envelope (%v): %s", err, string(w.body))
+		return fmt.Errorf("response body is not a paged {items} envelope (%w): %s", err, string(w.body))
 	}
 	return json.Unmarshal(env.Items, dest)
 }
@@ -790,7 +791,7 @@ func (w *world) theResponseIsAWellFormedSVGMentioning(fragment string) error {
 	decoder := xml.NewDecoder(strings.NewReader(document))
 	for {
 		_, err := decoder.Token()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
