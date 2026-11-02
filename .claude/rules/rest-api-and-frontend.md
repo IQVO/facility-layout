@@ -15,7 +15,9 @@ requires a caller-supplied `Idempotency-Key` header, always (ADR-0019,
 ADR 0039; Postgres is mandatory):
 
 - `POST   /sites`                                    -> RegisterSite (idem)
-- `GET    /sites`                                    -> list sites
+- `GET    /sites`                                    -> list sites (paged: `limit` + keyset
+  `cursor`, body `{items,nextCursor}`; every collection GET pages the same way
+  unless it carries `x-pagination-exempt: view|report`)
 - `GET    /sites/{siteCode}`                          -> get one site
 - `POST   /sites/{siteCode}/zones`                    -> RegisterZone (idem)
 - `GET    /sites/{siteCode}/zones`                    -> list a site's zones
@@ -39,11 +41,11 @@ ADR 0039; Postgres is mandatory):
 - `GET    /locations/{locationCode}/classification`   -> Zone Hazmat/TemperatureClass
   (denormalized read; Published Language for placement-rule consumers like
   `inventory-storage` — see ADR-0008)
-- `POST   /locations/{locationCode}/decommission`     -> DecommissionLocationSlot
-  (NOT idempotency-protected: acts on an existing resource, not a creation)
-- `POST   /locations/import`                          -> ImportFacilityLayout
-  (bulk; NOT idempotency-protected — partial-success semantics don't fit the
-  whole-request replay model, see ADR-0019; request body is a JSON array of
+- `POST   /locations/{locationCode}/decommissionings` -> DecommissionLocationSlot
+  (keyed like every POST; fleet REST guideline)
+- `POST   /location-imports`                          -> ImportFacilityLayout
+  (bulk import job noun, keyed like every POST under the fleet REST
+  guideline, ADR-0044; request body is a JSON array of
   rows, each row fully specifying a site/area/zone/aisle/bay/level/position +
   locationType — the WHOLE point of this endpoint is that a real warehouse's
   layout gets loaded here once, reproducibly, not typed in by hand
