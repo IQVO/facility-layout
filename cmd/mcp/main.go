@@ -67,9 +67,7 @@ func run() error {
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if err := shutdownTelemetry(shutdownCtx); err != nil {
-			logger.Warn("telemetry shutdown reported an error", "error", err)
-		}
+		shutdownTelemetry(shutdownCtx)
 	}()
 
 	httpAddr := getenv("MCP_ADDR", ":8090")

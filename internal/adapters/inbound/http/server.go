@@ -237,14 +237,14 @@ func (s *Server) mountSlotUpdates(r chi.Router) {
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, map[string]string{statusField: "ok"})
 }
 
 // --------------------------------------------------------------- writing ---
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, dest any) bool {
 	if err := json.NewDecoder(r.Body).Decode(dest); err != nil {
-		writeProblem(w, http.StatusBadRequest, problemInfo{"malformed-request-body", "The request body is not valid JSON"}, err.Error(), r.URL.Path)
+		writeProblem(w, http.StatusBadRequest, problemInfo{slugMalformedRequestBody, "The request body is not valid JSON"}, err.Error(), r.URL.Path)
 		return false
 	}
 	return true

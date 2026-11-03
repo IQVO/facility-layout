@@ -56,7 +56,7 @@ type siteLayoutInput struct {
 
 func (d Deps) getSiteLayout(ctx context.Context, in siteLayoutInput) (siteLayoutDTO, error) {
 	if in.SiteCode == "" {
-		return siteLayoutDTO{}, toolError(slugInvalidSiteCode, "siteCode is required")
+		return siteLayoutDTO{}, newToolError(slugInvalidSiteCode, "siteCode is required")
 	}
 	layout, err := d.GetSiteLayout.Execute(ctx, in.SiteCode)
 	if err != nil {
@@ -73,7 +73,7 @@ type zoneGridInput struct {
 
 func (d Deps) getZoneGrid(ctx context.Context, in zoneGridInput) (zoneGridDTO, error) {
 	if in.ZoneID == "" {
-		return zoneGridDTO{}, toolError(slugInvalidZoneCode, "zoneId is required")
+		return zoneGridDTO{}, newToolError(slugInvalidZoneCode, "zoneId is required")
 	}
 	grid, err := d.GetZoneGrid.Execute(ctx, in.ZoneID)
 	if err != nil {
@@ -115,7 +115,7 @@ type listFunctionalLocationsOutput struct {
 
 func (d Deps) listFunctionalLocations(ctx context.Context, in listFunctionalLocationsInput) (listFunctionalLocationsOutput, error) {
 	if in.SiteCode == "" {
-		return listFunctionalLocationsOutput{}, toolError(slugInvalidSiteCode, "siteCode is required")
+		return listFunctionalLocationsOutput{}, newToolError(slugInvalidSiteCode, "siteCode is required")
 	}
 	role, err := placement.ParseLocationRole(in.Role)
 	if err != nil {
@@ -140,7 +140,7 @@ type zoneTravelGraphInput struct {
 
 func (d Deps) getZoneTravelGraph(ctx context.Context, in zoneTravelGraphInput) (travelGraphDTO, error) {
 	if in.ZoneID == "" {
-		return travelGraphDTO{}, toolError(slugInvalidZoneCode, "zoneId is required")
+		return travelGraphDTO{}, newToolError(slugInvalidZoneCode, "zoneId is required")
 	}
 	view, err := d.GetZoneTravelGraph.Execute(ctx, in.ZoneID)
 	if err != nil {
@@ -158,10 +158,10 @@ type estimateTravelDistanceInput struct {
 
 func (d Deps) estimateTravelDistance(ctx context.Context, in estimateTravelDistanceInput) (travelDistanceDTO, error) {
 	if strings.TrimSpace(in.From) == "" {
-		return travelDistanceDTO{}, toolError(slugMissingLocationCode, "from is required")
+		return travelDistanceDTO{}, newToolError(slugMissingLocationCode, "from is required")
 	}
 	if strings.TrimSpace(in.To) == "" {
-		return travelDistanceDTO{}, toolError(slugMissingLocationCode, "to is required")
+		return travelDistanceDTO{}, newToolError(slugMissingLocationCode, "to is required")
 	}
 	from, err := shared.ParseLocationCode(in.From)
 	if err != nil {

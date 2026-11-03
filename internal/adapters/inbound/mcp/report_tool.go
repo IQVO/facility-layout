@@ -154,10 +154,10 @@ func (d Deps) getCatalogGrowthReport(ctx context.Context, in CatalogGrowthToolIn
 // It validates from/to and forwards the filters.
 func GetCatalogGrowthReportForTest(ctx context.Context, client ReportsClient, in CatalogGrowthToolInput) (CatalogGrowthReportView, error) {
 	if client == nil {
-		return CatalogGrowthReportView{}, toolError(slugInternalError, "reports client not configured")
+		return CatalogGrowthReportView{}, newToolError(slugInternalError, "reports client not configured")
 	}
 	if in.From == "" || in.To == "" {
-		return CatalogGrowthReportView{}, toolError(slugInvalidReportQuery, "from and to are required (RFC3339)")
+		return CatalogGrowthReportView{}, newToolError(slugInvalidReportQuery, "from and to are required (RFC3339)")
 	}
 	q := CatalogGrowthQuery{}
 	q.From = in.From

@@ -59,9 +59,7 @@ func run() error {
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if err := shutdownTelemetry(shutdownCtx); err != nil {
-			logger.Warn("telemetry shutdown reported an error", "error", err)
-		}
+		shutdownTelemetry(shutdownCtx)
 	}()
 
 	rootCtx := context.Background()
@@ -181,7 +179,7 @@ func startConsumer(ctx context.Context, logger *slog.Logger, consumer *inboundka
 // setupTelemetry configures OTel for this process and returns the
 // shutdown func; split out of run() purely to keep run()'s shutdown
 // sequence readable as one block.
-func setupTelemetry(serviceName string) (func(context.Context) error, error) {
+func setupTelemetry(serviceName string) (func(context.Context), error) {
 	return telemetry.Setup(
 		context.Background(),
 		serviceName,

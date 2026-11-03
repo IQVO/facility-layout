@@ -122,13 +122,13 @@ var dependencyUnavailable = problemInfo{"dependency-unavailable", "A runtime dep
 func HandleReadyz(g *Readiness) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !g.Ready() {
-			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready"})
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{statusField: "not_ready"})
 			return
 		}
 		if failing := g.Failing(r.Context()); len(failing) > 0 {
 			writeProblem(w, http.StatusServiceUnavailable, dependencyUnavailable, "not ready: "+strings.Join(failing, ", "), r.URL.Path)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+		writeJSON(w, http.StatusOK, map[string]string{statusField: "ready"})
 	}
 }
