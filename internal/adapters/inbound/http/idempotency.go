@@ -132,7 +132,7 @@ func RequireIdempotencyKey(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 			bodyBytes, err := io.ReadAll(r.Body)
 			if err != nil {
 				writeProblem(w, http.StatusBadRequest,
-					problemInfo{"malformed-request-body", "The request body could not be read"},
+					problemInfo{slugMalformedRequestBody, "The request body could not be read"},
 					err.Error(), r.URL.Path)
 				return
 			}

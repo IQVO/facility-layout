@@ -209,7 +209,8 @@ func (g Graph) Distance(from, to Node) (Route, error) {
 	heap.Init(pq)
 
 	for pq.Len() > 0 {
-		current := heap.Pop(pq).(pqItem)
+		// The queue only ever holds pqItem values (Push rejects others).
+		current, _ := heap.Pop(pq).(pqItem)
 		if visited[current.node] {
 			continue
 		}
@@ -257,10 +258,16 @@ type pqItem struct {
 // priorityQueue is a container/heap min-heap over pqItem.dist.
 type priorityQueue []pqItem
 
-func (pq priorityQueue) Len() int            { return len(pq) }
-func (pq priorityQueue) Less(i, j int) bool  { return pq[i].dist < pq[j].dist }
-func (pq priorityQueue) Swap(i, j int)       { pq[i], pq[j] = pq[j], pq[i] }
-func (pq *priorityQueue) Push(x interface{}) { *pq = append(*pq, x.(pqItem)) }
+func (pq priorityQueue) Len() int           { return len(pq) }
+func (pq priorityQueue) Less(i, j int) bool { return pq[i].dist < pq[j].dist }
+func (pq priorityQueue) Swap(i, j int)      { pq[i], pq[j] = pq[j], pq[i] }
+func (pq *priorityQueue) Push(x interface{}) {
+	item, ok := x.(pqItem)
+	if !ok {
+		return
+	}
+	*pq = append(*pq, item)
+}
 func (pq *priorityQueue) Pop() interface{} {
 	old := *pq
 	n := len(old)

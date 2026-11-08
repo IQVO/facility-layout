@@ -135,7 +135,7 @@ func (w *mcpEvalWorld) callErroredMentioning(fragment string) error {
 		return fmt.Errorf("expected a tool error, got success: %s", w.h.lastCallContent)
 	}
 	if !containsFold(w.h.lastCallContent, fragment) && w.h.lastCallErr != nil && !containsFold(w.h.lastCallErr.Error(), fragment) {
-		return fmt.Errorf("expected the tool error to mention %q, got %q / %v", fragment, w.h.lastCallContent, w.h.lastCallErr)
+		return fmt.Errorf("expected the tool error to mention %q, got %q / %w", fragment, w.h.lastCallContent, w.h.lastCallErr)
 	}
 	return nil
 }

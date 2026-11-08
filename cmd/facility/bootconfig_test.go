@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -88,7 +89,7 @@ func TestBuildAdaptersRefusesWithoutBackends(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, relay, sweeper, _, _, err := buildAdapters(tt.cfg, quietLogger())
-			if err != tt.want {
+			if !errors.Is(err, tt.want) {
 				t.Fatalf("buildAdapters() error = %v, want %v", err, tt.want)
 			}
 			if relay != nil || sweeper != nil {

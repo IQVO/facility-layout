@@ -79,7 +79,7 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer flushTelemetry(logger, shutdownTelemetry)
+	defer flushTelemetry(shutdownTelemetry)
 
 	locationMetrics, err := telemetry.NewLocationMetrics()
 	if err != nil {
@@ -168,12 +168,10 @@ func run(ctx context.Context) error {
 
 // flushTelemetry flushes and stops the OTel providers within a 5 s budget,
 // the last thing run() does.
-func flushTelemetry(logger *slog.Logger, shutdown func(context.Context) error) {
+func flushTelemetry(shutdown func(context.Context)) {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := shutdown(shutdownCtx); err != nil {
-		logger.Warn("telemetry shutdown reported an error", "error", err)
-	}
+	shutdown(shutdownCtx)
 }
 
 // capabilityHeartbeat builds the ADR 0041 heartbeat loop over the wired

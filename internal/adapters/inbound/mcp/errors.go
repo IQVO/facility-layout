@@ -28,11 +28,15 @@ import (
 // Slugs the tools raise for their own argument checks, where no domain
 // sentinel is involved. Each is a slug REST also uses.
 const (
-	slugInvalidSiteCode     = "invalid-site-code"
-	slugInvalidZoneCode     = "invalid-zone-code"
-	slugMissingLocationCode = "missing-location-code"
-	slugInvalidReportQuery  = "invalid-report-query"
-	slugInternalError       = "internal-error"
+	slugInvalidSiteCode       = "invalid-site-code"
+	slugInvalidZoneCode       = "invalid-zone-code"
+	slugAlreadyDecommissioned = "already-decommissioned"
+	slugMalformedLocationCode = "malformed-location-code"
+	slugInvalidAisleCode      = "invalid-aisle-code"
+	slugInvalidLocationType   = "invalid-location-type"
+	slugMissingLocationCode   = "missing-location-code"
+	slugInvalidReportQuery    = "invalid-report-query"
+	slugInternalError         = "internal-error"
 )
 
 // internalErrorDetail is all a caller learns about an unmapped error.
@@ -73,13 +77,13 @@ var errorCatalog = []errorEntry{
 	{usecases.ErrAisleNotActive, "aisle-not-active"},
 
 	// 409 Conflict: already decommissioned.
-	{aisle.ErrAlreadyDecommissioned, "already-decommissioned"},
-	{aisle.ErrAisleDecommissioned, "already-decommissioned"},
-	{aisle.ErrCrossAisleAlreadyDecommissioned, "already-decommissioned"},
-	{site.ErrAlreadyDecommissioned, "already-decommissioned"},
-	{zone.ErrAlreadyDecommissioned, "already-decommissioned"},
-	{slot.ErrAlreadyDecommissioned, "already-decommissioned"},
-	{slot.ErrSlotDecommissioned, "already-decommissioned"},
+	{aisle.ErrAlreadyDecommissioned, slugAlreadyDecommissioned},
+	{aisle.ErrAisleDecommissioned, slugAlreadyDecommissioned},
+	{aisle.ErrCrossAisleAlreadyDecommissioned, slugAlreadyDecommissioned},
+	{site.ErrAlreadyDecommissioned, slugAlreadyDecommissioned},
+	{zone.ErrAlreadyDecommissioned, slugAlreadyDecommissioned},
+	{slot.ErrAlreadyDecommissioned, slugAlreadyDecommissioned},
+	{slot.ErrSlotDecommissioned, slugAlreadyDecommissioned},
 
 	// 409 Conflict: optimistic-concurrency guard (ADR-0025)
 	{ports.ErrConcurrentModification, "concurrent-modification"},
@@ -118,24 +122,24 @@ var errorCatalog = []errorEntry{
 	{zone.ErrInvalidPitch, "invalid-pitch"},
 
 	// 400 Bad Request: malformed input.
-	{shared.ErrMalformedLocationCode, "malformed-location-code"},
-	{shared.ErrEmptyLocationSegment, "malformed-location-code"},
-	{shared.ErrInvalidLocationSegment, "malformed-location-code"},
-	{site.ErrEmptySiteCode, "invalid-site-code"},
-	{site.ErrInvalidSiteCode, "invalid-site-code"},
-	{zone.ErrEmptySiteCode, "invalid-site-code"},
+	{shared.ErrMalformedLocationCode, slugMalformedLocationCode},
+	{shared.ErrEmptyLocationSegment, slugMalformedLocationCode},
+	{shared.ErrInvalidLocationSegment, slugMalformedLocationCode},
+	{site.ErrEmptySiteCode, slugInvalidSiteCode},
+	{site.ErrInvalidSiteCode, slugInvalidSiteCode},
+	{zone.ErrEmptySiteCode, slugInvalidSiteCode},
 	{site.ErrEmptySiteName, "empty-site-name"},
-	{zone.ErrEmptyAreaCode, "invalid-zone-code"},
-	{zone.ErrEmptyZoneCode, "invalid-zone-code"},
-	{zone.ErrInvalidCode, "invalid-zone-code"},
-	{aisle.ErrEmptyZoneID, "invalid-aisle-code"},
-	{aisle.ErrEmptyAisleCode, "invalid-aisle-code"},
-	{aisle.ErrInvalidAisleCode, "invalid-aisle-code"},
-	{placement.ErrEmptyLocationTypeName, "invalid-location-type"},
+	{zone.ErrEmptyAreaCode, slugInvalidZoneCode},
+	{zone.ErrEmptyZoneCode, slugInvalidZoneCode},
+	{zone.ErrInvalidCode, slugInvalidZoneCode},
+	{aisle.ErrEmptyZoneID, slugInvalidAisleCode},
+	{aisle.ErrEmptyAisleCode, slugInvalidAisleCode},
+	{aisle.ErrInvalidAisleCode, slugInvalidAisleCode},
+	{placement.ErrEmptyLocationTypeName, slugInvalidLocationType},
 	{placement.ErrEmptyRuleID, "empty-placement-rule-id"},
-	{placement.ErrEmptyRuleLocationType, "invalid-location-type"},
+	{placement.ErrEmptyRuleLocationType, slugInvalidLocationType},
 	{slot.ErrMissingLocationCode, "missing-location-code"},
-	{slot.ErrMissingLocationType, "invalid-location-type"},
+	{slot.ErrMissingLocationType, slugInvalidLocationType},
 	{structure.ErrEmptyID, "empty-fixed-structure-id"},
 	{structure.ErrEmptySiteCode, "empty-fixed-structure-site-code"},
 	{structure.ErrEmptyLabel, "empty-fixed-structure-label"},
@@ -158,22 +162,22 @@ func slugFor(err error) (slug string, ok bool) {
 	return "", false
 }
 
-// toolErr is a tool-level error already in "<slug>: <detail>" form.
-type toolErr struct {
+// toolError is a tool-level error already in "<slug>: <detail>" form.
+type toolError struct {
 	slug   string
 	detail string
 }
 
-func (e *toolErr) Error() string { return fmt.Sprintf("%s: %s", e.slug, e.detail) }
+func (e *toolError) Error() string { return fmt.Sprintf("%s: %s", e.slug, e.detail) }
 
-// toolError builds a tool-level error "<slug>: <detail>". Returned from a
+// newToolError builds a tool-level error "<slug>: <detail>". Returned from a
 // handler it becomes an isError tool result, never a transport failure.
-func toolError(slug, detail string) error {
-	return &toolErr{slug: slug, detail: detail}
+func newToolError(slug, detail string) error {
+	return &toolError{slug: slug, detail: detail}
 }
 
 // mapError turns a handler error into the error the caller sees. An error
-// already built by toolError passes through; a typed domain error is prefixed
+// already built by newToolError passes through; a typed domain error is prefixed
 // with its REST slug and keeps its message; anything else is logged and
 // reported generically so infrastructure details (DSNs, SQL) never reach the
 // model. A nil error stays nil.
@@ -181,13 +185,13 @@ func mapError(err error) error {
 	if err == nil {
 		return nil
 	}
-	var te *toolErr
+	var te *toolError
 	if errors.As(err, &te) {
 		return te
 	}
 	if slug, ok := slugFor(err); ok {
-		return toolError(slug, err.Error())
+		return newToolError(slug, err.Error())
 	}
 	slog.Error("mcp tool failed with an unexpected error", "error", err)
-	return toolError(slugInternalError, internalErrorDetail)
+	return newToolError(slugInternalError, internalErrorDetail)
 }
