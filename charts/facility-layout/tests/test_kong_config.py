@@ -16,6 +16,8 @@ This test is the sensor for that decision. It fails if:
     (so /.well-known/agent-card.json stays reachable under the same prefix),
     or the reports route
     to /reports,
+  * the reports route lacks konghq.com/regex-priority "10" (it must outrank
+    the API prefix under Kong's traditional router),
   * defaults (no --set flags) render any Kong object at all — standalone
     installs without Kong must be unaffected.
 
@@ -143,6 +145,20 @@ def main() -> int:
                         failures.append(f"A2A route {name} rewrites to {target!r}, expected '/'")
                     if name.endswith("-reports") and target != "/reports":
                         failures.append(f"reports route {name} rewrites to {target!r}, expected '/reports'")
+
+    # 5. The reports route outranks the API prefix: Kong's traditional router
+    # evaluates equal-priority regex paths in no fixed order, so without this
+    # /api/<context>/reports/... can land on the API Service (404).
+    reports_routes = [r for r in routes if r["metadata"]["name"].endswith("-reports")]
+    if len(reports_routes) != 1:
+        failures.append(f"expected exactly one reports route, rendered {len(reports_routes)}")
+    for r in reports_routes:
+        prio = (r["metadata"].get("annotations") or {}).get("konghq.com/regex-priority")
+        if prio != "10":
+            failures.append(
+                f"reports route {r['metadata']['name']} has konghq.com/regex-priority {prio!r}, "
+                "expected '10' so it outranks the API prefix"
+            )
 
     if failures:
         print("FAIL: facility-layout chart Kong-config contract")
