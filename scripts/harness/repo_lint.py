@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""repo_lint: configuration sensors (harness v3). Stdlib only, so it runs on any CI runner.
+"""repo_lint: configuration sensors (harness v3+). Stdlib only, so it runs on any CI runner.
 
 Every check here exists because a real incident reached CI that a cheap static check would have caught
 before the PR was opened. Each finding says WHAT is wrong, WHY it matters and the exact FIX, so an agent
@@ -45,6 +45,13 @@ Checks
                       it as a prerequisite). In this template repository `ci.yml.template` counts as a workflow.
                       (incident 16d: process-path-management and warehouse-ops-agent measured a different package
                       set in CI than `make coverage`, so the local gate and the PR gate disagreed silently)
+  R12 harness-files   the agent harness entry points exist and cannot drift: CLAUDE.md and AGENTS.md both exist and
+                      one is a symlink to the other (two regular files drift apart), INCIDENTS.md and HARNESS.md
+                      exist, and the real guide carries a `harness-template: v<N>` marker. In this template repository
+                      (`.github/workflows/*.template` exists) it checks the template's own files, plus
+                      CLAUDE.md.template (the guide scripts/new-service.sh renders into every scaffold).
+                      (incident: new-service.sh only TOLD a human to write the guide; 14 scaffolded services never got
+                      a CLAUDE.md/AGENTS.md, and INCIDENTS.md, never template-managed, drifted into 8 variants)
 
 Usage: repo_lint.py [--root .] [--stale-owners claudioed,other]   exit 0 clean, 1 findings.
 Suppress one line with the text `repo-lint: ignore` on it (use sparingly, say why).
@@ -345,7 +352,7 @@ def check_owner_drift(root, owners):
 
 
 def check_placeholders(root):
-    if glob.glob(os.path.join(root, ".github", "workflows", "*.template")):
+    if is_template_repo(root):
         return  # the template repository itself ships placeholders by design
     rx = re.compile(r"(?<!\$)\{\{[A-Z][A-Z0-9_]{2,}\}\}")
     pats = [".github/**/*.yml", ".github/**/*.yaml", "Makefile", "Dockerfile", "charts/**/*", "docs/docusaurus.config.*",
@@ -622,6 +629,90 @@ def check_coverage_scope(root):
         "`coverage` as a prerequisite)")
 
 
+# ---- R12: the harness entry points exist, the two guide names are one file, the guide is versioned ---------
+MARKER_RX = re.compile(r"harness-template:\s*v\d+\b")
+GUIDE_FIX = ("keep ONE real guide: `CLAUDE.md` as a regular file and `ln -s CLAUDE.md AGENTS.md` (git mode 120000; "
+             "the reverse direction, CLAUDE.md -> AGENTS.md, is also accepted)")
+
+
+def is_template_repo(root):
+    return bool(glob.glob(os.path.join(root, ".github", "workflows", "*.template")))
+
+
+def check_harness_files(root):
+    """R12: CLAUDE.md + AGENTS.md (one a symlink to the other), INCIDENTS.md, HARNESS.md, a version marker."""
+    template = is_template_repo(root)
+    for name, why, fix in (
+            ("INCIDENTS.md",
+             "the incident protocol (fix + guard + fleet rollout + a row) has nowhere to land, and agents cannot read "
+             "which failures the sensors were written for",
+             "copy the fleet log byte-identical from warehouse-harness-template's INCIDENTS.md (`python3 "
+             "tools/migrate_v4.py --repo <this repo>` in the template does it); add new rows THERE first"),
+            ("HARNESS.md",
+             "nothing tells an agent which sensors this repo runs, at which lifecycle point, and why",
+             "start from warehouse-harness-template's HARNESS.md and make every sensor row describe what THIS repo "
+             "really runs (its CI job names and Makefile targets)")):
+        if not os.path.isfile(os.path.join(root, name)):
+            err("R12", name, 0, f"{name} is missing", why, fix)
+    claude, agents = os.path.join(root, "CLAUDE.md"), os.path.join(root, "AGENTS.md")
+    missing = [n for n, p in (("CLAUDE.md", claude), ("AGENTS.md", agents)) if not os.path.lexists(p)]
+    for n in missing:
+        other = os.path.join(root, "AGENTS.md" if n == "CLAUDE.md" else "CLAUDE.md")
+        if n == "AGENTS.md" and os.path.isfile(other):
+            fix = "`ln -s CLAUDE.md AGENTS.md` (git mode 120000)"
+        elif n == "CLAUDE.md" and os.path.isfile(other):
+            fix = "`git mv AGENTS.md CLAUDE.md && ln -s CLAUDE.md AGENTS.md` (or `ln -s AGENTS.md CLAUDE.md`)"
+        else:
+            fix = ("write CLAUDE.md (model it on warehouse-harness-template's CLAUDE.md.template or product-master's "
+                   "CLAUDE.md: identity, hard rules, commands, where things are written down, `harness-template: v4`), "
+                   "then " + GUIDE_FIX)
+        err("R12", n, 0, f"{n} is missing",
+            f"Claude Code reads CLAUDE.md and Codex/OpenCode read AGENTS.md: a session in a runtime that looks for "
+            f"{n} starts with no repo map, no hard rules and no commands (scripts/new-service.sh used to leave the "
+            "guide to a human, and 14 services never got one)", fix)
+    guide = None
+    if not missing:
+        c_link, a_link = os.path.islink(claude), os.path.islink(agents)
+        if c_link and a_link:
+            err("R12", "CLAUDE.md", 0, "CLAUDE.md and AGENTS.md are both symlinks, so there is no real guide file",
+                "a symlink pair resolves to nothing (or loops): every runtime starts without a guide",
+                GUIDE_FIX)
+        elif not c_link and not a_link:
+            err("R12", "AGENTS.md", 0, "CLAUDE.md and AGENTS.md are two separate regular files",
+                "two copies of the guide drift apart: Claude Code and Codex/OpenCode sessions then follow different "
+                "rules in the same repo", "merge any content unique to AGENTS.md into CLAUDE.md, then " + GUIDE_FIX)
+        else:
+            link, real = (agents, claude) if a_link else (claude, agents)
+            if os.path.realpath(link) != os.path.realpath(real) or not os.path.isfile(real):
+                err("R12", os.path.basename(link), 0,
+                    f"{os.path.basename(link)} is a symlink to `{os.readlink(link)}`, not to {os.path.basename(real)}",
+                    "the two runtimes read different (or no) guides", GUIDE_FIX)
+            else:
+                guide = real
+    elif len(missing) == 1:
+        present = agents if missing[0] == "CLAUDE.md" else claude
+        if os.path.isfile(present):
+            guide = present
+    if guide and not MARKER_RX.search(read(guide)):
+        err("R12", os.path.basename(guide), 0, "the guide has no `harness-template: v<N>` marker",
+            "a fleet audit (scripts/harness-audit.py) cannot tell which harness version this repo is on, so a repo "
+            "that is behind the template is never noticed",
+            "add the line `harness-template: v4` to the guide (`python3 tools/migrate_v4.py --repo <this repo>` in "
+            "warehouse-harness-template writes it)")
+    if not template:
+        return
+    tpl = os.path.join(root, "CLAUDE.md.template")
+    if not os.path.isfile(tpl):
+        err("R12", "CLAUDE.md.template", 0, "the template ships no CLAUDE.md.template",
+            "scripts/new-service.sh renders every new service's CLAUDE.md (and its AGENTS.md symlink) from it; without "
+            "it a scaffold starts with no guide, which is how 14 services ended up without one",
+            "restore CLAUDE.md.template (git log --follow CLAUDE.md.template) and keep scripts/scaffold-selftest.sh green")
+    elif not MARKER_RX.search(read(tpl)):
+        err("R12", "CLAUDE.md.template", 0, "CLAUDE.md.template has no `harness-template: v<N>` marker",
+            "every scaffold would start unversioned and invisible to the fleet audit",
+            "add the line `harness-template: v4` to CLAUDE.md.template")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", default=".")
@@ -638,6 +729,7 @@ def main():
     check_chart_tests(root)
     check_configmaps_mounted(root)
     check_coverage_scope(root)
+    check_harness_files(root)
     for e in errors:
         print(e)
     print(f"repo-lint: {len(errors)} error(s)")

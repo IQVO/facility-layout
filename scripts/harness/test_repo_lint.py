@@ -23,19 +23,38 @@ DEP_ACTIONS = """  - package-ecosystem: "github-actions"
 """
 
 
-def make(files, auto_dep=True):
+class Link(str):
+    """A fixture value that becomes a symlink to the given target instead of a file."""
+
+
+GUIDE = "# CLAUDE.md\n\nharness-template: v4\n"
+HARNESS_FILES = {"CLAUDE.md": GUIDE, "AGENTS.md": Link("CLAUDE.md"), "INCIDENTS.md": "# Harness incident log\n",
+                 "HARNESS.md": "# HARNESS.md\n"}
+
+
+def make(files, auto_dep=True, harness=True):
     """auto_dep: add a valid dependabot.yml when the fixture has workflows/go.mod and none of its own, so tests of
-    the OTHER rules are not tripped by R6 (the R6 tests pass auto_dep=False)."""
+    the OTHER rules are not tripped by R6 (the R6 tests pass auto_dep=False).
+    harness: add the R12 harness files (CLAUDE.md + AGENTS.md symlink, INCIDENTS.md, HARNESS.md and, in a template
+    fixture, CLAUDE.md.template) unless the fixture names them itself; the R12 tests pass harness=False."""
     files = dict(files)
     has_dep = any(k.startswith(".github/dependabot") for k in files)
     wf = any(k.startswith(".github/workflows/") and k.endswith((".yml", ".yaml")) for k in files)
     gomod = "go.mod" in files
     if auto_dep and not has_dep and (wf or gomod):
         files[".github/dependabot.yml"] = "version: 2\nupdates:\n" + (DEP_GOMOD if gomod else "") + (DEP_ACTIONS if wf else "")
+    if harness:
+        for k, v in HARNESS_FILES.items():
+            files.setdefault(k, v)
+        if any(k.startswith(".github/workflows/") and k.endswith(".template") for k in files):
+            files.setdefault("CLAUDE.md.template", GUIDE)
     root = tempfile.mkdtemp(prefix="rl-")
     for rel, body in files.items():
         p = os.path.join(root, rel)
         os.makedirs(os.path.dirname(p), exist_ok=True)
+        if isinstance(body, Link):
+            os.symlink(str(body), p)
+            continue
         with open(p, "w") as f:
             f.write(textwrap.dedent(body).lstrip("\n") if isinstance(body, str) else json.dumps(body))
     return root
@@ -721,6 +740,94 @@ class RepoLint(unittest.TestCase):
               "      - run: go test ./... -coverpkg=./x/... # repo-lint: ignore one-off experiment\n")
         self.assertEqual(lint(make({".github/workflows/ci.yml": wf}))[0], 0)
 
+
+    # ---- R12 ----
+    def r12(self, files, **kw):
+        code, out = lint(make(files, harness=False, **kw))
+        return code, [l for l in out.splitlines() if l.startswith("error [R12]")], out
+
+    def test_r12_incident_scaffold_without_any_guide(self):
+        # the incident: new-service.sh told a human to write the guide; 14 services never got CLAUDE.md/AGENTS.md
+        code, found, out = self.r12({"INCIDENTS.md": "x\n", "HARNESS.md": "x\n"})
+        self.assertEqual(code, 1, out)
+        self.assertEqual(found, ["error [R12] CLAUDE.md: CLAUDE.md is missing", "error [R12] AGENTS.md: AGENTS.md is missing"])
+        self.assertIn("WHY:", out)
+        self.assertIn("FIX:", out)
+        self.assertIn("ln -s CLAUDE.md AGENTS.md", out)
+
+    def test_r12_green_with_symlinked_guide_and_both_logs(self):
+        code, found, out = self.r12(dict(HARNESS_FILES))
+        self.assertEqual((code, found), (0, []), out)
+
+    def test_r12_reverse_symlink_direction_is_accepted(self):
+        files = dict(HARNESS_FILES, **{"AGENTS.md": GUIDE, "CLAUDE.md": Link("AGENTS.md")})
+        code, found, out = self.r12(files)
+        self.assertEqual((code, found), (0, []), out)
+
+    def test_r12_two_regular_guide_files_drift(self):
+        code, found, out = self.r12(dict(HARNESS_FILES, **{"AGENTS.md": GUIDE}))
+        self.assertEqual(code, 1, out)
+        self.assertEqual(found, ["error [R12] AGENTS.md: CLAUDE.md and AGENTS.md are two separate regular files"])
+        self.assertIn("merge any content unique to AGENTS.md into CLAUDE.md", out)
+
+    def test_r12_only_agents_md_missing_names_the_symlink_fix(self):
+        files = dict(HARNESS_FILES)
+        del files["AGENTS.md"]
+        code, found, out = self.r12(files)
+        self.assertEqual(found, ["error [R12] AGENTS.md: AGENTS.md is missing"], out)
+        self.assertIn("FIX: `ln -s CLAUDE.md AGENTS.md` (git mode 120000)", out)
+
+    def test_r12_symlink_to_another_file_or_symlink_pair(self):
+        files = dict(HARNESS_FILES, **{"AGENTS.md": Link("README.md"), "README.md": "x\n"})
+        code, found, out = self.r12(files)
+        self.assertEqual(found, ["error [R12] AGENTS.md: AGENTS.md is a symlink to `README.md`, not to CLAUDE.md"], out)
+        files = dict(HARNESS_FILES, **{"CLAUDE.md": Link("AGENTS.md")})
+        code, found, out = self.r12(files)
+        self.assertEqual(code, 1, out)
+        self.assertIn("both symlinks", found[0])
+
+    def test_r12_incidents_and_harness_md_missing(self):
+        files = {k: v for k, v in HARNESS_FILES.items() if k not in ("INCIDENTS.md", "HARNESS.md")}
+        code, found, out = self.r12(files)
+        self.assertEqual(found, ["error [R12] INCIDENTS.md: INCIDENTS.md is missing",
+                                 "error [R12] HARNESS.md: HARNESS.md is missing"], out)
+
+    def test_r12_guide_without_version_marker(self):
+        code, found, out = self.r12(dict(HARNESS_FILES, **{"CLAUDE.md": "# CLAUDE.md\nno marker\n"}))
+        self.assertEqual(found, ["error [R12] CLAUDE.md: the guide has no `harness-template: v<N>` marker"], out)
+        # migrate_v4.py writes an HTML-comment marker when the guide had none: that counts
+        code, found, out = self.r12(dict(HARNESS_FILES, **{"CLAUDE.md": "# x\n\n<!-- harness-template: v4 -->\n"}))
+        self.assertEqual((code, found), (0, []), out)
+        # the marker is read through the symlink, from the real file
+        files = dict(HARNESS_FILES, **{"AGENTS.md": "# x\nnothing\n", "CLAUDE.md": Link("AGENTS.md")})
+        code, found, out = self.r12(files)
+        self.assertEqual(found, ["error [R12] AGENTS.md: the guide has no `harness-template: v<N>` marker"], out)
+
+    TPL_WF = {".github/workflows/ci.yml.template": "name: CI\non: push\njobs:\n  t:\n    runs-on: x\n    steps:\n      - run: true\n"}
+
+    def test_r12_template_mode_checks_the_template_and_its_scaffold_guide(self):
+        # red: the template repository with no guide of its own and no CLAUDE.md.template
+        code, found, out = self.r12(dict(self.TPL_WF, **{"INCIDENTS.md": "x\n", "HARNESS.md": "x\n"}))
+        self.assertEqual(code, 1, out)
+        self.assertEqual(found, ["error [R12] CLAUDE.md: CLAUDE.md is missing", "error [R12] AGENTS.md: AGENTS.md is missing",
+                                 "error [R12] CLAUDE.md.template: the template ships no CLAUDE.md.template"], out)
+        # red: a CLAUDE.md.template without the marker would scaffold unversioned services
+        code, found, out = self.r12(dict(self.TPL_WF, **HARNESS_FILES, **{"CLAUDE.md.template": "# {{SERVICE_REPO}}\n"}))
+        self.assertEqual(found, ["error [R12] CLAUDE.md.template: CLAUDE.md.template has no `harness-template: v<N>` marker"], out)
+        # green
+        code, found, out = self.r12(dict(self.TPL_WF, **HARNESS_FILES, **{"CLAUDE.md.template": GUIDE}))
+        self.assertEqual((code, found), (0, []), out)
+
+    def test_r12_service_repo_needs_no_claude_md_template(self):
+        code, found, out = self.r12(dict(HARNESS_FILES, **{".github/workflows/ci.yml": self.TPL_WF[".github/workflows/ci.yml.template"]}))
+        self.assertEqual((code, found), (0, []), out)
+
+    def test_r12_this_template_repository_passes_its_own_rule(self):
+        root = os.path.abspath(os.path.join(os.path.dirname(LINT), "..", ".."))
+        if not os.path.isfile(os.path.join(root, "CLAUDE.md.template")):
+            self.skipTest("not running inside warehouse-harness-template")
+        code, out = lint(root)
+        self.assertNotIn("[R12]", out)
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)
