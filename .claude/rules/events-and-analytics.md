@@ -21,8 +21,9 @@ Language.
 
 - **Integration (ADR-0009)**: `outbound/kafka` publishes every domain event
   to `warehouse.facility.events`, always, through the transactional outbox
-  (ADR 0039: no log-only publisher, no direct fan-out in any binary). No OTel package
-  on this publisher — it is trace-free by design.
+  (ADR 0039: no log-only publisher, no direct fan-out in any binary). The
+  Kafka adapters inject the W3C trace context into message headers, and
+  ADR 0038 carries it across the outbox (`outbox_events.headers`).
 - **Analytics (ADR-0010)**: additive read side built from this service's
   OWN events. OLTP domain/application must NOT import the analytics store
   (enforced by `internal/architecture` arch-tests); `internal/analytics/report/`
