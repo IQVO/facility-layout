@@ -109,6 +109,7 @@ A physical facility was added to the warehouse map.
 | `siteCode` | string |
 | `siteName` | string |
 | `siteRole` | string — the site's role in the fulfilment network, `UNSPECIFIED` when none was stated (additive, [ADR 0037](../adr/0037-site-role-and-siterolechanged-cloudevents.md)) |
+| `gln` | string — the site's GS1 Global Location Number (13 digits, mod-10 check digit); omitted when none was recorded (additive, [ADR 0045](../adr/0045-gs1-location-identity.md)) |
 
 ### SiteRoleChanged
 
@@ -157,6 +158,7 @@ A behavioral zone was added inside a Site's area.
 | `zoneCode` | string |
 | `temperatureClass` | `Ambient` \| `Chilled` \| `Frozen` |
 | `hazmat` | boolean |
+| `gln` | string — the zone's GS1 Global Location Number; omitted when none was recorded (additive, [ADR 0045](../adr/0045-gs1-location-identity.md)) |
 
 ### AisleRegistered
 
@@ -217,6 +219,8 @@ stow into.
 | `activities` | array of `Pack` \| `Sort` \| `QC` \| `VAS` \| `Deconsolidate` \| `Receive` \| `Kit` — only on a `WorkCenter` slot |
 | `maxWeightKg` | number — omitted when zero |
 | `maxVolumeM3` | number — omitted when zero |
+| `gln` | string — the slot's GS1 Global Location Number; omitted when none was recorded (additive, [ADR 0045](../adr/0045-gs1-location-identity.md)) |
+| `spotKind` | `PARKING` \| `HOLDING` \| `REEFER_PLUG` \| `HAZMAT` \| `STAGING_LANE` — only on a `Yard` slot, omitted when none was recorded (additive, ADR 0045) |
 
 `aisleId` and `zoneId` are denormalised into the payload deliberately: a
 consumer should not have to know how to parse this context's code format to
