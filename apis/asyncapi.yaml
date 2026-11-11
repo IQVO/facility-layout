@@ -325,7 +325,47 @@ components:
         Raised by `RegisterSite`. Kafka key: `siteCode`. No consumer wired
         today. `siteRole` is additive (ADR-0037): the site's role in the
         fulfilment network, `UNSPECIFIED` when the registration stated none
-        (a consumer decoding the older payload simply ignores it).
+        (a consumer decoding the older payload simply ignores it). `gln` is
+        additive and optional (ADR-0045): the site's GS1 Global Location
+        Number, omitted when none was recorded.
+      examples:
+        - name: siteWithGln
+          summary: A site registered with its GS1 Global Location Number
+          payload:
+            specversion: "1.0"
+            id: "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
+            source: "/warehouse/facility-layout"
+            type: "com.warehouse.wms.facility-layout.site.SiteRegistered"
+            subject: "WH1"
+            datacontenttype: "application/json"
+            dataschema: "urn:warehouse:facility-layout:events:SiteRegistered:v1"
+            time: "2026-02-03T04:05:06Z"
+            data:
+              eventName: "SiteRegistered"
+              eventType: "com.warehouse.wms.facility-layout.site.SiteRegistered"
+              occurredAt: "2026-02-03T04:05:06Z"
+              siteCode: "WH1"
+              siteName: "Main"
+              siteRole: "NON_SORTABLE_FC"
+              gln: "4006381333931"
+        - name: siteWithoutGln
+          summary: A site registered without the optional gln (the shape before ADR-0045)
+          payload:
+            specversion: "1.0"
+            id: "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
+            source: "/warehouse/facility-layout"
+            type: "com.warehouse.wms.facility-layout.site.SiteRegistered"
+            subject: "WH1"
+            datacontenttype: "application/json"
+            dataschema: "urn:warehouse:facility-layout:events:SiteRegistered:v1"
+            time: "2026-02-03T04:05:06Z"
+            data:
+              eventName: "SiteRegistered"
+              eventType: "com.warehouse.wms.facility-layout.site.SiteRegistered"
+              occurredAt: "2026-02-03T04:05:06Z"
+              siteCode: "WH1"
+              siteName: "Main"
+              siteRole: "NON_SORTABLE_FC"
       payload:
         allOf:
           - $ref: '#/components/schemas/cloudEvent'
@@ -348,6 +388,18 @@ components:
                         type: string
                       siteRole:
                         $ref: '#/components/schemas/siteRole'
+                      gln:
+                        type: [string, 'null']
+                        pattern: '^[0-9]{13}$'
+                        description: >
+                          OPTIONAL (ADR-0045). The site's GS1 Global Location
+                          Number: 13 digits whose last digit is the GS1 mod-10
+                          check digit of the first twelve. Omitted when none
+                          was recorded (every location registered before the
+                          field existed); a producer never sends `null`, a
+                          consumer tolerates both. Unique across every site,
+                          zone and slot.
+                        example: '4006381333931'
 
     siteRoleChanged:
       x-no-consumer-reason: "Published Language fact; consumed on demand"
@@ -460,7 +512,53 @@ components:
         Raised by `RegisterZone`. Kafka key: `zoneId`. **Consumed live** by
         inventory-storage's location-classification cache — the zone's
         `hazmat` and `temperatureClass` attributes are exactly what its
-        StowStock placement check reads.
+        StowStock placement check reads. `gln` is additive and optional
+        (ADR-0045): the zone's GS1 Global Location Number, omitted when none
+        was recorded.
+      examples:
+        - name: zoneWithGln
+          summary: A zone registered with its GS1 Global Location Number
+          payload:
+            specversion: "1.0"
+            id: "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
+            source: "/warehouse/facility-layout"
+            type: "com.warehouse.wms.facility-layout.zone.ZoneRegistered"
+            subject: "WH1-YARD-NORTH"
+            datacontenttype: "application/json"
+            dataschema: "urn:warehouse:facility-layout:events:ZoneRegistered:v1"
+            time: "2026-02-03T04:05:06Z"
+            data:
+              eventName: "ZoneRegistered"
+              eventType: "com.warehouse.wms.facility-layout.zone.ZoneRegistered"
+              occurredAt: "2026-02-03T04:05:06Z"
+              zoneId: "WH1-YARD-NORTH"
+              siteCode: "WH1"
+              areaCode: "YARD"
+              zoneCode: "NORTH"
+              temperatureClass: "Ambient"
+              hazmat: false
+              gln: "5412345000013"
+        - name: zoneWithoutGln
+          summary: A zone registered without the optional gln (the shape before ADR-0045)
+          payload:
+            specversion: "1.0"
+            id: "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
+            source: "/warehouse/facility-layout"
+            type: "com.warehouse.wms.facility-layout.zone.ZoneRegistered"
+            subject: "WH1-STOR-AMB"
+            datacontenttype: "application/json"
+            dataschema: "urn:warehouse:facility-layout:events:ZoneRegistered:v1"
+            time: "2026-02-03T04:05:06Z"
+            data:
+              eventName: "ZoneRegistered"
+              eventType: "com.warehouse.wms.facility-layout.zone.ZoneRegistered"
+              occurredAt: "2026-02-03T04:05:06Z"
+              zoneId: "WH1-STOR-AMB"
+              siteCode: "WH1"
+              areaCode: "STOR"
+              zoneCode: "AMB"
+              temperatureClass: "Ambient"
+              hazmat: false
       payload:
         allOf:
           - $ref: '#/components/schemas/cloudEvent'
@@ -488,6 +586,18 @@ components:
                         $ref: '#/components/schemas/temperatureClass'
                       hazmat:
                         type: boolean
+                      gln:
+                        type: [string, 'null']
+                        pattern: '^[0-9]{13}$'
+                        description: >
+                          OPTIONAL (ADR-0045). The zone's GS1 Global Location
+                          Number: 13 digits whose last digit is the GS1 mod-10
+                          check digit of the first twelve. Omitted when none
+                          was recorded (every location registered before the
+                          field existed); a producer never sends `null`, a
+                          consumer tolerates both. Unique across every site,
+                          zone and slot.
+                        example: '5412345000013'
 
     aisleRegistered:
       x-no-consumer-reason: "Published Language fact; consumed on demand"
@@ -618,7 +728,79 @@ components:
         Raised by `RegisterLocationSlot`, and once per successful row of
         `ImportFacilityLayout`. Kafka key: `locationCode`. **Consumed live**
         by inventory-storage's location-classification cache, which joins
-        the slot to its parent zone's attributes via `zoneId`.
+        the slot to its parent zone's attributes via `zoneId`. `gln` and
+        `spotKind` are additive and optional (ADR-0045): the slot's GS1
+        Global Location Number and, on a Yard slot only, what the spot is
+        for; both are omitted when none was recorded, so the payload of
+        every existing slot is byte-identical to before. They are set at
+        registration only; there is no update event for them yet.
+      examples:
+        - name: yardSpot
+          summary: A refrigerated-trailer yard spot with a GLN and a spotKind
+          payload:
+            specversion: "1.0"
+            id: "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
+            source: "/warehouse/facility-layout"
+            type: "com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered"
+            subject: "WH1-YARD-NORTH-Y01-01-01-A"
+            datacontenttype: "application/json"
+            dataschema: "urn:warehouse:facility-layout:events:LocationSlotRegistered:v1"
+            time: "2026-02-03T04:05:06Z"
+            data:
+              eventName: "LocationSlotRegistered"
+              eventType: "com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered"
+              occurredAt: "2026-02-03T04:05:06Z"
+              locationCode: "WH1-YARD-NORTH-Y01-01-01-A"
+              aisleId: "WH1-YARD-NORTH-Y01"
+              zoneId: "WH1-YARD-NORTH"
+              locationType: "YardSpot"
+              role: "Yard"
+              gln: "4012345000009"
+              spotKind: "REEFER_PLUG"
+        - name: dockDoorWithGln
+          summary: A dock door with a GLN and no spotKind
+          payload:
+            specversion: "1.0"
+            id: "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
+            source: "/warehouse/facility-layout"
+            type: "com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered"
+            subject: "WH1-STOR-AMB-A07-03-02-B"
+            datacontenttype: "application/json"
+            dataschema: "urn:warehouse:facility-layout:events:LocationSlotRegistered:v1"
+            time: "2026-02-03T04:05:06Z"
+            data:
+              eventName: "LocationSlotRegistered"
+              eventType: "com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered"
+              occurredAt: "2026-02-03T04:05:06Z"
+              locationCode: "WH1-STOR-AMB-A07-03-02-B"
+              aisleId: "WH1-STOR-AMB-A07"
+              zoneId: "WH1-STOR-AMB"
+              locationType: "Dock"
+              role: "Dock"
+              dockFlow: "Inbound"
+              gln: "9780201379624"
+        - name: storageBinWithoutIdentity
+          summary: A storage bin without gln or spotKind (the shape before ADR-0045)
+          payload:
+            specversion: "1.0"
+            id: "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
+            source: "/warehouse/facility-layout"
+            type: "com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered"
+            subject: "WH1-STOR-AMB-A07-03-02-B"
+            datacontenttype: "application/json"
+            dataschema: "urn:warehouse:facility-layout:events:LocationSlotRegistered:v1"
+            time: "2026-02-03T04:05:06Z"
+            data:
+              eventName: "LocationSlotRegistered"
+              eventType: "com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered"
+              occurredAt: "2026-02-03T04:05:06Z"
+              locationCode: "WH1-STOR-AMB-A07-03-02-B"
+              aisleId: "WH1-STOR-AMB-A07"
+              zoneId: "WH1-STOR-AMB"
+              locationType: "PalletRack"
+              role: "Storage"
+              maxWeightKg: 500
+              maxVolumeM3: 1
       payload:
         allOf:
           - $ref: '#/components/schemas/cloudEvent'
@@ -682,6 +864,28 @@ components:
                           field existed); a later value arrives as
                           `LocationSlotHandlingUnitDeclared`.
                         example: CASE
+                      gln:
+                        type: [string, 'null']
+                        pattern: '^[0-9]{13}$'
+                        description: >
+                          OPTIONAL (ADR-0045). The slot's (dock door or yard spot) GS1 Global Location
+                          Number: 13 digits whose last digit is the GS1 mod-10
+                          check digit of the first twelve. Omitted when none
+                          was recorded (every location registered before the
+                          field existed); a producer never sends `null`, a
+                          consumer tolerates both. Unique across every site,
+                          zone and slot.
+                        example: '4012345000009'
+                      spotKind:
+                        type: [string, 'null']
+                        enum: [PARKING, HOLDING, REEFER_PLUG, HAZMAT, STAGING_LANE, null]
+                        description: >
+                          OPTIONAL (ADR-0045). What a yard spot is for. Only
+                          present on a slot whose `role` is `Yard`; omitted
+                          otherwise and for every yard slot registered
+                          without one. A producer never sends `null`, a
+                          consumer tolerates both.
+                        example: REEFER_PLUG
 
     locationSlotHandlingUnitDeclared:
       name: LocationSlotHandlingUnitDeclared

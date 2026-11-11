@@ -172,6 +172,13 @@ paths:
         unknown role is 422 `invalid-site-role`. The role never sets the
         transfer capability (ADR-0035 stays the only writer; see
         `GET /site-roles/transfer-defaults` for the per-role defaults).
+
+
+        `gln` (ADR-0045) is an optional GS1 Global Location Number. It must be
+        13 digits ending in the GS1 mod-10 check digit (otherwise 422
+        `invalid-gln`) and a GLN identifies exactly one location across sites,
+        zones and slots (otherwise 409 `gln-already-assigned`). A site
+        registered without a `gln` is exactly as valid as before.
       tags: [Sites]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -185,6 +192,7 @@ paths:
               siteCode: ABE8
               name: ABE8 - Non-Sortable Fulfillment Center (Breinigsville, PA)
               siteRole: NON_SORTABLE_FC
+              gln: "4006381333931"
       responses:
         "201":
           description: Site registered.
@@ -205,6 +213,7 @@ paths:
                 name: ABE8 - Non-Sortable Fulfillment Center (Breinigsville, PA)
                 status: Active
                 siteRole: NON_SORTABLE_FC
+                gln: "4006381333931"
         "400":
           description: >
             Malformed input, or the Idempotency-Key header is absent
@@ -236,12 +245,21 @@ paths:
         "422":
           description: >
             The `siteRole` is not one of the known site roles
-            (`invalid-site-role`, ADR-0037).
+            (`invalid-site-role`, ADR-0037), or the `gln` is not 13 digits
+            with a valid GS1 check digit (`invalid-gln`, ADR-0045).
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
               examples:
+                invalidGln:
+                  summary: Wrong GS1 check digit
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/invalid-gln
+                    title: GLN must be 13 digits ending in the GS1 mod-10 check digit
+                    status: 422
+                    detail: gln must be 13 digits ending in the GS1 mod-10 check digit
+                    instance: /sites
                 invalidSiteRole:
                   summary: Unknown site role
                   value:
@@ -553,6 +571,11 @@ paths:
         registered against an unknown or non-Active Site. The TemperatureClass
         and Hazmat flag set here are what PlacementRules match on later, so
         they are behavioral, not descriptive. Publishes ZoneRegistered.
+
+
+        `gln` (ADR-0045) is an optional GS1 Global Location Number: 13 digits
+        with a valid mod-10 check digit (422 `invalid-gln`), unique across
+        every site, zone and slot (409 `gln-already-assigned`).
       tags: [Zones]
       parameters:
         - $ref: "#/components/parameters/SiteCode"
@@ -571,6 +594,14 @@ paths:
                   zoneCode: FRZ
                   temperatureClass: Frozen
                   hazmat: false
+              withGln:
+                summary: A zone carrying a GS1 Global Location Number (ADR-0045)
+                value:
+                  areaCode: YARD
+                  zoneCode: NORTH
+                  temperatureClass: Ambient
+                  hazmat: false
+                  gln: "5412345000013"
               casePickFaces:
                 summary: A case-pick (CPK) zone, a convention on the free-form zone code (ADR 0042)
                 value:
@@ -603,6 +634,7 @@ paths:
                 status: Active
                 bayPitchM: 1.2
                 levelPitchM: 1.5
+                gln: "5412345000013"
         "400":
           description: >
             Malformed input, or the Idempotency-Key header is absent
@@ -633,12 +665,24 @@ paths:
           $ref: "#/components/responses/Conflict"
         "422":
           description: >
-            Semantically invalid.
+            Semantically invalid: a placement-rule violation, a `gln` that is
+            not 13 digits with a valid GS1 check digit (`invalid-gln`), an
+            unknown `spotKind` (`unknown-spot-kind`), or a `spotKind` on a
+            location whose role is not Yard (`spot-kind-not-allowed`)
+            (ADR-0045).
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
               examples:
+                spotKindNotAllowed:
+                  summary: spotKind sent for a dock door
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/spot-kind-not-allowed
+                    title: spotKind may only be set on a Yard location
+                    status: 422
+                    detail: spotKind may only be set on a Yard location
+                    instance: /locations
                 semantic:
                   value:
                     type: https://errors.facility-layout.warehouse-systems.dev/placement-rule-violated
@@ -1779,6 +1823,17 @@ paths:
         existing slot is Decommissioned, since decommission is one-way and a
         retired code is never resurrected by re-registration. Publishes
         LocationSlotRegistered.
+
+
+        `gln` (ADR-0045) is an optional GS1 Global Location Number for a dock
+        door or a yard spot: 13 digits with a valid mod-10 check digit (422
+        `invalid-gln`), unique across every site, zone and slot (409
+        `gln-already-assigned`). `spotKind` (ADR-0045) classifies a yard spot
+        (`PARKING`, `HOLDING`, `REEFER_PLUG`, `HAZMAT`, `STAGING_LANE`) and is
+        only legal when the LocationType's role is `Yard`: on any other role
+        it is 422 `spot-kind-not-allowed`; an unknown value is 422
+        `unknown-spot-kind`. Neither field can be changed after registration
+        in this version. Omit both and the request behaves exactly as before.
       tags: [Locations]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -1788,9 +1843,19 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/RegisterLocationSlotRequest"
-            example:
-              locationCode: WH1-STOR-AMB-A07-03-02-B
-              locationType: PalletRack
+            examples:
+              storageBin:
+                summary: A storage bin without the optional identity fields
+                value:
+                  locationCode: WH1-STOR-AMB-A07-03-02-B
+                  locationType: PalletRack
+              yardSpot:
+                summary: A refrigerated-trailer yard spot with a GLN (ADR-0045)
+                value:
+                  locationCode: WH1-YARD-NORTH-Y01-01-01-A
+                  locationType: YardSpot
+                  gln: "4006381333931"
+                  spotKind: REEFER_PLUG
       responses:
         "201":
           description: Location slot registered.
@@ -2381,8 +2446,10 @@ components:
             instance: /sites/NOPE
     Conflict:
       description: >
-        A state conflict: a code already taken, a parent that exists but is
-        no longer Active, or a slot already decommissioned. On a POST it is
+        A state conflict: a code already taken, a GS1 Global Location Number
+        already assigned to another location (`gln-already-assigned`,
+        ADR-0045), a parent that exists but is no longer Active, or a slot
+        already decommissioned. On a POST it is
         also the answer to an Idempotency-Key reused with a different method,
         path or body (`idempotency-key-reused`); the problem type tells the
         two apart.
@@ -2397,6 +2464,13 @@ components:
                 title: A location slot with this code already exists
                 status: 409
                 detail: a location slot with this code already exists
+                instance: /locations
+            glnAlreadyAssigned:
+              value:
+                type: https://errors.facility-layout.warehouse-systems.dev/gln-already-assigned
+                title: This GLN is already assigned to another location
+                status: 409
+                detail: this GLN is already assigned to another location
                 instance: /locations
             idempotencyKeyReused:
               value:
@@ -2565,6 +2639,26 @@ components:
           description: Left-to-right slot on that level.
           example: B
 
+    Gln:
+      type: string
+      pattern: "^[0-9]{13}$"
+      description: >
+        A GS1 Global Location Number (ADR-0045): 13 digits whose last digit is
+        the GS1 mod-10 check digit of the first twelve (weights 3 and 1,
+        alternating from the right). The pattern only checks the shape; the
+        check digit is verified by the service (422 `invalid-gln`). A GLN
+        identifies exactly one site, zone or slot (409 `gln-already-assigned`).
+        Optional everywhere; omitted when none was recorded.
+      example: "4006381333931"
+
+    SpotKind:
+      type: string
+      enum: [PARKING, HOLDING, REEFER_PLUG, HAZMAT, STAGING_LANE]
+      description: >
+        What a yard spot is for (ADR-0045). Only meaningful on a slot whose
+        role is `Yard`; omitted when none was recorded.
+      example: REEFER_PLUG
+
     Site:
       type: object
       description: A physical facility/building — the root of the location hierarchy.
@@ -2582,6 +2676,8 @@ components:
           $ref: "#/components/schemas/Status"
         siteRole:
           $ref: "#/components/schemas/SiteRole"
+        gln:
+          $ref: "#/components/schemas/Gln"
 
     SiteRole:
       type: string
@@ -2674,6 +2770,8 @@ components:
           example: Fulfilment Centre One
         siteRole:
           $ref: "#/components/schemas/SiteRole"
+        gln:
+          $ref: "#/components/schemas/Gln"
 
     Zone:
       type: object
@@ -2724,6 +2822,8 @@ components:
             default (1.5 m). Used only by the travel graph's estimated
             vertical spacing between adjacent levels.
           example: 1.5
+        gln:
+          $ref: "#/components/schemas/Gln"
 
     RegisterZoneRequest:
       type: object
@@ -2773,6 +2873,8 @@ components:
             default (1.5 m). Must be sent together with `bayPitchM`: a
             one-sided pitch is rejected 422 `invalid-pitch`.
           example: 2.0
+        gln:
+          $ref: "#/components/schemas/Gln"
 
     Point3D:
       type: object
@@ -3228,6 +3330,10 @@ components:
           example: 42
         handlingUnit:
           $ref: "#/components/schemas/HandlingUnit"
+        gln:
+          $ref: "#/components/schemas/Gln"
+        spotKind:
+          $ref: "#/components/schemas/SpotKind"
 
     LocationClassification:
       type: object
@@ -3281,6 +3387,10 @@ components:
             Optional. Omit to inherit the LocationType's default envelope.
         handlingUnit:
           $ref: "#/components/schemas/HandlingUnit"
+        gln:
+          $ref: "#/components/schemas/Gln"
+        spotKind:
+          $ref: "#/components/schemas/SpotKind"
 
     ImportRow:
       type: object
