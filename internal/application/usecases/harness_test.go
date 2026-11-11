@@ -30,6 +30,7 @@ type harness struct {
 	rules         *memory.PlacementRuleRepo
 	structures    *memory.FixedStructureRepo
 	crossAisles   *memory.CrossAisleRepo
+	glns          *memory.GLNRegistry
 	publisher     *events.BufferedPublisher
 	clock         *memory.FixedClock
 	metrics       *recordingMetrics
@@ -75,15 +76,16 @@ func newHarness(t *testing.T) *harness {
 		rules:         memory.NewPlacementRuleRepo(),
 		structures:    memory.NewFixedStructureRepo(),
 		crossAisles:   memory.NewCrossAisleRepo(),
+		glns:          memory.NewGLNRegistry(),
 		publisher:     events.NewBufferedPublisher(),
 		clock:         memory.NewFixedClock(fixedNow),
 		metrics:       &recordingMetrics{},
 	}
 
-	h.registerSite = &usecases.RegisterSite{Sites: h.sites, Events: h.publisher, Clock: h.clock}
+	h.registerSite = &usecases.RegisterSite{Sites: h.sites, Events: h.publisher, Clock: h.clock, GLNs: h.glns}
 	h.getSite = &usecases.GetSite{Sites: h.sites}
 	h.listSites = &usecases.ListSites{Sites: h.sites}
-	h.registerZone = &usecases.RegisterZone{Sites: h.sites, Zones: h.zones, Events: h.publisher, Clock: h.clock}
+	h.registerZone = &usecases.RegisterZone{Sites: h.sites, Zones: h.zones, Events: h.publisher, Clock: h.clock, GLNs: h.glns}
 	h.listZones = &usecases.ListZones{Sites: h.sites, Zones: h.zones}
 	h.registerAisle = &usecases.RegisterAisle{Zones: h.zones, Aisles: h.aisles, Events: h.publisher, Clock: h.clock}
 	h.listAisles = &usecases.ListAisles{Zones: h.zones, Aisles: h.aisles}
@@ -94,7 +96,7 @@ func newHarness(t *testing.T) *harness {
 	h.registerSlot = &usecases.RegisterLocationSlot{
 		Sites: h.sites, Zones: h.zones, Aisles: h.aisles, Slots: h.slots,
 		LocationTypes: h.locationTypes, Rules: h.rules, Events: h.publisher, Clock: h.clock,
-		Metrics: h.metrics,
+		Metrics: h.metrics, GLNs: h.glns,
 	}
 	h.getSlot = &usecases.GetLocationSlot{Slots: h.slots}
 	h.getLocationClassification = &usecases.GetLocationClassification{Slots: h.slots, Zones: h.zones}
