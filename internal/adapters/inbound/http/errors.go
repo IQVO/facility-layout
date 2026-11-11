@@ -69,6 +69,7 @@ var errorCategories = []errorCategory{
 	{usecases.ErrDuplicateLocationType, http.StatusConflict, problemInfo{"duplicate-location-type", "A location type with this name already exists"}},
 	{usecases.ErrDuplicatePlacementRule, http.StatusConflict, problemInfo{"duplicate-placement-rule", "A placement rule with this id already exists"}},
 	{usecases.ErrDuplicateLocationCode, http.StatusConflict, problemInfo{"duplicate-location-code", "A location slot with this code already exists"}},
+	{usecases.ErrGLNAlreadyAssigned, http.StatusConflict, problemInfo{"gln-already-assigned", "This GLN is already assigned to another location"}},
 	{usecases.ErrDuplicateFixedStructure, http.StatusConflict, problemInfo{"duplicate-fixed-structure", "A fixed structure with this id already exists"}},
 	{usecases.ErrDuplicateCrossAisle, http.StatusConflict, problemInfo{"duplicate-cross-aisle", "A cross-aisle between these aisles at this bay already exists"}},
 
@@ -101,6 +102,9 @@ var errorCategories = []errorCategory{
 	{shared.ErrUnknownTemperatureClass, http.StatusUnprocessableEntity, problemInfo{"unknown-temperature-class", "Unknown temperature class"}},
 	{shared.ErrUnknownDirection, http.StatusUnprocessableEntity, problemInfo{"unknown-direction", "Unknown aisle direction"}},
 	{shared.ErrUnknownHandlingUnit, http.StatusUnprocessableEntity, problemInfo{"unknown-handling-unit", "Handling unit must be one of EACH, CASE, PALLET"}},
+	{shared.ErrInvalidGLN, http.StatusUnprocessableEntity, problemInfo{"invalid-gln", "GLN must be 13 digits ending in the GS1 mod-10 check digit"}},
+	{shared.ErrUnknownSpotKind, http.StatusUnprocessableEntity, problemInfo{"unknown-spot-kind", "Spot kind must be one of PARKING, HOLDING, REEFER_PLUG, HAZMAT, STAGING_LANE"}},
+	{slot.ErrSpotKindNotAllowed, http.StatusUnprocessableEntity, problemInfo{"spot-kind-not-allowed", "spotKind may only be set on a Yard location"}},
 	{shared.ErrUnknownStatus, http.StatusUnprocessableEntity, problemInfo{"unknown-status", "Unknown lifecycle status"}},
 	{shared.ErrInvalidZ, http.StatusUnprocessableEntity, problemInfo{"invalid-z", "Z coordinate must not be negative"}},
 	{shared.ErrInvalidDimensions, http.StatusUnprocessableEntity, problemInfo{"invalid-dimensions", "Width, depth, and height must all be greater than zero"}},

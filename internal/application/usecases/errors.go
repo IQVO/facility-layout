@@ -53,6 +53,11 @@ var (
 	// resurrected by re-registration.
 	ErrDuplicateLocationCode = errors.New("a location slot with this code already exists")
 
+	// ErrGLNAlreadyAssigned is returned when a GS1 Global Location Number is
+	// already held by another location (ADR-0045). A GLN identifies exactly
+	// one site, zone or slot.
+	ErrGLNAlreadyAssigned = errors.New("this GLN is already assigned to another location")
+
 	// ErrEmptyImport is returned when a bulk import carries no rows.
 	ErrEmptyImport = errors.New("facility layout import must contain at least one row")
 

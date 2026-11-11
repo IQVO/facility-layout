@@ -26,8 +26,8 @@ func NewZoneRepo(pool *pgxpool.Pool) *ZoneRepo {
 // literal zero pitch.
 func (r *ZoneRepo) Save(ctx context.Context, z *zone.Zone) error {
 	_, err := querierFrom(ctx, r.pool).Exec(ctx, `
-		INSERT INTO zones (id, site_code, area_code, zone_code, temperature_class, hazmat, status, bay_pitch_m, level_pitch_m)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO zones (id, site_code, area_code, zone_code, temperature_class, hazmat, status, bay_pitch_m, level_pitch_m, gln)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (id) DO UPDATE SET
 			temperature_class = EXCLUDED.temperature_class,
 			hazmat = EXCLUDED.hazmat,
@@ -35,7 +35,7 @@ func (r *ZoneRepo) Save(ctx context.Context, z *zone.Zone) error {
 			bay_pitch_m = EXCLUDED.bay_pitch_m,
 			level_pitch_m = EXCLUDED.level_pitch_m
 	`, z.ID(), z.SiteCode(), z.AreaCode(), z.ZoneCode(), string(z.TemperatureClass()), z.Hazmat(), string(z.Status()),
-		nullablePitch(rawBayPitch(z)), nullablePitch(rawLevelPitch(z)))
+		nullablePitch(rawBayPitch(z)), nullablePitch(rawLevelPitch(z)), nullableGLN(z.GLN()))
 	return err
 }
 
@@ -44,23 +44,24 @@ func (r *ZoneRepo) FindByID(ctx context.Context, id string) (*zone.Zone, error) 
 	var siteCode, areaCode, zoneCode, temperatureClass, status string
 	var hazmat bool
 	var bayPitchM, levelPitchM *float64
+	var gln *string
 	err := querierFrom(ctx, r.pool).QueryRow(ctx, `
-		SELECT site_code, area_code, zone_code, temperature_class, hazmat, status, bay_pitch_m, level_pitch_m
+		SELECT site_code, area_code, zone_code, temperature_class, hazmat, status, bay_pitch_m, level_pitch_m, gln
 		FROM zones WHERE id = $1
-	`, id).Scan(&siteCode, &areaCode, &zoneCode, &temperatureClass, &hazmat, &status, &bayPitchM, &levelPitchM)
+	`, id).Scan(&siteCode, &areaCode, &zoneCode, &temperatureClass, &hazmat, &status, &bayPitchM, &levelPitchM, &gln)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	return rehydrateZone(siteCode, areaCode, zoneCode, temperatureClass, hazmat, status, bayPitchM, levelPitchM)
+	return rehydrateZone(siteCode, areaCode, zoneCode, temperatureClass, hazmat, status, bayPitchM, levelPitchM, gln)
 }
 
 // ListBySite returns every zone in a site, ordered by id.
 func (r *ZoneRepo) ListBySite(ctx context.Context, siteCode string) ([]*zone.Zone, error) {
 	rows, err := querierFrom(ctx, r.pool).Query(ctx, `
-		SELECT site_code, area_code, zone_code, temperature_class, hazmat, status, bay_pitch_m, level_pitch_m
+		SELECT site_code, area_code, zone_code, temperature_class, hazmat, status, bay_pitch_m, level_pitch_m, gln
 		FROM zones WHERE site_code = $1 ORDER BY id
 	`, siteCode)
 	if err != nil {
@@ -73,10 +74,11 @@ func (r *ZoneRepo) ListBySite(ctx context.Context, siteCode string) ([]*zone.Zon
 		var site, areaCode, zoneCode, temperatureClass, status string
 		var hazmat bool
 		var bayPitchM, levelPitchM *float64
-		if err := rows.Scan(&site, &areaCode, &zoneCode, &temperatureClass, &hazmat, &status, &bayPitchM, &levelPitchM); err != nil {
+		var gln *string
+		if err := rows.Scan(&site, &areaCode, &zoneCode, &temperatureClass, &hazmat, &status, &bayPitchM, &levelPitchM, &gln); err != nil {
 			return nil, err
 		}
-		z, err := rehydrateZone(site, areaCode, zoneCode, temperatureClass, hazmat, status, bayPitchM, levelPitchM)
+		z, err := rehydrateZone(site, areaCode, zoneCode, temperatureClass, hazmat, status, bayPitchM, levelPitchM, gln)
 		if err != nil {
 			return nil, err
 		}
@@ -85,7 +87,7 @@ func (r *ZoneRepo) ListBySite(ctx context.Context, siteCode string) ([]*zone.Zon
 	return out, rows.Err()
 }
 
-func rehydrateZone(siteCode, areaCode, zoneCode, temperatureClass string, hazmat bool, status string, bayPitchM, levelPitchM *float64) (*zone.Zone, error) {
+func rehydrateZone(siteCode, areaCode, zoneCode, temperatureClass string, hazmat bool, status string, bayPitchM, levelPitchM *float64, gln *string) (*zone.Zone, error) {
 	tc, err := shared.ParseTemperatureClass(temperatureClass)
 	if err != nil {
 		return nil, err
@@ -94,7 +96,11 @@ func rehydrateZone(siteCode, areaCode, zoneCode, temperatureClass string, hazmat
 	if err != nil {
 		return nil, err
 	}
-	return zone.RehydrateZone(siteCode, areaCode, zoneCode, tc, hazmat, st, floatOrZero(bayPitchM), floatOrZero(levelPitchM)), nil
+	z := zone.RehydrateZone(siteCode, areaCode, zoneCode, tc, hazmat, st, floatOrZero(bayPitchM), floatOrZero(levelPitchM))
+	if gln != nil {
+		z.WithPersistedGLN(shared.GLN(*gln))
+	}
+	return z, nil
 }
 
 // rawBayPitch/rawLevelPitch return 0 (persisted as NULL) when the zone is

@@ -43,6 +43,9 @@ type siteRef struct {
 	TransferOriginEnabled      bool   `json:"transferOriginEnabled"`
 	TransferDestinationEnabled bool   `json:"transferDestinationEnabled"`
 	CapabilityRevision         int64  `json:"capabilityRevision"`
+	// GLN is the site's GS1 Global Location Number (ADR-0045), omitted when
+	// none was recorded.
+	GLN string `json:"gln,omitempty"`
 }
 
 // siteLayoutDTO is the compact, nested projection of one Site's structure —
@@ -74,12 +77,15 @@ type fixedStructureDTO struct {
 
 // zoneLayoutDTO is one Zone and its aisles within a site layout.
 type zoneLayoutDTO struct {
-	ZoneID           string           `json:"zoneId"`
-	AreaCode         string           `json:"areaCode"`
-	ZoneCode         string           `json:"zoneCode"`
-	TemperatureClass string           `json:"temperatureClass"`
-	Hazmat           bool             `json:"hazmat"`
-	Aisles           []aisleLayoutDTO `json:"aisles"`
+	ZoneID           string `json:"zoneId"`
+	AreaCode         string `json:"areaCode"`
+	ZoneCode         string `json:"zoneCode"`
+	TemperatureClass string `json:"temperatureClass"`
+	Hazmat           bool   `json:"hazmat"`
+	// GLN is the zone's GS1 Global Location Number (ADR-0045), omitted when
+	// none was recorded.
+	GLN    string           `json:"gln,omitempty"`
+	Aisles []aisleLayoutDTO `json:"aisles"`
 }
 
 // aisleLayoutDTO is one Aisle and the codes of the slots inside it, in
@@ -136,6 +142,10 @@ type functionalLocationDTO struct {
 	Role         string   `json:"role"`
 	DockFlow     string   `json:"dockFlow,omitempty"`
 	Activities   []string `json:"activities,omitempty"`
+	// GLN and SpotKind are omitted when none was recorded (ADR-0045);
+	// SpotKind is only ever present on a Yard location.
+	GLN      string `json:"gln,omitempty"`
+	SpotKind string `json:"spotKind,omitempty"`
 }
 
 // toFunctionalLocationDTO maps a domain LocationSlot to its compact tool DTO.
@@ -149,6 +159,8 @@ func toFunctionalLocationDTO(s *slot.LocationSlot) functionalLocationDTO {
 		Role:         string(s.Role()),
 		DockFlow:     string(f.DockFlow()),
 		Activities:   activityStringsMCP(f.Activities()),
+		GLN:          string(s.GLN()),
+		SpotKind:     string(s.SpotKind()),
 	}
 }
 
@@ -178,6 +190,7 @@ func toSiteRef(s *site.Site) siteRef {
 		TransferOriginEnabled:      c.OriginEnabled(),
 		TransferDestinationEnabled: c.DestinationEnabled(),
 		CapabilityRevision:         s.CapabilityRevision(),
+		GLN:                        string(s.GLN()),
 	}
 }
 
@@ -195,6 +208,7 @@ func toSiteLayoutDTO(layout *usecases.SiteLayout) siteLayoutDTO {
 			ZoneCode:         zl.Zone.ZoneCode(),
 			TemperatureClass: string(zl.Zone.TemperatureClass()),
 			Hazmat:           zl.Zone.Hazmat(),
+			GLN:              string(zl.Zone.GLN()),
 			Aisles:           make([]aisleLayoutDTO, 0, len(zl.Aisles)),
 		}
 		for _, al := range zl.Aisles {

@@ -53,11 +53,22 @@ type SiteRegistered struct {
 	SiteCode string
 	SiteName string
 	SiteRole string
+	// GLN is OPTIONAL (ADR-0045): "" when the site has none, which keeps the
+	// wire payload byte-identical to before.
+	GLN GLN
 }
 
 // NewSiteRegistered builds a SiteRegistered event.
 func NewSiteRegistered(occurredAt time.Time, siteCode, siteName, siteRole string) SiteRegistered {
 	return SiteRegistered{base: newBase("site", "SiteRegistered", occurredAt), SiteCode: siteCode, SiteName: siteName, SiteRole: siteRole}
+}
+
+// WithGLN returns a copy of the event carrying the site's optional GS1 Global
+// Location Number (ADR-0045). Kept out of the constructor so the existing
+// constructor signature, and every caller of it, is unchanged.
+func (e SiteRegistered) WithGLN(gln GLN) SiteRegistered {
+	e.GLN = gln
+	return e
 }
 
 // SiteRoleChanged: an operator changed a site's role in the fulfilment
@@ -113,6 +124,8 @@ type ZoneRegistered struct {
 	ZoneCode         string
 	TemperatureClass TemperatureClass
 	Hazmat           bool
+	// GLN is OPTIONAL (ADR-0045): "" when the zone has none.
+	GLN GLN
 }
 
 // NewZoneRegistered builds a ZoneRegistered event.
@@ -126,6 +139,13 @@ func NewZoneRegistered(occurredAt time.Time, zoneID, siteCode, areaCode, zoneCod
 		TemperatureClass: temperatureClass,
 		Hazmat:           hazmat,
 	}
+}
+
+// WithGLN returns a copy of the event carrying the zone's optional GS1 Global
+// Location Number (ADR-0045).
+func (e ZoneRegistered) WithGLN(gln GLN) ZoneRegistered {
+	e.GLN = gln
+	return e
 }
 
 // AisleRegistered: a physical corridor was added inside a Zone.
@@ -209,6 +229,10 @@ type LocationSlotRegistered struct {
 	// HandlingUnit is OPTIONAL (ADR-0040): "" when none was recorded at
 	// registration, which keeps the wire payload byte-identical to before.
 	HandlingUnit HandlingUnit
+	// GLN and SpotKind are OPTIONAL (ADR-0045): "" when none was recorded.
+	// SpotKind is only ever set on a Yard slot.
+	GLN      GLN
+	SpotKind SpotKind
 }
 
 // NewLocationSlotRegistered builds a LocationSlotRegistered event. Role,
@@ -235,6 +259,20 @@ func NewLocationSlotRegistered(occurredAt time.Time, code LocationCode, location
 // constructor signature — and every caller of it — is unchanged.
 func (e LocationSlotRegistered) WithHandlingUnit(unit HandlingUnit) LocationSlotRegistered {
 	e.HandlingUnit = unit
+	return e
+}
+
+// WithGLN returns a copy of the event carrying the slot's optional GS1 Global
+// Location Number (ADR-0045).
+func (e LocationSlotRegistered) WithGLN(gln GLN) LocationSlotRegistered {
+	e.GLN = gln
+	return e
+}
+
+// WithSpotKind returns a copy of the event carrying the yard slot's optional
+// spot kind (ADR-0045).
+func (e LocationSlotRegistered) WithSpotKind(kind SpotKind) LocationSlotRegistered {
+	e.SpotKind = kind
 	return e
 }
 

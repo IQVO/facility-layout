@@ -22,7 +22,7 @@ func (s *Server) handleRegisterZone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	registered, err := s.RegisterZone.Execute(r.Context(), chi.URLParam(r, "siteCode"), req.AreaCode, req.ZoneCode, temperatureClass, req.Hazmat, req.BayPitchM, req.LevelPitchM)
+	registered, err := s.RegisterZone.ExecuteWithGLN(r.Context(), chi.URLParam(r, "siteCode"), req.AreaCode, req.ZoneCode, temperatureClass, req.Hazmat, req.BayPitchM, req.LevelPitchM, req.GLN)
 	if err != nil {
 		writeError(w, r, err)
 		return
