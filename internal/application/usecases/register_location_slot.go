@@ -46,6 +46,9 @@ type RegisterLocationSlot struct {
 	Metrics ports.LocationMetrics
 	// UnitOfWork brackets Save + Publish atomically (ADR-0018, optional).
 	UnitOfWork ports.UnitOfWork
+	// GLNs claims a slot's GS1 Global Location Number (ADR-0045). Optional:
+	// required only when a request carries a GLN.
+	GLNs ports.GLNRegistry
 }
 
 // Execute registers the slot and publishes LocationSlotRegistered.
@@ -60,7 +63,7 @@ type RegisterLocationSlot struct {
 // Every attempt — accepted or refused — is counted against the metrics
 // port before the result is returned.
 func (uc *RegisterLocationSlot) Execute(ctx context.Context, code shared.LocationCode, locationTypeName string, capacityOverride shared.Capacity, dockFlow string, activityNames []string) (*slot.LocationSlot, error) {
-	return uc.ExecuteWithHandlingUnit(ctx, code, locationTypeName, capacityOverride, dockFlow, activityNames, "")
+	return uc.ExecuteWithOptions(ctx, code, locationTypeName, capacityOverride, dockFlow, activityNames, SlotOptions{})
 }
 
 // ExecuteWithHandlingUnit is Execute plus the OPTIONAL handling unit
@@ -68,7 +71,80 @@ func (uc *RegisterLocationSlot) Execute(ctx context.Context, code shared.Locatio
 // handlingUnit means none recorded; any other value must parse, else the
 // attempt is refused (and counted) with shared.ErrUnknownHandlingUnit.
 func (uc *RegisterLocationSlot) ExecuteWithHandlingUnit(ctx context.Context, code shared.LocationCode, locationTypeName string, capacityOverride shared.Capacity, dockFlow string, activityNames []string, handlingUnit string) (*slot.LocationSlot, error) {
-	registered, err := uc.register(ctx, code, locationTypeName, capacityOverride, dockFlow, activityNames, handlingUnit)
+	return uc.ExecuteWithOptions(ctx, code, locationTypeName, capacityOverride, dockFlow, activityNames, SlotOptions{HandlingUnit: handlingUnit})
+}
+
+// SlotOptions are the OPTIONAL, additive attributes of a slot registration.
+// Every field is a raw request string where "" means "not supplied".
+type SlotOptions struct {
+	// HandlingUnit is EACH, CASE or PALLET (ADR-0040).
+	HandlingUnit string
+	// GLN is a GS1 Global Location Number (ADR-0045): 13 digits with a valid
+	// mod-10 check digit, unique across every location.
+	GLN string
+	// SpotKind is a yard spot kind (ADR-0045), allowed only on a slot whose
+	// location type has the Yard role.
+	SpotKind string
+}
+
+// slotIdentity is SlotOptions after parsing: the typed, validated values.
+type slotIdentity struct {
+	handlingUnit shared.HandlingUnit
+	gln          shared.GLN
+	spotKind     shared.SpotKind
+}
+
+// parseSlotOptions validates every supplied option's shape before any
+// repository is touched, so a malformed value is refused (and counted) first.
+func parseSlotOptions(opts SlotOptions) (slotIdentity, error) {
+	var out slotIdentity
+	if opts.HandlingUnit != "" {
+		unit, err := shared.ParseHandlingUnit(opts.HandlingUnit)
+		if err != nil {
+			return out, err
+		}
+		out.handlingUnit = unit
+	}
+	gln, err := parseOptionalGLN(opts.GLN)
+	if err != nil {
+		return out, err
+	}
+	out.gln = gln
+	if opts.SpotKind != "" {
+		kind, err := shared.ParseSpotKind(opts.SpotKind)
+		if err != nil {
+			return out, err
+		}
+		out.spotKind = kind
+	}
+	return out, nil
+}
+
+// apply records the parsed options on the new slot. Role-dependent rules
+// (spotKind only on a Yard slot) are the aggregate's.
+func (id slotIdentity) apply(s *slot.LocationSlot) error {
+	if id.handlingUnit != "" {
+		if err := s.DeclareHandlingUnit(id.handlingUnit); err != nil {
+			return err
+		}
+	}
+	if !id.gln.IsZero() {
+		if err := s.AssignGLN(id.gln); err != nil {
+			return err
+		}
+	}
+	if id.spotKind != "" {
+		return s.AssignSpotKind(id.spotKind)
+	}
+	return nil
+}
+
+// ExecuteWithOptions is Execute plus the optional handling unit, GLN and yard
+// spot kind (ADR-0040, ADR-0045). A malformed option, a spot kind on a
+// non-Yard slot, or a GLN held by another location refuses the attempt (and
+// counts it) with the matching typed error.
+func (uc *RegisterLocationSlot) ExecuteWithOptions(ctx context.Context, code shared.LocationCode, locationTypeName string, capacityOverride shared.Capacity, dockFlow string, activityNames []string, opts SlotOptions) (*slot.LocationSlot, error) {
+	registered, err := uc.register(ctx, code, locationTypeName, capacityOverride, dockFlow, activityNames, opts)
 	if uc.Metrics != nil {
 		uc.Metrics.LocationSlotRegistered(ctx, registrationOutcome(err))
 	}
@@ -90,14 +166,10 @@ func registrationOutcome(err error) string {
 
 // register is Execute's decision logic, kept separate so the outcome of the
 // whole attempt can be observed in one place.
-func (uc *RegisterLocationSlot) register(ctx context.Context, code shared.LocationCode, locationTypeName string, capacityOverride shared.Capacity, dockFlow string, activityNames []string, handlingUnitName string) (*slot.LocationSlot, error) {
-	var handlingUnit shared.HandlingUnit
-	if handlingUnitName != "" {
-		parsed, err := shared.ParseHandlingUnit(handlingUnitName)
-		if err != nil {
-			return nil, err
-		}
-		handlingUnit = parsed
+func (uc *RegisterLocationSlot) register(ctx context.Context, code shared.LocationCode, locationTypeName string, capacityOverride shared.Capacity, dockFlow string, activityNames []string, opts SlotOptions) (*slot.LocationSlot, error) {
+	identity, err := parseSlotOptions(opts)
+	if err != nil {
+		return nil, err
 	}
 	existing, err := uc.Slots.FindByCode(ctx, code)
 	if err != nil {
@@ -134,12 +206,13 @@ func (uc *RegisterLocationSlot) register(ctx context.Context, code shared.Locati
 	if err != nil {
 		return nil, err
 	}
-	if handlingUnit != "" {
-		if err := s.DeclareHandlingUnit(handlingUnit); err != nil {
-			return nil, err
-		}
+	if err := identity.apply(s); err != nil {
+		return nil, err
 	}
 	err = atomically(ctx, uc.UnitOfWork, func(ctx context.Context) error {
+		if err := claimGLN(ctx, uc.GLNs, s.GLN(), slotGLNOwner(s.Code().String())); err != nil {
+			return err
+		}
 		if err := uc.Slots.Save(ctx, s); err != nil {
 			return err
 		}
@@ -147,7 +220,7 @@ func (uc *RegisterLocationSlot) register(ctx context.Context, code shared.Locati
 		event := shared.NewLocationSlotRegistered(
 			uc.Clock.Now(), s.Code(), s.LocationType(), string(s.Role()),
 			string(f.DockFlow()), activityStrings(f.Activities()), s.Capacity(),
-		).WithHandlingUnit(s.HandlingUnit())
+		).WithHandlingUnit(s.HandlingUnit()).WithGLN(s.GLN()).WithSpotKind(s.SpotKind())
 		return uc.Events.Publish(ctx, event)
 	})
 	if err != nil {

@@ -147,3 +147,28 @@ func (r *PlacementRuleRepo) List(_ context.Context) ([]placement.PlacementRule, 
 	sort.Slice(out, func(i, j int) bool { return out[i].ID() < out[j].ID() })
 	return out, nil
 }
+
+// GLNRegistry is an in-memory implementation of ports.GLNRegistry. Unlike the
+// Postgres one it has no transaction to roll back, so a claim made by an
+// attempt that later fails stays claimed; the test doubles never rely on that.
+type GLNRegistry struct {
+	mu      sync.Mutex
+	holders map[shared.GLN]string
+}
+
+// NewGLNRegistry builds an empty GLNRegistry.
+func NewGLNRegistry() *GLNRegistry {
+	return &GLNRegistry{holders: make(map[shared.GLN]string)}
+}
+
+// Claim records gln as held by owner; it reports false when a different owner
+// already holds it and true otherwise (including a repeat claim by owner).
+func (r *GLNRegistry) Claim(_ context.Context, gln shared.GLN, owner string) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if holder, taken := r.holders[gln]; taken {
+		return holder == owner, nil
+	}
+	r.holders[gln] = owner
+	return true, nil
+}

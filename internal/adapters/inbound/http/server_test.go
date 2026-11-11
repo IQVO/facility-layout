@@ -40,11 +40,12 @@ func newTestUseCases() *inboundhttp.Server {
 	rules := memory.NewPlacementRuleRepo()
 	structures := memory.NewFixedStructureRepo()
 	crossAisles := memory.NewCrossAisleRepo()
+	glns := memory.NewGLNRegistry()
 	publisher := events.NewBufferedPublisher()
 	clock := memory.NewFixedClock(time.Date(2026, 8, 22, 9, 0, 0, 0, time.UTC))
 
 	s := &inboundhttp.Server{
-		RegisterSite: &usecases.RegisterSite{Sites: sites, Events: publisher, Clock: clock},
+		RegisterSite: &usecases.RegisterSite{Sites: sites, Events: publisher, Clock: clock, GLNs: glns},
 		GetSite:      &usecases.GetSite{Sites: sites},
 		ListSites:    &usecases.ListSites{Sites: sites},
 		ChangeSiteTransferCapability: &usecases.ChangeSiteTransferCapability{
@@ -52,7 +53,7 @@ func newTestUseCases() *inboundhttp.Server {
 		},
 		ChangeSiteRole:               &usecases.ChangeSiteRole{Sites: sites, Events: publisher, Clock: clock},
 		ListSiteRoleTransferDefaults: &usecases.ListSiteRoleTransferDefaults{},
-		RegisterZone:                 &usecases.RegisterZone{Sites: sites, Zones: zones, Events: publisher, Clock: clock},
+		RegisterZone:                 &usecases.RegisterZone{Sites: sites, Zones: zones, Events: publisher, Clock: clock, GLNs: glns},
 		GetZone:                      &usecases.GetZone{Zones: zones},
 		ListZones:                    &usecases.ListZones{Sites: sites, Zones: zones},
 		RegisterAisle:                &usecases.RegisterAisle{Zones: zones, Aisles: aisles, Events: publisher, Clock: clock},
@@ -66,9 +67,10 @@ func newTestUseCases() *inboundhttp.Server {
 		ListPlacementRules:           &usecases.ListPlacementRules{Rules: rules},
 		RegisterLocationSlot: &usecases.RegisterLocationSlot{
 			Sites: sites, Zones: zones, Aisles: aisles, Slots: slots,
-			LocationTypes: locationTypes, Rules: rules, Events: publisher, Clock: clock,
+			LocationTypes: locationTypes, Rules: rules, Events: publisher, Clock: clock, GLNs: glns,
 		},
 		GetLocationSlot:           &usecases.GetLocationSlot{Slots: slots},
+		ListLocationsByRole:       &usecases.ListLocationsByRole{Sites: sites, Zones: zones, Slots: slots},
 		GetLocationClassification: &usecases.GetLocationClassification{Slots: slots, Zones: zones},
 		DecommissionLocationSlot:  &usecases.DecommissionLocationSlot{Slots: slots, Events: publisher, Clock: clock},
 		ImportFacilityLayout: &usecases.ImportFacilityLayout{

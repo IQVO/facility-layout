@@ -86,11 +86,12 @@ func (w *world) start() {
 	rules := memory.NewPlacementRuleRepo()
 	structures := memory.NewFixedStructureRepo()
 	crossAisles := memory.NewCrossAisleRepo()
+	glns := memory.NewGLNRegistry()
 	publisher := events.NewBufferedPublisher()
 	clock := memory.NewFixedClock(time.Date(2026, 8, 22, 9, 0, 0, 0, time.UTC))
 
 	s := &inboundhttp.Server{
-		RegisterSite: &usecases.RegisterSite{Sites: sites, Events: publisher, Clock: clock},
+		RegisterSite: &usecases.RegisterSite{Sites: sites, Events: publisher, Clock: clock, GLNs: glns},
 		GetSite:      &usecases.GetSite{Sites: sites},
 		ListSites:    &usecases.ListSites{Sites: sites},
 		ChangeSiteTransferCapability: &usecases.ChangeSiteTransferCapability{
@@ -98,7 +99,7 @@ func (w *world) start() {
 		},
 		ChangeSiteRole:               &usecases.ChangeSiteRole{Sites: sites, Events: publisher, Clock: clock},
 		ListSiteRoleTransferDefaults: &usecases.ListSiteRoleTransferDefaults{},
-		RegisterZone:                 &usecases.RegisterZone{Sites: sites, Zones: zones, Events: publisher, Clock: clock},
+		RegisterZone:                 &usecases.RegisterZone{Sites: sites, Zones: zones, Events: publisher, Clock: clock, GLNs: glns},
 		GetZone:                      &usecases.GetZone{Zones: zones},
 		ListZones:                    &usecases.ListZones{Sites: sites, Zones: zones},
 		RegisterAisle:                &usecases.RegisterAisle{Zones: zones, Aisles: aisles, Events: publisher, Clock: clock},
@@ -112,7 +113,7 @@ func (w *world) start() {
 		ListPlacementRules:           &usecases.ListPlacementRules{Rules: rules},
 		RegisterLocationSlot: &usecases.RegisterLocationSlot{
 			Sites: sites, Zones: zones, Aisles: aisles, Slots: slots,
-			LocationTypes: locationTypes, Rules: rules, Events: publisher, Clock: clock,
+			LocationTypes: locationTypes, Rules: rules, Events: publisher, Clock: clock, GLNs: glns,
 		},
 		GetLocationSlot:           &usecases.GetLocationSlot{Slots: slots},
 		GetLocationClassification: &usecases.GetLocationClassification{Slots: slots, Zones: zones},
@@ -992,5 +993,6 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	w.registerWave2Steps(sc)
 	w.registerCapabilitySteps(sc)
 	w.registerSiteRoleSteps(sc)
+	w.registerIdentitySteps(sc)
 	sc.Step(`^the classification reports hazmat (true|false) and temperature class "([^"]*)"$`, w.theClassificationReports)
 }

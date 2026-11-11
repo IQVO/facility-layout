@@ -23,7 +23,7 @@ func NewSiteRepo(pool *pgxpool.Pool) *SiteRepo {
 	return &SiteRepo{pool: pool}
 }
 
-const siteColumns = `code, name, status, transfer_origin_enabled, transfer_destination_enabled, capability_revision, version, site_role, capability_heartbeat_at`
+const siteColumns = `code, name, status, transfer_origin_enabled, transfer_destination_enabled, capability_revision, version, site_role, capability_heartbeat_at, gln`
 
 // Save upserts the site, version-guarded against a concurrent writer
 // (ADR-0025, extended to Site by ADR-0035): on an existing row it only
@@ -37,7 +37,7 @@ func (r *SiteRepo) Save(ctx context.Context, s *site.Site) error {
 	capability := s.TransferCapability()
 	tag, err := querierFrom(ctx, r.pool).Exec(ctx, `
 		INSERT INTO sites (`+siteColumns+`)
-		VALUES ($1, $2, $3, $4, $5, $6, 1, $8, $9)
+		VALUES ($1, $2, $3, $4, $5, $6, 1, $8, $9, $10)
 		ON CONFLICT (code) DO UPDATE SET
 			name = EXCLUDED.name,
 			site_role = EXCLUDED.site_role,
@@ -49,7 +49,7 @@ func (r *SiteRepo) Save(ctx context.Context, s *site.Site) error {
 			version = sites.version + 1
 		WHERE sites.version = $7
 	`, s.Code(), s.Name(), string(s.Status()),
-		capability.OriginEnabled(), capability.DestinationEnabled(), s.CapabilityRevision(), s.Version(), string(s.Role()), nullableTime(s.CapabilityHeartbeatAt()))
+		capability.OriginEnabled(), capability.DestinationEnabled(), s.CapabilityRevision(), s.Version(), string(s.Role()), nullableTime(s.CapabilityHeartbeatAt()), nullableGLN(s.GLN()))
 	if err != nil {
 		return err
 	}
@@ -68,6 +68,9 @@ func nullableTime(t time.Time) *time.Time {
 	}
 	return &t
 }
+
+// Save never rewrites gln: a GLN is assigned once, at registration (ADR-0045),
+// and the ON CONFLICT arm above leaves the stored value as it is.
 
 // ListCapabilityHeartbeatDue implements ports.SiteCapabilityHeartbeatSource
 // (ADR-0041): active sites with a declared capability whose last heartbeat
@@ -131,8 +134,9 @@ func scanSite(row pgx.Row) (*site.Site, error) {
 		capabilityRevision         int64
 		version                    int
 		heartbeatAt                *time.Time
+		gln                        *string
 	)
-	if err := row.Scan(&code, &name, &status, &originEnabled, &destEnabled, &capabilityRevision, &version, &role, &heartbeatAt); err != nil {
+	if err := row.Scan(&code, &name, &status, &originEnabled, &destEnabled, &capabilityRevision, &version, &role, &heartbeatAt, &gln); err != nil {
 		return nil, err
 	}
 	parsed, err := shared.ParseStatus(status)
@@ -146,6 +150,9 @@ func scanSite(row pgx.Row) (*site.Site, error) {
 	var opts []site.RehydrateOption
 	if heartbeatAt != nil {
 		opts = append(opts, site.CapabilityHeartbeatAt(*heartbeatAt))
+	}
+	if gln != nil {
+		opts = append(opts, site.PersistedGLN(shared.GLN(*gln)))
 	}
 	return site.RehydrateSite(code, name, parsedRole, parsed, site.NewTransferCapability(originEnabled, destEnabled), capabilityRevision, version, opts...), nil
 }

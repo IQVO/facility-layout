@@ -45,3 +45,22 @@ checks.positive_data_acceptance.expected-statuses = ["2xx", "400", "401", "403",
 [[operations]]
 include-operation-id = "listPlacementRules"
 checks.positive_data_acceptance.expected-statuses = ["2xx", "400", "401", "403", "404", "409", "429", "5xx"]
+
+# GS1 location identity (ADR-0045): `gln` is a 13-digit string whose last digit is a
+# mod-10 check digit. OpenAPI can only express the shape (`pattern: ^[0-9]{13}$`), not the
+# checksum, so a schema-valid GLN with a wrong check digit is correctly 422 `invalid-gln`
+# (and `spotKind` on a non-Yard slot is 422 `spot-kind-not-allowed`). Both are documented
+# on the operation and pinned by TestSiteGLN / TestZoneGLN / TestSlotGLNAndSpotKind /
+# TestSlotSpotKindRefusals (internal/adapters/inbound/http/location_identity_test.go).
+# Default positive_data_acceptance statuses plus 422; every other check runs unchanged.
+[[operations]]
+include-operation-id = "registerSite"
+checks.positive_data_acceptance.expected-statuses = ["2xx", "401", "403", "404", "409", "422", "429", "5xx"]
+
+[[operations]]
+include-operation-id = "registerZone"
+checks.positive_data_acceptance.expected-statuses = ["2xx", "401", "403", "404", "409", "422", "429", "5xx"]
+
+[[operations]]
+include-operation-id = "registerLocationSlot"
+checks.positive_data_acceptance.expected-statuses = ["2xx", "401", "403", "404", "409", "422", "429", "5xx"]

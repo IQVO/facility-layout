@@ -67,6 +67,7 @@ var errorCatalog = []errorEntry{
 	{usecases.ErrDuplicateLocationType, "duplicate-location-type"},
 	{usecases.ErrDuplicatePlacementRule, "duplicate-placement-rule"},
 	{usecases.ErrDuplicateLocationCode, "duplicate-location-code"},
+	{usecases.ErrGLNAlreadyAssigned, "gln-already-assigned"},
 	{usecases.ErrDuplicateFixedStructure, "duplicate-fixed-structure"},
 	{usecases.ErrDuplicateCrossAisle, "duplicate-cross-aisle"},
 
@@ -95,6 +96,9 @@ var errorCatalog = []errorEntry{
 	{shared.ErrUnknownTemperatureClass, "unknown-temperature-class"},
 	{shared.ErrUnknownDirection, "unknown-direction"},
 	{shared.ErrUnknownHandlingUnit, "unknown-handling-unit"},
+	{shared.ErrInvalidGLN, "invalid-gln"},
+	{shared.ErrUnknownSpotKind, "unknown-spot-kind"},
+	{slot.ErrSpotKindNotAllowed, "spot-kind-not-allowed"},
 	{shared.ErrUnknownStatus, "unknown-status"},
 	{shared.ErrInvalidZ, "invalid-z"},
 	{shared.ErrInvalidDimensions, "invalid-dimensions"},

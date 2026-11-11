@@ -59,6 +59,10 @@ type LocationSlot struct {
 	// handlingUnit is the OPTIONAL unit of handling this slot accepts
 	// (ADR-0040); the zero value means none was ever recorded.
 	handlingUnit shared.HandlingUnit
+	// gln and spotKind are the OPTIONAL location identity and yard spot kind
+	// (ADR-0045); the zero values mean none was ever recorded.
+	gln      shared.GLN
+	spotKind shared.SpotKind
 	// version is the optimistic-concurrency token (ADR-0025): inert
 	// infrastructure metadata exactly like the aggregate's own id, never
 	// read by business logic. NewLocationSlot starts it at 1;

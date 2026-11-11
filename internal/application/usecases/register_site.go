@@ -20,11 +20,26 @@ type RegisterSite struct {
 	// back to back, which is exactly the in-memory / log-publisher dev
 	// configuration.
 	UnitOfWork ports.UnitOfWork
+	// GLNs claims the site's GS1 Global Location Number (ADR-0045).
+	// Optional: required only when a request carries a GLN.
+	GLNs ports.GLNRegistry
 }
 
 // Execute registers the site with its role (ADR-0037; UNSPECIFIED when the
 // caller states none) and publishes SiteRegistered carrying that role.
 func (uc *RegisterSite) Execute(ctx context.Context, code, name string, role site.Role) (*site.Site, error) {
+	return uc.ExecuteWithGLN(ctx, code, name, role, "")
+}
+
+// ExecuteWithGLN is Execute plus the OPTIONAL GS1 Global Location Number
+// (ADR-0045). An empty gln means none recorded; any other value must be a
+// valid GLN (shared.ErrInvalidGLN) that no other location holds
+// (ErrGLNAlreadyAssigned).
+func (uc *RegisterSite) ExecuteWithGLN(ctx context.Context, code, name string, role site.Role, glnRaw string) (*site.Site, error) {
+	gln, err := parseOptionalGLN(glnRaw)
+	if err != nil {
+		return nil, err
+	}
 	existing, err := uc.Sites.FindByCode(ctx, code)
 	if err != nil {
 		return nil, err
@@ -37,11 +52,19 @@ func (uc *RegisterSite) Execute(ctx context.Context, code, name string, role sit
 	if err != nil {
 		return nil, err
 	}
+	if !gln.IsZero() {
+		if err := s.AssignGLN(gln); err != nil {
+			return nil, err
+		}
+	}
 	err = atomically(ctx, uc.UnitOfWork, func(ctx context.Context) error {
+		if err := claimGLN(ctx, uc.GLNs, s.GLN(), siteGLNOwner(s.Code())); err != nil {
+			return err
+		}
 		if err := uc.Sites.Save(ctx, s); err != nil {
 			return err
 		}
-		return uc.Events.Publish(ctx, shared.NewSiteRegistered(uc.Clock.Now(), s.Code(), s.Name(), string(s.Role())))
+		return uc.Events.Publish(ctx, shared.NewSiteRegistered(uc.Clock.Now(), s.Code(), s.Name(), string(s.Role())).WithGLN(s.GLN()))
 	})
 	if err != nil {
 		return nil, err

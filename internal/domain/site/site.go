@@ -61,7 +61,10 @@ type Site struct {
 	code string
 	name string
 	// role is the site's role in the fulfilment network (ADR-0037).
-	role               Role
+	role Role
+	// gln is the site's OPTIONAL GS1 Global Location Number (ADR-0045);
+	// "" means none recorded.
+	gln                shared.GLN
 	status             shared.Status
 	capability         TransferCapability
 	capabilityRevision int64
@@ -118,6 +121,12 @@ func RehydrateSite(code, name string, role Role, status shared.Status, capabilit
 // RehydrateOption restores optional persisted state in RehydrateSite.
 type RehydrateOption func(*Site)
 
+// PersistedGLN restores the site's GLN read from storage without
+// re-validating it (ADR-0045); "" means none recorded.
+func PersistedGLN(gln shared.GLN) RehydrateOption {
+	return func(s *Site) { s.gln = gln }
+}
+
 // CapabilityHeartbeatAt restores when the site's last capability heartbeat
 // was raised (ADR-0041); the zero time means none yet.
 func CapabilityHeartbeatAt(t time.Time) RehydrateOption {
@@ -145,6 +154,25 @@ func (s *Site) Name() string { return s.name }
 
 // Role returns the site's role in the fulfilment network (ADR-0037).
 func (s *Site) Role() Role { return s.role }
+
+// GLN returns the site's GS1 Global Location Number, or "" when none was
+// recorded (ADR-0045).
+func (s *Site) GLN() shared.GLN { return s.gln }
+
+// AssignGLN records the site's GS1 Global Location Number, validating the
+// 13-digit GS1 mod-10 rule (shared.ErrInvalidGLN). A decommissioned site's
+// identity is frozen: ErrSiteDecommissioned. Whether another location
+// already holds the number is the use case's question, not the aggregate's.
+func (s *Site) AssignGLN(gln shared.GLN) error {
+	if !s.IsActive() {
+		return ErrSiteDecommissioned
+	}
+	if _, err := shared.ParseGLN(string(gln)); err != nil {
+		return err
+	}
+	s.gln = gln
+	return nil
+}
 
 // Status returns the site's lifecycle status.
 func (s *Site) Status() shared.Status { return s.status }

@@ -24,10 +24,25 @@ type RegisterZone struct {
 	Clock  ports.Clock
 	// UnitOfWork brackets Save + Publish atomically (ADR-0018, optional).
 	UnitOfWork ports.UnitOfWork
+	// GLNs claims the zone's GS1 Global Location Number (ADR-0045).
+	// Optional: required only when a request carries a GLN.
+	GLNs ports.GLNRegistry
 }
 
 // Execute registers the zone and publishes ZoneRegistered.
 func (uc *RegisterZone) Execute(ctx context.Context, siteCode, areaCode, zoneCode string, temperatureClass shared.TemperatureClass, hazmat bool, bayPitchM, levelPitchM *float64) (*zone.Zone, error) {
+	return uc.ExecuteWithGLN(ctx, siteCode, areaCode, zoneCode, temperatureClass, hazmat, bayPitchM, levelPitchM, "")
+}
+
+// ExecuteWithGLN is Execute plus the OPTIONAL GS1 Global Location Number
+// (ADR-0045). An empty gln means none recorded; any other value must be a
+// valid GLN (shared.ErrInvalidGLN) that no other location holds
+// (ErrGLNAlreadyAssigned).
+func (uc *RegisterZone) ExecuteWithGLN(ctx context.Context, siteCode, areaCode, zoneCode string, temperatureClass shared.TemperatureClass, hazmat bool, bayPitchM, levelPitchM *float64, glnRaw string) (*zone.Zone, error) {
+	gln, err := parseOptionalGLN(glnRaw)
+	if err != nil {
+		return nil, err
+	}
 	parent, err := uc.Sites.FindByCode(ctx, siteCode)
 	if err != nil {
 		return nil, err
@@ -43,17 +58,8 @@ func (uc *RegisterZone) Execute(ctx context.Context, siteCode, areaCode, zoneCod
 	if err != nil {
 		return nil, err
 	}
-	if bayPitchM != nil || levelPitchM != nil {
-		var bay, level float64
-		if bayPitchM != nil {
-			bay = *bayPitchM
-		}
-		if levelPitchM != nil {
-			level = *levelPitchM
-		}
-		if err := z.SetPitch(bay, level); err != nil {
-			return nil, err
-		}
+	if err := applyPitchOverride(z, bayPitchM, levelPitchM); err != nil {
+		return nil, err
 	}
 
 	existing, err := uc.Zones.FindByID(ctx, z.ID())
@@ -64,17 +70,43 @@ func (uc *RegisterZone) Execute(ctx context.Context, siteCode, areaCode, zoneCod
 		return nil, ErrDuplicateZone
 	}
 
+	if !gln.IsZero() {
+		if err := z.AssignGLN(gln); err != nil {
+			return nil, err
+		}
+	}
+
 	err = atomically(ctx, uc.UnitOfWork, func(ctx context.Context) error {
+		if err := claimGLN(ctx, uc.GLNs, z.GLN(), zoneGLNOwner(z.ID())); err != nil {
+			return err
+		}
 		if err := uc.Zones.Save(ctx, z); err != nil {
 			return err
 		}
-		event := shared.NewZoneRegistered(uc.Clock.Now(), z.ID(), z.SiteCode(), z.AreaCode(), z.ZoneCode(), z.TemperatureClass(), z.Hazmat())
+		event := shared.NewZoneRegistered(uc.Clock.Now(), z.ID(), z.SiteCode(), z.AreaCode(), z.ZoneCode(), z.TemperatureClass(), z.Hazmat()).WithGLN(z.GLN())
 		return uc.Events.Publish(ctx, event)
 	})
 	if err != nil {
 		return nil, err
 	}
 	return z, nil
+}
+
+// applyPitchOverride records the optional ADR-0017 pitch overrides: nothing
+// when both are nil; supplying exactly one is rejected by the aggregate
+// (zone.ErrInvalidPitch), because a missing one would read as 0.
+func applyPitchOverride(z *zone.Zone, bayPitchM, levelPitchM *float64) error {
+	if bayPitchM == nil && levelPitchM == nil {
+		return nil
+	}
+	var bay, level float64
+	if bayPitchM != nil {
+		bay = *bayPitchM
+	}
+	if levelPitchM != nil {
+		level = *levelPitchM
+	}
+	return z.SetPitch(bay, level)
 }
 
 // ListZones reads every Zone in a Site.

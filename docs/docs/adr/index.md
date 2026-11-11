@@ -94,6 +94,7 @@ updated. The history of what was believed and when is the point.
 | [0042](./0042-case-pick-zone-class-convention.md) | The case-pick zone is a convention on the free-form zone class: `CPK` (alongside `FWD`, `BLK`, `RSV`), not a new type; no schema or event change, nothing validates it | Accepted |
 | [0043](./0043-a2a-inbound-adapter.md) | A2A inbound adapter (third driving adapter): two curated read skills, `site_layout` and `travel_distance`, over the same read use cases as REST and MCP; no write skill because the MCP surface is read-only; message-only, problems answered in-band with the REST status; `cmd/a2a` on 8093 | Accepted |
 | [0044](./0044-adopt-fleet-rest-api-guideline.md) | Adopt the fleet REST API guideline: noun routes (`/location-imports`, `/locations/{code}/decommissionings`), every POST keyed with a global `Idempotency-Key` (`409` on reuse, `Idempotency-Replayed`), keyset-paginated `{items,nextCursor}` collections; hard cutover | Accepted |
+| [0045](./0045-gs1-location-identity.md) | GS1 location identity: optional `gln` (13 digits, mod-10 check digit, unique across every site, zone and slot) on Site, Zone and LocationSlot, and optional `spotKind` on Yard slots (PARKING, HOLDING, REEFER_PLUG, HAZMAT, STAGING_LANE); set at registration, carried additively on SiteRegistered, ZoneRegistered and LocationSlotRegistered; `invalid-gln`, `gln-already-assigned`, `spot-kind-not-allowed` | Accepted |
 
 ## The Kafka record that was deferred until the adapter existed
 

@@ -107,6 +107,20 @@ type FixedStructureRepo interface {
 	ListBySite(ctx context.Context, siteCode string) ([]*structure.FixedStructure, error)
 }
 
+// GLNRegistry is the one place a GS1 Global Location Number is claimed, so
+// that a GLN identifies at most one location across sites, zones and slots
+// (ADR-0045). It is a separate, narrow port because the uniqueness spans
+// three aggregates a single repository cannot see.
+type GLNRegistry interface {
+	// Claim records gln as held by owner (an opaque identity such as
+	// "slot:WH1-YARD-Y-A01-01-01-A"). It reports true when owner now holds
+	// the number, including when it already did (idempotent), and false when a
+	// DIFFERENT owner holds it. Called inside the unit of work that saves the
+	// owner, so a rollback releases the claim and two concurrent claims of the
+	// same number cannot both succeed.
+	Claim(ctx context.Context, gln shared.GLN, owner string) (bool, error)
+}
+
 // EventPublisher publishes domain events. Adapters may log them, buffer
 // them, or forward them to a broker.
 type EventPublisher interface {

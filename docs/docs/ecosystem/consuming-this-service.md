@@ -104,10 +104,10 @@ The events a consumer is most likely to care about:
 
 | Event | Consumer reaction |
 |---|---|
-| `LocationSlotRegistered` | Add the location to the local map as usable. Payload carries `zoneId`, `aisleId` and `role` already, so no code parsing is needed. |
+| `LocationSlotRegistered` | Add the location to the local map as usable. Payload carries `zoneId`, `aisleId` and `role` already, so no code parsing is needed. It may also carry an optional GS1 `gln` and, on a `Yard` slot, an optional `spotKind` (`PARKING`, `HOLDING`, `REEFER_PLUG`, `HAZMAT`, `STAGING_LANE`), both omitted when none was recorded ([ADR-0045](../adr/0045-gs1-location-identity.md)). |
 | `LocationSlotHandlingUnitDeclared` | Update the bin's handling unit (`EACH`/`CASE`/`PALLET`, last write wins per `locationCode`); `LocationSlotRegistered` carries the same optional `handlingUnit`. `inventory-storage` stows a sealed case only in a `CASE`/`PALLET` bin ([ADR-0040](../adr/0040-slot-handling-unit.md)). |
 | `LocationSlotDecommissioned` | Stop offering that location for new work. |
-| `ZoneRegistered` | Learn a new zone, its temperature class and hazmat flag. |
+| `ZoneRegistered` | Learn a new zone, its temperature class and hazmat flag, and its optional GS1 `gln`. |
 | `AisleRegistered` | Learn a corridor, its `sequenceHint` walk-order position and its `direction`. This is the travel-path input. |
 | `AisleGeometryUpdated`, `CrossAisleRegistered`, `LocationGeometryUpdated` | Keep a local copy of the travel geometry. No consumer applies the first two today; `task-interleaving` applies `LocationGeometryUpdated`. |
 | `FacilityLayoutImported` | Recognise a bulk load — useful for distinguishing a building bootstrap from ordinary drift. |
