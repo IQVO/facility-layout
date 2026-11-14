@@ -546,6 +546,20 @@ jobs:
   # Runs ONLY for a pull_request targeting main -- validated pre-merge,
   # never on develop pushes/PRs or on push-to-main (already validated).
   # ============================================================
+  pinned-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Pins equal the producer's develop
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/harness/pinned_contract_gate.py
+      - name: The gate's own tests
+        run: python3 scripts/harness/test_pinned_contract_gate.py
+
   trivy-scan:
     runs-on: ubuntu-latest
     timeout-minutes: 15
