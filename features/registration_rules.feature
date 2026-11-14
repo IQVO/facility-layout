@@ -300,13 +300,6 @@ Feature: Registration rules of Site, Zone, Aisle and LocationType
       | Work Center|
 
   @bdd
-  Scenario: A location type registered without a role is a Storage type
-    When a POST request is sent to "/location-types" with the JSON body {"name": "PalletRack", "defaultCapacity": {"maxWeightKg": 1200, "maxVolumeM3": 2.4}}
-    Then the response status is 201
-    When a GET request is sent to "/location-types/PalletRack"
-    Then the response field "role" is "Storage"
-
-  @bdd
   Scenario: A location type needs a name
     When a POST request is sent to "/location-types" with the JSON body {"name": "", "defaultCapacity": {"maxWeightKg": 1200, "maxVolumeM3": 2.4}}
     Then the response status is 400

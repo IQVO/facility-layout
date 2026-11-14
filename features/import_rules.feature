@@ -75,7 +75,7 @@ Feature: Importing a facility layout row by row
     Then the response field "sequenceHint" is 7
 
   @bdd
-  Scenario: A row under a parent that is no longer Active is rejected and the others carry on
+  Scenario: A row under a parent that is no longer Active is rejected without creating anything below it
     Given a registered Site "WH1"
     And a registered Zone "STOR"/"AMB" in Site "WH1" with temperature class "Ambient"
     And a registered Site "WH2"
@@ -93,6 +93,9 @@ Feature: Importing a facility layout row by row
     And no LocationSlot "WH1-STOR-AMB-A07-01-01-A" exists
     And no LocationSlot "WH2-STOR-AMB-A01-01-01-A" exists
     And the LocationSlot "WH1-STOR-FRZ-A02-01-01-A" exists
+    And exactly 2 "SiteRegistered" domain events are published
+    And exactly 2 "ZoneRegistered" domain events are published
+    And exactly 1 "AisleRegistered" domain events are published
 
   @bdd
   Scenario: A row refused at the slot step keeps the parents it already created

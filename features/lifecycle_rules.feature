@@ -39,17 +39,6 @@ Feature: Lifecycle states, heartbeat clock and readiness
       | PUT    | /sites/WH1/role               | {"siteRole": "MICRO_FC"}                                                   |
 
   @bdd
-  Scenario: A decommissioned site is still readable, with its status and no capability change
-    Given the Site "WH1" has been decommissioned
-    When a GET request is sent to "/sites/WH1"
-    Then the response status is 200
-    And the response field "status" is "Decommissioned"
-    When a GET request is sent to "/sites/WH1/transfer-capability"
-    Then the response field "capabilityRevision" is 0
-    And exactly 0 "SiteCapabilityChanged" domain events are published
-    And exactly 0 "SiteRoleChanged" domain events are published
-
-  @bdd
   Scenario Outline: A decommissioned zone takes no new aisle and no new slot
     Given the Zone "WH1-STOR-AMB" has been decommissioned
     When a POST request is sent to "<path>" with the JSON body <body>

@@ -86,6 +86,23 @@ Feature: Placement-rule policy
       | {"zoneCode": "FRZ"}                                  | zone code alone                                     |
 
   @bdd
+  Scenario: A hazmat predicate matches the zone's hazmat flag whichever way it is set
+    Given a registered Zone "STOR"/"HAZ" in Site "WH1" with temperature class "Ambient"
+    And a registered Aisle "B01" in Zone "WH1-STOR-HAZ" with sequence hint 1
+    And a POST to "/placement-rules" with the JSON body {"ruleId": "R-NO-TOTE-OFF-HAZMAT", "locationType": "ToteWall", "effect": "Deny", "zone": {"hazmat": false}} has been accepted
+    And a POST to "/placement-rules" with the JSON body {"ruleId": "R-NO-SHELF-ON-HAZMAT", "locationType": "Shelf", "effect": "Deny", "zone": {"hazmat": true}} has been accepted
+    When I register the LocationSlot "WH1-STOR-HAZ-B01-01-01-A" of type "ToteWall"
+    Then the response status is 201
+    When I register the LocationSlot "WH1-STOR-HAZ-B01-01-02-A" of type "Shelf"
+    Then the response status is 422
+    And the problem detail names the rule "R-NO-SHELF-ON-HAZMAT"
+    When I register the LocationSlot "WH1-STOR-FRZ-A02-01-01-A" of type "ToteWall"
+    Then the response status is 422
+    And the problem detail names the rule "R-NO-TOTE-OFF-HAZMAT"
+    When I register the LocationSlot "WH1-STOR-FRZ-A02-01-02-A" of type "Shelf"
+    Then the response status is 201
+
+  @bdd
   Scenario: A new rule never invalidates a slot that already exists
     Given a registered LocationSlot "WH1-STOR-FRZ-A02-01-01-A" of type "Shelf"
     When a PlacementRule "R-DENY-SHELF" denying "Shelf" where temperature class is "Frozen"
