@@ -80,15 +80,21 @@ other warehouse-systems service and never will:
 - It never mutates another context's data, and none of them get write access
   to this one's aggregates.
 
-`inventory-storage`, `warehouse-planning`, `wes-work-planning`,
-`fulfillment-execution` and `warehouse-ops-agent` are downstream
-**Conformists** to whatever this service publishes.
+`inventory-storage`, `warehouse-planning`, `inbound-receiving`,
+`dock-scheduling`, `yard-management`, `outbound-shipping`,
+`slotting-optimization`, `pick-face-replenishment`, `task-interleaving`,
+`network-inventory-planning`, `wes-work-planning`, `fulfillment-execution` and
+`warehouse-ops-agent` are downstream **Conformists** to whatever this service
+publishes.
 
 :::note[Current status]
 Those relationships are wired in code: `inventory-storage` consumes the
 `warehouse.facility.events` Kafka topic (with a REST classification
 fallback), `warehouse-planning` consumes `LocationSlotRegistered` /
 `LocationSlotDecommissioned` from the same topic for storage capacity,
+`inbound-receiving`, `dock-scheduling`, `yard-management`, `outbound-shipping`,
+`slotting-optimization`, `pick-face-replenishment`, `task-interleaving` and
+`network-inventory-planning` consume it for their local copies,
 `wes-work-planning` calls `GET /distance`, `fulfillment-execution` reads a
 location's `role` via `GET /locations/{locationCode}`, and
 `warehouse-ops-agent` uses the MCP server and the catalog-growth report.
