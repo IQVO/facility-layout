@@ -102,6 +102,8 @@ flowchart LR
         out5["own cmd/facility-projector"]:::self
         out6["no consumer yet"]:::none
         out7["task-interleaving<br/>(layout copy + geometry)"]:::ctx
+        out8["dock-scheduling,<br/>yard-management<br/>(dock doors, yard spots)"]:::ctx
+        out9["outbound-shipping<br/>(layout copy)"]:::ctx
     end
     BC ==>|"evt - Kafka<br/>warehouse.facility.events<br/>ZoneRegistered,<br/>LocationSlotRegistered,<br/>LocationSlotDecommissioned"| out0
     BC ==>|"evt - Kafka<br/>warehouse.facility.events<br/>LocationSlotRegistered,<br/>LocationSlotDecommissioned"| out1
@@ -111,6 +113,8 @@ flowchart LR
     BC ==>|"evt - Kafka<br/>warehouse.facility.analytics<br/>analytics copy of the domain<br/>events"| out5
     BC ==>|"evt - Kafka<br/>warehouse.facility.events<br/>SiteRegistered,<br/>AisleRegistered,<br/>LocationTypeRegistered,<br/>PlacementRuleDefined,<br/>FacilityLayoutImported,<br/>AisleGeometryUpdated,<br/>FixedStructureRegistered,<br/>CrossAisleRegistered"| out6
     BC ==>|"evt - Kafka<br/>warehouse.facility.events<br/>ZoneRegistered,<br/>LocationSlotRegistered,<br/>LocationSlotDecommissioned,<br/>LocationGeometryUpdated"| out7
+    BC ==>|"evt - Kafka<br/>warehouse.facility.events<br/>ZoneRegistered,<br/>LocationSlotRegistered,<br/>LocationSlotDecommissioned"| out8
+    BC ==>|"evt - Kafka<br/>warehouse.facility.events<br/>ZoneRegistered,<br/>LocationSlotRegistered"| out9
     linkStyle 0 stroke:#e8590c,stroke-width:2.5px
     linkStyle 1 stroke:#e8590c,stroke-width:2.5px
     linkStyle 2 stroke:#e8590c,stroke-width:2.5px
@@ -119,6 +123,8 @@ flowchart LR
     linkStyle 5 stroke:#e8590c,stroke-width:2.5px
     linkStyle 6 stroke:#e8590c,stroke-width:2.5px
     linkStyle 7 stroke:#e8590c,stroke-width:2.5px
+    linkStyle 8 stroke:#e8590c,stroke-width:2.5px
+    linkStyle 9 stroke:#e8590c,stroke-width:2.5px
 ```
 
 Source: the Inbound Communication and Outbound Communication tables of this
@@ -200,9 +206,10 @@ Every domain event goes to **both** topics
 
 | Collaborator | Message | Type | Channel | Relationship |
 |---|---|---|---|---|
-| `inventory-storage` (`facilitycache`), `slotting-optimization`, `pick-face-replenishment`, `task-interleaving` (layout copies) | ZoneRegistered | Event | Kafka `warehouse.facility.events` — `com.warehouse.wms.facility-layout.zone.ZoneRegistered` | OHS + PL (U) → Conformist + ACL (D) |
-| `inventory-storage`, `warehouse-planning`, `inbound-receiving` (dock-door copy), `slotting-optimization`, `pick-face-replenishment`, `task-interleaving` (layout copies) | LocationSlotRegistered | Event | Kafka `warehouse.facility.events` — `com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered` | OHS + PL (U) → Conformist + ACL (D) |
-| `inventory-storage`, `warehouse-planning`, `inbound-receiving` (dock-door copy), `slotting-optimization`, `pick-face-replenishment`, `task-interleaving` (layout copies) | LocationSlotDecommissioned | Event | Kafka `warehouse.facility.events` — `com.warehouse.wms.facility-layout.locationslot.LocationSlotDecommissioned` | OHS + PL (U) → Conformist + ACL (D) |
+| `inventory-storage` (`facilitycache`), `slotting-optimization`, `pick-face-replenishment`, `task-interleaving` (layout copies), `dock-scheduling`, `yard-management`, `outbound-shipping` | ZoneRegistered | Event | Kafka `warehouse.facility.events` — `com.warehouse.wms.facility-layout.zone.ZoneRegistered` | OHS + PL (U) → Conformist + ACL (D) |
+| `inventory-storage`, `warehouse-planning`, `inbound-receiving` (dock-door copy), `slotting-optimization`, `pick-face-replenishment`, `task-interleaving` (layout copies), `dock-scheduling`, `yard-management`, `outbound-shipping` | LocationSlotRegistered | Event | Kafka `warehouse.facility.events` — `com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered` | OHS + PL (U) → Conformist + ACL (D) |
+| `inventory-storage`, `warehouse-planning`, `inbound-receiving` (dock-door copy), `slotting-optimization`, `pick-face-replenishment`, `task-interleaving` (layout copies), `dock-scheduling`, `yard-management` | LocationSlotDecommissioned | Event | Kafka `warehouse.facility.events` — `com.warehouse.wms.facility-layout.locationslot.LocationSlotDecommissioned` | OHS + PL (U) → Conformist + ACL (D) |
+| `inventory-storage` (`facilitycache`) | LocationSlotHandlingUnitDeclared | Event | Kafka `warehouse.facility.events` — `com.warehouse.wms.facility-layout.locationslot.LocationSlotHandlingUnitDeclared` | OHS + PL (U) → Conformist + ACL (D) |
 | `task-interleaving` (layout copy) | LocationGeometryUpdated | Event | Kafka `warehouse.facility.events` — `com.warehouse.wms.facility-layout.locationslot.LocationGeometryUpdated` | OHS + PL (U) → Conformist + ACL (D) |
 | `network-inventory-planning` (`SiteCapabilityConsumer`) | SiteCapabilityChanged | Event | Kafka `warehouse.facility.events` — `com.warehouse.wms.facility-layout.site.SiteCapabilityChanged` (snake_case payload, ADR 0035) | OHS + PL (U) → Conformist + ACL (D) |
 | own `cmd/facility-projector` | SiteRegistered, ZoneRegistered, AisleRegistered, LocationTypeRegistered, PlacementRuleDefined, LocationSlotRegistered, LocationSlotDecommissioned, FacilityLayoutImported | Event | Kafka `warehouse.facility.analytics` — same `type` strings, `dataschema` `urn:warehouse:facility-layout:analytics:<EventName>:v1` | same context |

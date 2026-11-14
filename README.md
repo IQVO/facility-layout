@@ -15,13 +15,15 @@ contexts read but never write.
 **Strategic classification:** Generic Subdomain, extracted rather than
 duplicated. It is an **Open Host Service** with a **Published Language** (its
 domain events on the `warehouse.facility.events` Kafka topic, plus its REST
-API). It depends on no other service. Its downstream **Conformists** today:
-`inventory-storage` (consumes the Kafka topic to validate stows),
-`warehouse-planning` (consumes slot registrations/decommissions for its
-storage-capacity tally), `wes-work-planning` (`GET /distance`),
-`fulfillment-execution`
-(`GET /locations/{code}` for a location's role), and `warehouse-ops-agent`
-(the MCP tools and the catalog-growth report).
+API). It depends on no other service. Its downstream **Conformists** today, over the Kafka topic:
+`inventory-storage` (validates stows), `warehouse-planning` (storage-capacity
+tally), `inbound-receiving`, `dock-scheduling` and `yard-management` (dock
+doors and yard spots), `outbound-shipping`, `slotting-optimization`,
+`pick-face-replenishment` and `task-interleaving` (layout copies) and
+`network-inventory-planning` (site capability); over REST, `wes-work-planning`
+(`GET /distance`) and `fulfillment-execution` (`GET /locations/{code}` for a
+location's role); and `warehouse-ops-agent` (the MCP tools and the
+catalog-growth report).
 
 ## Disclaimer
 

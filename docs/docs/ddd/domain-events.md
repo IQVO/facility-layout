@@ -332,15 +332,15 @@ site would need an additive `siteCode` (a contract change) for no benefit
 | `com.warehouse.wms.facility-layout.site.SiteRegistered` | `siteCode` | `siteCode` | `RegisterSite`, `ImportFacilityLayout` | own projector |
 | `com.warehouse.wms.facility-layout.site.SiteCapabilityChanged` | `site_code` | `site_code` | `ChangeSiteTransferCapability` | `network-inventory-planning` (`site_capability` read model); own projector ignores it |
 | `com.warehouse.wms.facility-layout.site.SiteRoleChanged` | `siteCode` | `siteCode` | `ChangeSiteRole` | none; own projector ignores it |
-| `com.warehouse.wms.facility-layout.zone.ZoneRegistered` | `zoneId` | `zoneId` | `RegisterZone`, `ImportFacilityLayout` | `inventory-storage`, own projector |
+| `com.warehouse.wms.facility-layout.zone.ZoneRegistered` | `zoneId` | `zoneId` | `RegisterZone`, `ImportFacilityLayout` | `inventory-storage`, `slotting-optimization`, `pick-face-replenishment`, `task-interleaving`, `dock-scheduling`, `yard-management`, `outbound-shipping`, own projector |
 | `com.warehouse.wms.facility-layout.aisle.AisleRegistered` | `aisleId` | `aisleId` | `RegisterAisle`, `ImportFacilityLayout` | own projector |
 | `com.warehouse.wms.facility-layout.locationtype.LocationTypeRegistered` | `locationType` | `locationType` | `RegisterLocationType` | own projector |
 | `com.warehouse.wms.facility-layout.placementrule.PlacementRuleDefined` | `ruleId` | `ruleId` | `DefinePlacementRule` | own projector |
-| `com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered` | `locationCode` | `locationCode` | `RegisterLocationSlot`, `ImportFacilityLayout` | `inventory-storage`, `warehouse-planning`, own projector |
-| `com.warehouse.wms.facility-layout.locationslot.LocationSlotDecommissioned` | `locationCode` | `locationCode` | `DecommissionLocationSlot` | `inventory-storage`, `warehouse-planning`, own projector |
+| `com.warehouse.wms.facility-layout.locationslot.LocationSlotRegistered` | `locationCode` | `locationCode` | `RegisterLocationSlot`, `ImportFacilityLayout` | `inventory-storage`, `warehouse-planning`, `inbound-receiving`, `slotting-optimization`, `pick-face-replenishment`, `task-interleaving`, `dock-scheduling`, `yard-management`, `outbound-shipping`, own projector |
+| `com.warehouse.wms.facility-layout.locationslot.LocationSlotDecommissioned` | `locationCode` | `locationCode` | `DecommissionLocationSlot` | `inventory-storage`, `warehouse-planning`, `inbound-receiving`, `slotting-optimization`, `pick-face-replenishment`, `task-interleaving`, `dock-scheduling`, `yard-management`, own projector |
 | `com.warehouse.wms.facility-layout.locationslot.FacilityLayoutImported` | event `id` (batch outcome, no aggregate) | `layout-import` | `ImportFacilityLayout` | own projector |
 | `com.warehouse.wms.facility-layout.locationslot.LocationSlotHandlingUnitDeclared` | `locationCode` | `locationCode` | `DeclareLocationHandlingUnit` | `inventory-storage` |
-| `com.warehouse.wms.facility-layout.locationslot.LocationGeometryUpdated` | `locationCode` | `locationCode` | `SetLocationGeometry`, `ImportFacilityLayout` | none |
+| `com.warehouse.wms.facility-layout.locationslot.LocationGeometryUpdated` | `locationCode` | `locationCode` | `SetLocationGeometry`, `ImportFacilityLayout` | `task-interleaving` |
 | `com.warehouse.wms.facility-layout.aisle.AisleGeometryUpdated` | `aisleId` | `aisleId` | `SetAisleGeometry` | none |
 | `com.warehouse.wms.facility-layout.structure.FixedStructureRegistered` | `structureId` | `structureId` | `RegisterFixedStructure` | none |
 | `com.warehouse.wms.facility-layout.crossaisle.CrossAisleRegistered` | `zoneId/fromAisle-toAisle@atBay` | `zoneId/fromAisle-toAisle@atBay` | `RegisterCrossAisle` | none |
@@ -396,15 +396,20 @@ the Kafka adapters were a purely additive change.
 
 | Consumer | Topic | Group | Events used |
 |---|---|---|---|
-| `inventory-storage` (`internal/adapters/outbound/facilitycache`, with `LOCATION_LOOKUP_MODE=kafka`) | `warehouse.facility.events` | process-unique group, replays from the first offset | `ZoneRegistered`, `LocationSlotRegistered`, `LocationSlotDecommissioned` — the rest are ignored ([ADR 0013](../adr/0013-first-published-language-consumer.md)) |
+| `inventory-storage` (`internal/adapters/outbound/facilitycache`, with `LOCATION_LOOKUP_MODE=kafka`) | `warehouse.facility.events` | process-unique group, replays from the first offset | `ZoneRegistered`, `LocationSlotRegistered`, `LocationSlotDecommissioned`, `LocationSlotHandlingUnitDeclared` — the rest are ignored ([ADR 0013](../adr/0013-first-published-language-consumer.md)) |
 | `warehouse-planning` (`internal/adapters/inbound/kafka/storage_capacity_consumer.go`, started when `KAFKA_BROKERS` is set) | `warehouse.facility.events` | `STORAGE_CAPACITY_CONSUMER_GROUP` (default `warehouse-planning-storage-capacity`) | `LocationSlotRegistered` (Storage and WorkCenter roles), `LocationSlotDecommissioned` — folded into a storage-position / station tally |
 | `network-inventory-planning` (`internal/adapters/inbound/kafka/consumers.go`, `SiteCapabilityConsumer`) | `warehouse.facility.events` | env-configured (`SITE_CAPABILITY_CONSUMER_GROUP`) | `SiteCapabilityChanged` — upserted into its `site_capability` read model, last-write-wins on `capability_revision` |
 | `inbound-receiving` (`internal/adapters/inbound/kafka/dock_door_consumer.go`) | `warehouse.facility.events` | `DOCK_DOOR_CONSUMER_GROUP` (required; `inbound-receiving-dock-doors`) | `LocationSlotRegistered` (only `role=Dock` with `dockFlow` `Inbound` or `Both`), `LocationSlotDecommissioned` — kept in its `dock_doors` table |
 | `slotting-optimization`, `pick-face-replenishment` (`internal/adapters/inbound/kafka/layout_consumer.go`) | `warehouse.facility.events` | `slotting-optimization-layout`, `pick-face-replenishment-layout` | `ZoneRegistered`, `LocationSlotRegistered`, `LocationSlotDecommissioned` — local layout copies |
 | `task-interleaving` (`internal/adapters/inbound/kafka/layout_consumer.go`) | `warehouse.facility.events` | `task-interleaving-layout` | `ZoneRegistered`, `LocationSlotRegistered`, `LocationSlotDecommissioned`, `LocationGeometryUpdated` — local layout copy with positions |
+| `dock-scheduling` (`internal/adapters/inbound/kafka/facility_consumer.go`) | `warehouse.facility.events` | `FACILITY_CONSUMER_GROUP` (required) | `ZoneRegistered`, `LocationSlotRegistered` (only an explicit `role=Dock` slot becomes a bookable door), `LocationSlotDecommissioned` — zone-to-site join and dock-door view |
+| `yard-management` (`internal/adapters/inbound/kafka/facility_consumer.go`) | `warehouse.facility.events` | `FACILITY_CONSUMER_GROUP` (required) | `ZoneRegistered`, `LocationSlotRegistered` (only `role=Yard` spots and `role=Dock` doors are kept), `LocationSlotDecommissioned` — local zone and location copies |
+| `outbound-shipping` (`internal/adapters/inbound/kafka/cpt_layout_consumers.go`) | `warehouse.facility.events` | `LAYOUT_CONSUMER_GROUP` (required) | `ZoneRegistered`, `LocationSlotRegistered` (reads `zoneId` and `role`); it does not handle `LocationSlotDecommissioned` |
 | this repository's `cmd/facility-projector` | `warehouse.facility.analytics` | `facility-analytics` (DLQ `warehouse.facility.analytics.dlq`) | The original eight events (`SiteRegistered` … `FacilityLayoutImported`); the geometry events and `SiteCapabilityChanged` are ignored |
 
-No other service consumes either topic today. `AisleGeometryUpdated`,
+No other service consumes either topic today: ten contexts read
+`warehouse.facility.events` (the rows above) and only this repository's
+`facility-projector` reads `warehouse.facility.analytics`. `AisleGeometryUpdated`,
 `FixedStructureRegistered` and `CrossAisleRegistered` are Published Language
 with no consumer yet (`LocationGeometryUpdated` is applied by
 `task-interleaving` only).

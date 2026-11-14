@@ -8,8 +8,9 @@ description: How a downstream context integrates — synchronous REST, Kafka eve
 # Consuming this service
 
 :::info[Current status]
-Ten services consume `facility-layout` today: `inventory-storage` over
-Kafka (with a REST fallback), `inbound-receiving`, `slotting-optimization`,
+Thirteen services consume `facility-layout` today: `inventory-storage` over
+Kafka (with a REST fallback), `inbound-receiving`, `dock-scheduling`,
+`yard-management`, `outbound-shipping`, `slotting-optimization`,
 `pick-face-replenishment`, `task-interleaving` and `warehouse-planning` over
 Kafka, `network-inventory-planning` over Kafka (`SiteCapabilityChanged`),
 `wes-work-planning` and `fulfillment-execution` over REST, and
@@ -23,7 +24,7 @@ each one uses.
 | Need | Style | In use by |
 |---|---|---|
 | "Is this exact location valid, right now, before I accept this stow?" | **Synchronous REST** — `GET /locations/{locationCode}` or `/classification` | `inventory-storage` (`LOCATION_LOOKUP_MODE=http`), `fulfillment-execution` (role lookup) |
-| "Keep a local read model of the building's structure in sync" | **Event subscription** — `warehouse.facility.events` | `inventory-storage` (`LOCATION_LOOKUP_MODE=kafka`), `inbound-receiving` (dock doors), `slotting-optimization`, `pick-face-replenishment`, `task-interleaving`, `warehouse-planning` (storage-capacity tally), `network-inventory-planning` (site capability) |
+| "Keep a local read model of the building's structure in sync" | **Event subscription** — `warehouse.facility.events` | `inventory-storage` (`LOCATION_LOOKUP_MODE=kafka`), `inbound-receiving` (dock doors), `dock-scheduling` (dock doors), `yard-management` (yard spots and dock doors), `outbound-shipping` (layout copy), `slotting-optimization`, `pick-face-replenishment`, `task-interleaving`, `warehouse-planning` (storage-capacity tally), `network-inventory-planning` (site capability) |
 | "How far apart are these two locations?" | **Synchronous REST** — `GET /distance?from=&to=` | `wes-work-planning` |
 | "Let an agent explore the map" | **MCP** — `cmd/mcp`, Streamable HTTP | `warehouse-ops-agent` |
 
@@ -116,17 +117,20 @@ The events a consumer is most likely to care about:
 
 `inventory-storage` is the reference consumer: it replays the topic from the
 first offset on every start under a per-instance consumer group, uses
-`ZoneRegistered`, `LocationSlotRegistered` and `LocationSlotDecommissioned`,
-ignores the rest, and gates its readiness on the replay finishing
+`ZoneRegistered`, `LocationSlotRegistered`, `LocationSlotDecommissioned` and
+`LocationSlotHandlingUnitDeclared`, ignores the rest, and gates its readiness on the replay finishing
 ([ADR 0013](../adr/0013-first-published-language-consumer.md)).
 `warehouse-planning` is the second: under a fixed consumer group it folds
 `LocationSlotRegistered` (Storage slots by location type, WorkCenter slots
 by activity) and `LocationSlotDecommissioned` into a capacity tally, deduping
 on the CloudEvents `id`. `inbound-receiving` keeps only Inbound and Both dock
-doors from `LocationSlotRegistered` (a decommission removes the row), and
-`slotting-optimization`, `pick-face-replenishment` and `task-interleaving`
-keep zone and slot copies (`task-interleaving` also applies
-`LocationGeometryUpdated`).
+doors from `LocationSlotRegistered` (a decommission removes the row).
+`dock-scheduling` keeps explicit `Dock` slots as bookable doors and
+`yard-management` keeps `Yard` spots and `Dock` doors, both with a zone-to-site
+join; `outbound-shipping` keeps `zoneId` and `role` from `ZoneRegistered` and
+`LocationSlotRegistered`. `slotting-optimization`, `pick-face-replenishment`
+and `task-interleaving` keep zone and slot copies (`task-interleaving` also
+applies `LocationGeometryUpdated`).
 
 ## Rules for a consumer
 

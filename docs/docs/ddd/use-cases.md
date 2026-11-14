@@ -8,10 +8,13 @@ sidebar_label: Use cases
 
 Every use case lives in `internal/application/usecases` and is wired once in
 the composition roots (`cmd/facility/main.go` `newServer`, and
-`cmd/mcp/main.go` for the read subset). There are no Kafka-triggered or
-scheduled use cases: facility-layout consumes no topic in its OLTP path. The
-only background work (outbox relay, housekeeping sweeper, analytics
-projection) lives in adapters, not in use cases.
+`cmd/mcp/main.go` for the read subset). No use case is Kafka-triggered:
+facility-layout consumes no topic in its OLTP path. One use case is
+timer-driven, `PublishSiteCapabilityHeartbeats`, run by the loop in
+`internal/adapters/inbound/heartbeat/heartbeat.go` (see
+[Scheduled](#scheduled-timer-not-a-route)). The other background work (outbox
+relay, housekeeping sweeper, analytics projection) lives in adapters, not in
+use cases.
 
 Writes run inside `atomically(ctx, UnitOfWork, …)`. Each write saves the
 aggregate and enqueues its event(s) into `outbox_events` in one transaction
@@ -63,6 +66,12 @@ and `capability_revision` + 1, so a consumer's freshness window holds while
 nothing changes; a `PUT` of the value a site already holds is still a no-op.
 The event is keyed and subjected by the site code and travels through the
 outbox like every other event; the analytics projector ignores it.
+
+## Scheduled (timer, not a route)
+
+| Use case | Trigger | Inputs | Invariants checked | Event raised |
+|---|---|---|---|---|
+| `PublishSiteCapabilityHeartbeats` | the `heartbeat.Loop` in `cmd/facility` ([ADR-0041](../adr/0041-site-capability-heartbeat.md)): one pass at boot, then a wake-up every `SITE_CAPABILITY_HEARTBEAT_INTERVAL` / 5 (interval default 5m, `0` disables it) | none; reads the active sites with a declared capability whose last heartbeat is at least one interval old (at most 500 per pass) | the site is still due and qualifying when loaded; site version check (`concurrent-modification`, a loser is counted as skipped, not an error); a failure on one site does not stop the others | `SiteCapabilityChanged` with the current values, a fresh `time` and `capability_revision` + 1, one per due site, through the outbox in the same transaction as the site row |
 
 ## Queries (read use cases)
 
