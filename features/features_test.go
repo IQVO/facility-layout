@@ -108,7 +108,7 @@ func (w *world) start() {
 	)
 
 	s := &inboundhttp.Server{
-		Readiness: readiness,
+		Readiness:    readiness,
 		RegisterSite: &usecases.RegisterSite{Sites: sites, Events: publisher, Clock: clock, GLNs: glns},
 		GetSite:      &usecases.GetSite{Sites: sites},
 		ListSites:    &usecases.ListSites{Sites: sites},
