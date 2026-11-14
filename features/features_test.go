@@ -69,6 +69,17 @@ type world struct {
 	// no HTTP surface: the scenario advances the clock and runs one pass.
 	clock     *memory.FixedClock
 	heartbeat *usecases.PublishSiteCapabilityHeartbeats
+	// sites, zones and slots give the lifecycle scenarios the one thing no
+	// REST command offers: a Site, Zone or slot that is Decommissioned or
+	// UnderMaintenance (the docs say v1 only reaches those by rehydration).
+	sites *memory.SiteRepo
+	zones *memory.ZoneRepo
+	slots *memory.SlotRepo
+	// metrics records the slot registration outcomes; readiness is the drain
+	// gate plus switchable dependency checks behind GET /readyz.
+	metrics   *recordingMetrics
+	readiness *inboundhttp.Readiness
+	downDeps  *downDependencies
 
 	status  int
 	body    []byte
@@ -89,8 +100,15 @@ func (w *world) start() {
 	glns := memory.NewGLNRegistry()
 	publisher := events.NewBufferedPublisher()
 	clock := memory.NewFixedClock(time.Date(2026, 8, 22, 9, 0, 0, 0, time.UTC))
+	metrics := &recordingMetrics{}
+	downDeps := &downDependencies{down: map[string]bool{}}
+	readiness := inboundhttp.NewReadiness(time.Nanosecond, 0,
+		inboundhttp.Dependency{Name: "postgres", Check: downDeps.check("postgres")},
+		inboundhttp.Dependency{Name: "kafka", Check: downDeps.check("kafka")},
+	)
 
 	s := &inboundhttp.Server{
+		Readiness: readiness,
 		RegisterSite: &usecases.RegisterSite{Sites: sites, Events: publisher, Clock: clock, GLNs: glns},
 		GetSite:      &usecases.GetSite{Sites: sites},
 		ListSites:    &usecases.ListSites{Sites: sites},
@@ -114,6 +132,7 @@ func (w *world) start() {
 		RegisterLocationSlot: &usecases.RegisterLocationSlot{
 			Sites: sites, Zones: zones, Aisles: aisles, Slots: slots,
 			LocationTypes: locationTypes, Rules: rules, Events: publisher, Clock: clock, GLNs: glns,
+			Metrics: metrics,
 		},
 		GetLocationSlot:           &usecases.GetLocationSlot{Slots: slots},
 		GetLocationClassification: &usecases.GetLocationClassification{Slots: slots, Zones: zones},
@@ -121,6 +140,7 @@ func (w *world) start() {
 		ImportFacilityLayout: &usecases.ImportFacilityLayout{
 			Sites: sites, Zones: zones, Aisles: aisles, Slots: slots,
 			LocationTypes: locationTypes, Rules: rules, Events: publisher, Clock: clock,
+			Metrics: metrics,
 		},
 		GetSiteLayout: &usecases.GetSiteLayout{Sites: sites, Zones: zones, Aisles: aisles, Slots: slots},
 		GetZoneGrid:   &usecases.GetZoneGrid{Zones: zones, Aisles: aisles, Slots: slots},
@@ -139,6 +159,8 @@ func (w *world) start() {
 
 	w.server = httptest.NewServer(inboundhttp.NewRouter(s, slog.New(slog.NewTextHandler(io.Discard, nil))))
 	w.aisles = aisles
+	w.sites, w.zones, w.slots = sites, zones, slots
+	w.metrics, w.readiness, w.downDeps = metrics, readiness, downDeps
 	w.publisher = publisher
 	w.clock = clock
 	w.heartbeat = &usecases.PublishSiteCapabilityHeartbeats{
@@ -994,5 +1016,6 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	w.registerCapabilitySteps(sc)
 	w.registerSiteRoleSteps(sc)
 	w.registerIdentitySteps(sc)
+	w.registerRulesSteps(sc)
 	sc.Step(`^the classification reports hazmat (true|false) and temperature class "([^"]*)"$`, w.theClassificationReports)
 }
