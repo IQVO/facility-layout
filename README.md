@@ -773,9 +773,11 @@ consumes the same read model the JSON endpoint does.
 
 `POST /location-imports` takes a JSON array of fully-specified rows and
 bootstraps a whole building in one call, creating the Site/Zone/Aisle
-structure on first sight. Validation is **atomic per row**: every row is
-processed, and the report says exactly which rows failed and why. A 500-row
-export with 3 bad rows still creates the other 497.
+structure on first sight. Validation is **per row, never all-or-nothing**: every row is
+processed on its own, and the report says exactly which rows failed and why. A 500-row
+export with 3 bad rows still creates the other 497. A row is not one transaction: each
+step (a missing site, zone or aisle, the slot, its geometry) commits on its own, so a row
+refused at the slot step keeps the parents it already created.
 
 ```sh
 curl -X POST localhost:8080/location-imports -H 'Content-Type: application/json' -d '[

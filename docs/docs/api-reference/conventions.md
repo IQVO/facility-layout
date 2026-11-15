@@ -195,7 +195,7 @@ with `errors.Is`. The domain never knows an HTTP status code exists.
 | `empty-cross-aisle-bay` | 400 | Cross-aisle requires a bay |
 | `empty-import` | 400 | Facility layout import must contain at least one row |
 | `idempotency-key-required` | 400 | A resource-creation POST was missing its required `Idempotency-Key` header |
-| `idempotency-key-reused` | 422 | The same `Idempotency-Key` was reused with a different request body |
+| `idempotency-key-reused` | 409 | The same `Idempotency-Key` was reused with a different method, path or body |
 | `concurrent-modification` | 409 | The resource was modified by another writer; re-fetch and retry ([ADR 0025](../adr/0025-optimistic-concurrency-version-column.md)) |
 | `segment-endpoints-not-real` | 422 | Centreline endpoints must both be real points |
 | `segment-start-end-equal` | 422 | Centreline start and end must differ |

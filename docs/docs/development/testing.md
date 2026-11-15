@@ -15,7 +15,7 @@ command its CI job runs.
 flowchart BT
   unit["Unit + httptest<br/>81 non-integration _test.go files<br/>make test / coverage (90% gate)"]
   arch["Architecture fitness<br/>internal/architecture<br/>make arch-test"]
-  bdd["BDD (godog)<br/>11 features, 107 scenarios + MCP feature (24)<br/>make bdd"]
+  bdd["BDD (godog)<br/>20 features, 212 definitions, 310 executed + MCP feature (24)<br/>make bdd"]
   integ["Integration (testcontainers)<br/>17 files in 7 packages<br/>make integration"]
   contract["Contract (Schemathesis)<br/>apis/openapi.yaml<br/>make contract"]
   evals["MCP evals<br/>E1 schemas, E2 wire, E3 behavioral"]
@@ -70,17 +70,32 @@ harness `repo_lint` rule R11 (coverage-scope) forbids a workflow passing
   test doubles only: no shipped binary imports them
   (`TestRuntimeBinaryHasNoInMemoryAdapters`, ADR 0039); the real runtime is
   proven by `TestRunOnRealPostgresAndKafka` below.
-- There are **12 feature files under `features/`** with **113 `Scenario` /
-  `Scenario Outline` headings**: `catalog_reads` 7, `draw_the_warehouse` 4,
+- There are **20 feature files under `features/`** with **212 `Scenario` /
+  `Scenario Outline` definitions**: `catalog_reads` 7, `draw_the_warehouse` 4,
   `error_contract` 7, `fixed_structures_and_cross_aisles` 21, `geometry` 18,
-  `import` 2, `location_roles_and_reads` 14, `placement_rules` 4,
-  `site_role` 6 (ADR-0037), `site_transfer_capability` 6 (ADR-0035),
-  `structure` 6, `travel_graph` 18.
-  Outlines expand to more runtime cases.
+  `handling_unit` 9, `import` 2, `import_rules` 10, `lifecycle_rules` 13,
+  `location_identity` 14, `location_roles_and_reads` 14,
+  `placement_policy_rules` 10, `placement_rules` 4, `registration_rules` 24,
+  `site_capability_heartbeat` 4, `site_role` 6 (ADR-0037),
+  `site_transfer_capability` 6 (ADR-0035), `slot_rules` 15, `structure` 6,
+  `travel_graph` 18. The runner executes **310 scenarios** once every Outline
+  Examples row is expanded (the `N scenarios` line of
+  `go test ./features -run TestFeatures -count=1 -v`). BDD-only statement
+  coverage over `./internal/...`
+  (`go test ./features -run TestFeatures -count=1 -coverpkg=./internal/...`) is
+  79.0 %.
+- Five of the files pin the rules the context documentation states, one rule per
+  scenario with boundaries as Outline rows: `registration_rules` (Site, Zone,
+  Aisle and LocationType invariants), `placement_policy_rules` (deny wins,
+  allow-list, predicate AND), `slot_rules` (code shape, check order, capacity,
+  functional attributes, decommission), `import_rules` (per-row import
+  semantics and events) and `lifecycle_rules` (non-Active parents,
+  UnderMaintenance, heartbeat clock, `/readyz`, role and read slugs). Their
+  steps are in `features/steps_rules_test.go`.
 - Scenarios tagged `@known-bug` describe the correct behaviour for a defect
   that is still open. The default filter `~@known-bug` skips them.
   `BDD_TAGS=@known-bug go test -run TestFeatures` runs only those scenarios.
-  The tag currently appears in `fixed_structures_and_cross_aisles.feature`.
+  No `.feature` file carries the tag at the moment.
 - A separate MCP feature,
   `internal/adapters/inbound/mcp/testdata/features/mcp_tools.feature`
   (24 scenarios), is run by `TestMCPEvalSuite` in the MCP package.
