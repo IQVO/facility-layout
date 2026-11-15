@@ -39,7 +39,11 @@ export without a preparation pass.
 Every row is processed independently and validated in full — the same
 [chain-of-custody check and PlacementRule evaluation](../ddd/invariants.md)
 that `POST /locations` performs. A failing row does not abort the import and
-does not roll back the rows before it.
+does not roll back the rows before it. "Atomic per row" means each row is
+reported on its own, not that a row is one transaction: parent creation, the
+slot and its geometry commit in separate units of work, so a row refused at the
+slot step keeps any site, zone or aisle it already created
+([invariants](../ddd/invariants.md#bulk-import-atomic-per-row-never-all-or-nothing)).
 
 > A 500-row export with 3 bad rows still creates the other 497 and tells you
 > exactly which 3 and why.

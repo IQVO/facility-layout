@@ -47,8 +47,8 @@ sequenceDiagram
         MW->>DB: ROLLBACK then SELECT stored outcome
         alt same request hash
             MW-->>C: replay stored status, headers and body
-        else different body
-            MW-->>C: 422 idempotency-key-reused
+        else different method, path or body
+            MW-->>C: 409 idempotency-key-reused
         end
     end
     MW->>H: request with transaction in context
