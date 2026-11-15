@@ -49,6 +49,7 @@ jobs:
       - run: python3 scripts/harness/test_hook.py
       - run: python3 scripts/harness/test_red_issue.py
       - run: python3 scripts/harness/test_repo_lint.py
+      - run: python3 scripts/harness/test_asyncapi_breaking.py
 
 
   # Complexity gate as its own named check: cyclomatic (gocyclo, cyclop),
@@ -215,6 +216,112 @@ jobs:
           DATABASE_URL: "postgres://facility:facility@localhost:5432/facility?sslmode=disable"
           KAFKA_BROKERS: "localhost:9092"
         run: ./scripts/contract-test.sh
+
+  # ============================================================
+  # CLASSIFICATION: CONTRACT TESTING (producer breaking-change gate)
+  # The producer side of the fleet contract-pinning wave: sibling repos
+  # (inventory-storage, wes-work-planning, fulfillment-execution, ...)
+  # pin apis/openapi.yaml and apis/asyncapi.yaml as fixtures, and each of
+  # their drift gates fails when THIS repo's specs change. This job is the
+  # matching producer gate: on a PR touching apis/**, it diffs head against
+  # the base branch and FAILS on a BREAKING change, naming the pinning
+  # consumers in the error, so a breaking edit is caught HERE instead of as
+  # red CI across the consumer repos. Additive change (new operation, new
+  # optional field, new message) stays green — the Published Language is
+  # allowed to grow, never to break. oasdiff covers the OpenAPI spec; the
+  # event catalog is AsyncAPI (oasdiff does not speak it), so
+  # scripts/harness/asyncapi_breaking.py diffs components.messages payloads.
+  # ============================================================
+  contract-breaking:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: Skip when the PR does not touch apis/
+        run: |
+          set -euo pipefail
+          if git diff --name-only "origin/${{ github.base_ref }}...HEAD" -- apis/ | grep -q .; then
+            echo "apis/ changed: running the producer breaking-change gate"
+          else
+            echo "apis/ unchanged in this PR: nothing to gate." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "SKIP_GATE=true" >> "$GITHUB_ENV"
+          fi
+      - name: Export the base-branch specs
+        if: env.SKIP_GATE != 'true'
+        run: |
+          set -euo pipefail
+          git show "origin/${{ github.base_ref }}:apis/openapi.yaml" > /tmp/base-openapi.yaml
+          git show "origin/${{ github.base_ref }}:apis/asyncapi.yaml" > /tmp/base-asyncapi.yaml
+      - name: Resolve the consumers that pin these specs
+        # Fleet contract registry, read-only (warehouse-docs origin/main); a
+        # pinned fallback keeps the failure message naming the consumers even
+        # when the registry is unreachable.
+        if: env.SKIP_GATE != 'true'
+        run: |
+          set -euo pipefail
+          curl -sfL --retry 2 \
+            https://raw.githubusercontent.com/IQVO/warehouse-docs/main/network/model/contract-edges.json \
+            -o /tmp/contract-edges.json || rm -f /tmp/contract-edges.json
+          python3 - <<'PY'
+          import json, os
+          fallback = {
+              "REST_PINNERS": "fulfillment-execution, inventory-storage, wes-work-planning",
+              "EVENT_PINNERS": "dock-scheduling, inbound-receiving, inventory-storage, "
+                               "network-inventory-planning, outbound-shipping, pick-face-replenishment, "
+                               "slotting-optimization, task-interleaving, warehouse-planning, yard-management",
+          }
+          names = {}
+          try:
+              with open("/tmp/contract-edges.json") as f:
+                  registry = json.load(f)
+              for section, var in (("rest", "REST_PINNERS"), ("events", "EVENT_PINNERS")):
+                  found = sorted({e["consumer"] for e in registry.get(section, [])
+                                  if e.get("producer") == "facility-layout"
+                                  and e.get("consumer") and e["consumer"] != "facility-layout"})
+                  if found:
+                      names[var] = ", ".join(found)
+          except Exception:
+              pass  # registry unreachable/unreadable: the pinned snapshot above names them
+          names = {**fallback, **names}
+          with open(os.environ.get("GITHUB_ENV", "/dev/null"), "a") as env:
+              for var, value in names.items():
+                  env.write(f"{var}={value}\n")
+          print("REST pinners:", names["REST_PINNERS"])
+          print("EVENT pinners:", names["EVENT_PINNERS"])
+          PY
+      - name: Install oasdiff (pinned)
+        if: env.SKIP_GATE != 'true'
+        env:
+          OASDIFF_VERSION: "1.38.0"
+          # sha256 of oasdiff_1.38.0_linux_amd64.tar.gz from the release's checksums.txt
+          OASDIFF_SHA256: "613037fd6a1d3362a1b742d6d86c338c0eb5ab3511f4942ce3948e78720ea2da"
+        run: |
+          set -euo pipefail
+          curl -sfL -o /tmp/oasdiff.tgz \
+            "https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}/oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz"
+          echo "${OASDIFF_SHA256}  /tmp/oasdiff.tgz" | sha256sum -c -
+          tar -xzf /tmp/oasdiff.tgz -C /tmp
+          sudo install /tmp/oasdiff /usr/local/bin/oasdiff
+          oasdiff breaking --help > /dev/null
+      - name: OpenAPI breaking-change gate (oasdiff over apis/openapi.yaml)
+        if: env.SKIP_GATE != 'true'
+        run: |
+          set -euo pipefail
+          if ! oasdiff breaking --fail-on ERR /tmp/base-openapi.yaml apis/openapi.yaml; then
+            echo "::error::BREAKING change in apis/openapi.yaml vs ${{ github.base_ref }}. These consumers pin this spec and their drift gates fail on any change to it: ${REST_PINNERS}. Make the change additive (new path/operation/optional field) or coordinate a versioned migration with them first."
+            exit 1
+          fi
+      - name: AsyncAPI breaking-change gate (payload-schema diff over apis/asyncapi.yaml)
+        if: env.SKIP_GATE != 'true'
+        run: |
+          set -euo pipefail
+          if ! python3 scripts/harness/asyncapi_breaking.py /tmp/base-asyncapi.yaml apis/asyncapi.yaml; then
+            echo "::error::BREAKING change in apis/asyncapi.yaml vs ${{ github.base_ref }}. These consumers pin this event catalog (topic warehouse.facility.events) as fixtures and their drift gates fail on any change to it: ${EVENT_PINNERS}. Make the change additive (new message/optional data field) or coordinate a versioned migration with them first."
+            exit 1
+          fi
 
   # The MCP eval gate as its own named check: the eval suites from
   # internal/adapters/inbound/mcp run inside the `test` job too; this job makes the gate
