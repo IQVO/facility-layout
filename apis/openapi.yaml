@@ -94,7 +94,7 @@ tags:
     description: Liveness probe.
 
 paths:
-  /healthz:
+  /healthz-canary:
     get:
       operationId: getHealthz
       summary: Liveness probe
