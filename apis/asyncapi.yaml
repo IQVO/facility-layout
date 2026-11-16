@@ -162,7 +162,7 @@ channels:
         watermark observed at start.
       message:
         oneOf:
-          - $ref: '#/components/messages/siteRegistered'
+          - $ref: '#/components/messages/siteRegisteredCanary'
           - $ref: '#/components/messages/siteCapabilityChanged'
           - $ref: '#/components/messages/siteRoleChanged'
           - $ref: '#/components/messages/zoneRegistered'
@@ -212,7 +212,7 @@ channels:
         (`warehouse.facility.analytics.dlq`).
       message:
         oneOf:
-          - $ref: '#/components/messages/siteRegistered'
+          - $ref: '#/components/messages/siteRegisteredCanary'
           - $ref: '#/components/messages/siteCapabilityChanged'
           - $ref: '#/components/messages/siteRoleChanged'
           - $ref: '#/components/messages/zoneRegistered'
@@ -314,7 +314,7 @@ components:
       enum: [UNSPECIFIED, ROBOTICS_SORTABLE_FC, NON_SORTABLE_FC, TRADITIONAL_SORTABLE_FC, SUB_SAME_DAY_FC, FRESH_GROCERY_FC, XL_FC, SOFT_LINES_SORTABLE_FC, MICRO_FC, SIMULATED_FC, INBOUND_CROSS_DOCK, NATIONAL_INBOUND_CROSS_DOCK, RETURNS_CENTER, SORTATION_CENTER, DELIVERY_STATION, AIR_HUB_GATEWAY]
 
   messages:
-    siteRegistered:
+    siteRegisteredCanary:
       x-no-consumer-reason: "Published Language fact; consumed on demand"
       name: SiteRegistered
       contentType: application/cloudevents+json
