@@ -1,6 +1,7 @@
 asyncapi: 2.6.0
 
 info:
+  x-canary: true
   title: Facility Layout Domain Events
   version: "1.0.0"
   description: >
