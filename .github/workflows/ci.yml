@@ -568,6 +568,8 @@ jobs:
   # them (contracts/pinned.json in the consumer repos). REST: oasdiff v1.38.0, the
   # sha256-pinned release tarball, `breaking --fail-on ERR` (without --fail-on
   # oasdiff prints breaking changes and still exits 0: the gate would be vacuous).
+  # One fleet rule for REST and events: an enum value ADDED to a response property
+  # is a warning, not a failure (--severity-levels, written by the job itself).
   # Events: scripts/harness/asyncapi_breaking.py (oasdiff cannot read AsyncAPI).
   # Skips itself when the PR touches no apis/openapi*.yaml or apis/asyncapi.yaml.
   # Kit: docs/spec-breaking-kit.md. The two ACTIONS_* placeholder tokens are substituted by
@@ -660,6 +662,11 @@ jobs:
           CONSUMERS: ${{ steps.consumers.outputs.rest }}
         run: |
           set -euo pipefail
+          # Fleet decision (docs/spec-breaking-kit.md, "REST: a response enum value added is a
+          # warning"): the same rule as the event gate. The override is written here, never read
+          # from the repo, so no file in a PR can weaken the gate; every other check keeps
+          # oasdiff's own level.
+          printf 'response-property-enum-value-added\twarn\n' > "$RUNNER_TEMP/oasdiff-severity-levels.txt"
           status=0
           while IFS= read -r spec; do
             [ -n "$spec" ] || continue
@@ -674,9 +681,16 @@ jobs:
             fi
             git show "$BASE_SHA:$spec" > "$RUNNER_TEMP/base-openapi.yaml"
             # --fail-on ERR is load-bearing: oasdiff v1.38.0 exits 0 on breaking changes without it.
-            if ! oasdiff breaking --fail-on ERR "$RUNNER_TEMP/base-openapi.yaml" "$spec"; then
+            rc=0
+            oasdiff breaking --fail-on ERR --severity-levels "$RUNNER_TEMP/oasdiff-severity-levels.txt" "$RUNNER_TEMP/base-openapi.yaml" "$spec" > "$RUNNER_TEMP/oasdiff-breaking.txt" 2>&1 || rc=$?
+            cat "$RUNNER_TEMP/oasdiff-breaking.txt"
+            if [ "$rc" -ne 0 ]; then
               echo "::error::Breaking REST change in $spec vs $BASE_REF. Pinning consumers: ${CONSUMERS:-see contracts/pinned.json@develop in the consumer repos}. Make the change additive, or refresh the consumers' pins first."
               status=1
+            fi
+            # Advisory only: an `if` condition never fails the step, whatever grep returns.
+            if grep -qF '[response-property-enum-value-added]' "$RUNNER_TEMP/oasdiff-breaking.txt"; then
+              echo "::warning::$spec adds enum value(s) to a response property: a warning, not a failure (docs/spec-breaking-kit.md). REST clients must tolerate unknown enum values."
             fi
           done < "$RUNNER_TEMP/openapi-changed.txt"
           exit "$status"
