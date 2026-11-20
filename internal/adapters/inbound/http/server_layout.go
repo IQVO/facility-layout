@@ -24,7 +24,7 @@ func (s *Server) handleGetSiteLayout(w http.ResponseWriter, r *http.Request) {
 		format = vals[0]
 	}
 	if format != "json" && format != "svg" {
-		writeProblem(w, http.StatusBadRequest, problemInfo{"invalid-layout-format", "Layout format must be json or svg"}, "layout format must be \"json\" or \"svg\", got "+strconv.Quote(format), r.URL.Path)
+		writeProblem(w, http.StatusBadRequest, problemInvalidLayoutFormat, "layout format must be \"json\" or \"svg\", got "+strconv.Quote(format), r.URL.Path)
 		return
 	}
 

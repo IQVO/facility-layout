@@ -15,20 +15,20 @@ import (
 func pageParams(w http.ResponseWriter, r *http.Request, filters ...string) (int, *page.Position, bool) {
 	if name := page.Unknown(r, filters...); name != "" {
 		writeProblem(w, http.StatusBadRequest,
-			problemInfo{"unknown-query-parameter", "Unknown query parameter"},
+			problemUnknownQueryParameter,
 			fmt.Sprintf("query parameter %q is not accepted by this collection", name), r.URL.Path)
 		return 0, nil, false
 	}
 	limit, err := page.Limit(r)
 	if err != nil {
 		writeProblem(w, http.StatusBadRequest,
-			problemInfo{"invalid-limit", "Invalid limit"}, err.Error(), r.URL.Path)
+			problemInvalidLimit, err.Error(), r.URL.Path)
 		return 0, nil, false
 	}
 	after, err := page.After(r)
 	if err != nil {
 		writeProblem(w, http.StatusBadRequest,
-			problemInfo{"invalid-cursor", "Invalid cursor"}, err.Error(), r.URL.Path)
+			problemInvalidCursor, err.Error(), r.URL.Path)
 		return 0, nil, false
 	}
 	return limit, after, true
