@@ -114,7 +114,7 @@ answer it today; its class is still declared. A slug that several sentinels shar
 | `aisle-not-active` | 409 | FINAL | Same for aisles (`register_location_slot.go:303`) (J2). |
 | `aisle-not-found` | 404 | RETRYABLE | The aisle of the location code is not registered yet (`register_location_slot.go:300`); caller-chosen codes (J3). Before any write. |
 | `already-decommissioned` | 409 | FINAL | `slot.Decommission` (`slot/location_slot.go:189`): decommission is one-way (ADR 0005); the sibling aggregates' variants are not reachable from a keyed route (J2). |
-| `concurrent-modification` | 409 | RETRYABLE | A version-guarded `Save` found the row at another version (`postgres/site_repo.go:56-59`, `slot_repo.go:88`): the answer depends on another writer's commit, and a creation race lands here too (the loser's `INSERT ... ON CONFLICT DO UPDATE ... WHERE version` finds the winner's row). The whole request transaction rolls back, key row included. Proven by `TestReplayClass_ConcurrentModificationLoserIsReleasedAndItsRetryExecutes` (a staged genuine race). |
+| `concurrent-modification` | 409 | RETRYABLE | A version-guarded `Save` of an existing row found it at another version (`postgres/site_repo.go:56-59`, `slot_repo.go:85-90`): the answer depends on another writer's commit (two concurrent `POST /locations/{code}/decommissionings` of one slot). The whole request transaction rolls back, key row included. Proven by `TestReplayClass_ConcurrentModificationLoserIsReleasedAndItsRetryExecutes` (a staged genuine race: the loser's key row is absent, its retry executes and is then stored and replayed). |
 | `cross-aisle-aisle-mismatch` | 422 | RETRYABLE | `register_cross_aisle.go:49`: the two aisles must already exist in the zone; they can be registered after the first attempt (J6). Before any write. |
 | `cross-aisle-same-aisle` | 422 | FINAL | Validation of the request's own fields or path: a function of the request alone. |
 | `dependency-unavailable` | 503 | RETRYABLE | 503 of `/readyz`, never behind the middleware; a 5xx is never stored. |
@@ -252,6 +252,12 @@ answer it today; its class is still declared. A slug that several sentinels shar
   (`sweeper.go`); `replayCachedResponse` selects the row with no `created_at` test.
 - Split `cross-aisle-aisle-mismatch` into a request-only and a state-dependent type.
 - The `idempotency_keys` table still has no `route` column (the fingerprint holds method and path).
+- **A creation race is not guarded.** Found while staging the lost race: a new aggregate carries version 1
+  (`site.go:100`, `location_slot.go:131`), the same number the `INSERT` writes, so when two requests register the
+  same new code at once (both pass the existence check) the second `INSERT ... ON CONFLICT DO UPDATE ... WHERE
+  version = 1` succeeds and overwrites the first row: both answer 201 instead of one answering
+  `duplicate-site-code`. Not fixed here (it changes who wins a race, not what is replayed); a follow-up should
+  give a new aggregate version 0 or make the first `INSERT` conflict an error.
 
 ## Tests
 
