@@ -42,8 +42,10 @@ func (uc *DefinePlacementRule) Execute(ctx context.Context, id, locationType str
 		return placement.PlacementRule{}, err
 	}
 	err = atomically(ctx, uc.UnitOfWork, func(ctx context.Context) error {
-		if err := uc.Rules.Save(ctx, rule); err != nil {
-			return err
+		if err := uc.Rules.Create(ctx, rule); err != nil {
+			// A lost concurrent definition of the same id is the
+			// duplicate refusal, not an overwrite (ADR-0047).
+			return lostCreationRace(err, ErrDuplicatePlacementRule)
 		}
 		event := shared.NewPlacementRuleDefined(uc.Clock.Now(), rule.ID(), rule.LocationType(), string(rule.Effect()), rule.Predicate().String())
 		return uc.Events.Publish(ctx, event)

@@ -70,6 +70,15 @@ func (r *faultyZoneRepo) Save(ctx context.Context, z *zone.Zone) error {
 	return r.ZoneRepo.Save(ctx, z)
 }
 
+// Create fails with the same injected fault: registration writes through
+// Create since ADR-0047, so the fault seam follows it.
+func (r *faultyZoneRepo) Create(ctx context.Context, z *zone.Zone) error {
+	if r.failSave {
+		return errBoom
+	}
+	return r.ZoneRepo.Create(ctx, z)
+}
+
 func (r *faultyZoneRepo) ListBySite(ctx context.Context, siteCode string) ([]*zone.Zone, error) {
 	if r.failList {
 		return nil, errBoom
@@ -94,6 +103,15 @@ func (r *faultyAisleRepo) Save(ctx context.Context, a *aisle.Aisle) error {
 		return errBoom
 	}
 	return r.AisleRepo.Save(ctx, a)
+}
+
+// Create fails with the same injected fault: registration writes through
+// Create since ADR-0047, so the fault seam follows it.
+func (r *faultyAisleRepo) Create(ctx context.Context, a *aisle.Aisle) error {
+	if r.failSave {
+		return errBoom
+	}
+	return r.AisleRepo.Create(ctx, a)
 }
 
 func (r *faultyAisleRepo) ListByZone(ctx context.Context, zoneID string) ([]*aisle.Aisle, error) {
@@ -164,6 +182,15 @@ func (r *faultyLocationTypeRepo) Save(ctx context.Context, lt placement.Location
 	return r.LocationTypeRepo.Save(ctx, lt)
 }
 
+// Create fails with the same injected fault: registration writes through
+// Create since ADR-0047, so the fault seam follows it.
+func (r *faultyLocationTypeRepo) Create(ctx context.Context, lt placement.LocationType) error {
+	if r.failSave {
+		return errBoom
+	}
+	return r.LocationTypeRepo.Create(ctx, lt)
+}
+
 func (r *faultyLocationTypeRepo) List(ctx context.Context) ([]placement.LocationType, error) {
 	if r.failList {
 		return nil, errBoom
@@ -188,6 +215,15 @@ func (r *faultyRuleRepo) Save(ctx context.Context, rule placement.PlacementRule)
 		return errBoom
 	}
 	return r.PlacementRuleRepo.Save(ctx, rule)
+}
+
+// Create fails with the same injected fault: rule definition writes
+// through Create since ADR-0047, so the fault seam follows it.
+func (r *faultyRuleRepo) Create(ctx context.Context, rule placement.PlacementRule) error {
+	if r.failSave {
+		return errBoom
+	}
+	return r.PlacementRuleRepo.Create(ctx, rule)
 }
 
 func (r *faultyRuleRepo) List(ctx context.Context) ([]placement.PlacementRule, error) {
@@ -222,6 +258,15 @@ func (r *faultyFixedStructureRepo) Save(ctx context.Context, f *structure.FixedS
 	return r.FixedStructureRepo.Save(ctx, f)
 }
 
+// Create fails with the same injected fault: registration writes through
+// Create since ADR-0047, so the fault seam follows it.
+func (r *faultyFixedStructureRepo) Create(ctx context.Context, f *structure.FixedStructure) error {
+	if r.failSave {
+		return errBoom
+	}
+	return r.FixedStructureRepo.Create(ctx, f)
+}
+
 func (r *faultyFixedStructureRepo) ListBySite(ctx context.Context, siteCode string) ([]*structure.FixedStructure, error) {
 	if r.failList {
 		return nil, errBoom
@@ -239,6 +284,15 @@ func (r *faultyCrossAisleRepo) FindByAisles(ctx context.Context, zoneID, fromAis
 		return nil, errBoom
 	}
 	return r.CrossAisleRepo.FindByAisles(ctx, zoneID, fromAisle, toAisle, atBay)
+}
+
+// Create fails with the same injected fault: registration writes through
+// Create since ADR-0047, so the fault seam follows it.
+func (r *faultyCrossAisleRepo) Create(ctx context.Context, c *aisle.CrossAisle) error {
+	if r.failSave {
+		return errBoom
+	}
+	return r.CrossAisleRepo.Create(ctx, c)
 }
 
 func (r *faultyCrossAisleRepo) Save(ctx context.Context, c *aisle.CrossAisle) error {

@@ -2,6 +2,7 @@ package usecases
 
 import (
 	"context"
+	"errors"
 
 	"github.com/claudioed/facility-layout/internal/application/ports"
 	"github.com/claudioed/facility-layout/internal/domain/aisle"
@@ -217,10 +218,34 @@ func (uc *ImportFacilityLayout) ensureSite(ctx context.Context, row ImportRow) e
 	}
 	return atomically(ctx, uc.UnitOfWork, func(ctx context.Context) error {
 		if err := uc.Sites.Save(ctx, s); err != nil {
-			return err
+			// A parent another request committed between the read above
+			// and this insert is adopted, not fought for (ADR-0047).
+			return uc.adoptRacedSite(ctx, row.SiteCode, err)
 		}
 		return uc.Events.Publish(ctx, shared.NewSiteRegistered(uc.Clock.Now(), s.Code(), s.Name(), string(s.Role())))
 	})
+}
+
+// adoptRacedSite settles a parent-site write that lost its creation race:
+// the sentinel means another request committed this very site, so the
+// import adopts it when Active — its goal was only that the parent EXISTS
+// (ADR-0047). Any other error, and a raced row that vanished again, passes
+// through.
+func (uc *ImportFacilityLayout) adoptRacedSite(ctx context.Context, code string, cause error) error {
+	if !errors.Is(cause, ports.ErrNaturalKeyTaken) {
+		return cause
+	}
+	raced, err := uc.Sites.FindByCode(ctx, code)
+	if err != nil {
+		return err
+	}
+	if raced == nil {
+		return cause
+	}
+	if !raced.IsActive() {
+		return ErrSiteNotActive
+	}
+	return nil
 }
 
 func (uc *ImportFacilityLayout) ensureZone(ctx context.Context, row ImportRow, zoneID string) error {
@@ -240,12 +265,33 @@ func (uc *ImportFacilityLayout) ensureZone(ctx context.Context, row ImportRow, z
 		return err
 	}
 	return atomically(ctx, uc.UnitOfWork, func(ctx context.Context) error {
-		if err := uc.Zones.Save(ctx, z); err != nil {
-			return err
+		if err := uc.Zones.Create(ctx, z); err != nil {
+			// A parent another request committed between the read above
+			// and this insert is adopted, not fought for (ADR-0047).
+			return uc.adoptRacedZone(ctx, zoneID, err)
 		}
 		event := shared.NewZoneRegistered(uc.Clock.Now(), z.ID(), z.SiteCode(), z.AreaCode(), z.ZoneCode(), z.TemperatureClass(), z.Hazmat())
 		return uc.Events.Publish(ctx, event)
 	})
+}
+
+// adoptRacedZone settles a parent-zone write that lost its creation race
+// the same way adoptRacedSite does (ADR-0047).
+func (uc *ImportFacilityLayout) adoptRacedZone(ctx context.Context, zoneID string, cause error) error {
+	if !errors.Is(cause, ports.ErrNaturalKeyTaken) {
+		return cause
+	}
+	raced, err := uc.Zones.FindByID(ctx, zoneID)
+	if err != nil {
+		return err
+	}
+	if raced == nil {
+		return cause
+	}
+	if !raced.IsActive() {
+		return ErrZoneNotActive
+	}
+	return nil
 }
 
 func (uc *ImportFacilityLayout) ensureAisle(ctx context.Context, row ImportRow, zoneID, aisleID string) error {
@@ -269,10 +315,31 @@ func (uc *ImportFacilityLayout) ensureAisle(ctx context.Context, row ImportRow, 
 		return err
 	}
 	return atomically(ctx, uc.UnitOfWork, func(ctx context.Context) error {
-		if err := uc.Aisles.Save(ctx, a); err != nil {
-			return err
+		if err := uc.Aisles.Create(ctx, a); err != nil {
+			// A parent another request committed between the read above
+			// and this insert is adopted, not fought for (ADR-0047).
+			return uc.adoptRacedAisle(ctx, aisleID, err)
 		}
 		event := shared.NewAisleRegistered(uc.Clock.Now(), a.ID(), a.ZoneID(), a.AisleCode(), a.SequenceHint(), a.Direction())
 		return uc.Events.Publish(ctx, event)
 	})
+}
+
+// adoptRacedAisle settles a parent-aisle write that lost its creation race
+// the same way adoptRacedSite does (ADR-0047).
+func (uc *ImportFacilityLayout) adoptRacedAisle(ctx context.Context, aisleID string, cause error) error {
+	if !errors.Is(cause, ports.ErrNaturalKeyTaken) {
+		return cause
+	}
+	raced, err := uc.Aisles.FindByID(ctx, aisleID)
+	if err != nil {
+		return err
+	}
+	if raced == nil {
+		return cause
+	}
+	if !raced.IsActive() {
+		return ErrAisleNotActive
+	}
+	return nil
 }
