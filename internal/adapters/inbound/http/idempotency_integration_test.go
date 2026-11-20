@@ -41,6 +41,7 @@ import (
 	inboundhttp "github.com/claudioed/facility-layout/internal/adapters/inbound/http"
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/events"
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/postgres"
+	"github.com/claudioed/facility-layout/internal/application/ports"
 	"github.com/claudioed/facility-layout/internal/application/usecases"
 )
 
@@ -88,6 +89,13 @@ func (c fixedIdempotencyClock) Now() time.Time { return time.Time(c) }
 // postgres.UnitOfWork.Execute).
 func newIdempotencyRouter(t *testing.T, pool *pgxpool.Pool) http.Handler {
 	t.Helper()
+	return newIdempotencyRouterPublishing(t, pool, events.NewLogPublisher(slog.New(slog.NewTextHandler(io.Discard, nil))))
+}
+
+// newIdempotencyRouterPublishing is newIdempotencyRouter with the event
+// publisher the caller chooses (a gated one, to stage a lost race).
+func newIdempotencyRouterPublishing(t *testing.T, pool *pgxpool.Pool, publisher ports.EventPublisher) http.Handler {
+	t.Helper()
 	sites := postgres.NewSiteRepo(pool)
 	zones := postgres.NewZoneRepo(pool)
 	aisles := postgres.NewAisleRepo(pool)
@@ -97,12 +105,12 @@ func newIdempotencyRouter(t *testing.T, pool *pgxpool.Pool) http.Handler {
 	structures := postgres.NewFixedStructureRepo(pool)
 	crossAisles := postgres.NewCrossAisleRepo(pool)
 
-	// The log publisher (never Kafka) keeps this suite hermetic; the
-	// point under test is the Postgres transaction boundary, not event
-	// delivery. It is still wrapped in the SAME UnitOfWork scope as each
-	// aggregate Save via every use case's own atomically() call, so the
-	// commit-together claim is exercised exactly as in production.
-	publisher := events.NewLogPublisher(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	// The publisher is the log one by default (never Kafka): it keeps this
+	// suite hermetic; the point under test is the Postgres transaction
+	// boundary, not event delivery. It is still wrapped in the SAME
+	// UnitOfWork scope as each aggregate Save via every use case's own
+	// atomically() call, so the commit-together claim is exercised exactly
+	// as in production.
 	uow := postgres.NewUnitOfWork(pool)
 	clock := fixedIdempotencyClock(time.Date(2026, 9, 27, 9, 0, 0, 0, time.UTC))
 
