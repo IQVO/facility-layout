@@ -504,29 +504,44 @@ func TestIdempotency_LocationSlots_Concurrent_SameKeySameBody_ExactlyOneSlotCrea
 	}
 }
 
-// (f) a PlacementRule-rejected slot (a genuine domain validation error) is
-// cached and replayed verbatim.
-func TestIdempotency_LocationSlots_BusinessErrorResponse_IsCachedAndReplayed(t *testing.T) {
+// (f) a FINAL refusal (a malformed location code: a function of the request
+// alone) is cached and replayed verbatim; a RETRYABLE one (the location type
+// is not registered yet) is NOT: its key row is released and the retry runs
+// again (ADR 0046).
+func TestIdempotency_LocationSlots_BusinessErrorResponse_FinalIsReplayedRetryableIsReleased(t *testing.T) {
 	pool := idempotencyDB(t)
 	router := newIdempotencyRouter(t, pool)
 	seedLocationChain(t, router)
 
-	// An unknown location type is rejected by RegisterLocationSlot AFTER
-	// the idempotency row would already have been inserted.
-	invalidBody := `{"locationCode":"WH1-STOR-AMB-A07-03-02-B","locationType":"Hovercraft"}`
-
-	first := idempotentPost(t, router, "/locations", "slots-business-error-1", invalidBody)
-	if first.Code != http.StatusNotFound {
-		t.Fatalf("first call status = %d, want 404 (body: %s)", first.Code, first.Body.String())
+	finalBody := `{"locationCode":"not-a-location-code","locationType":"PalletRack"}`
+	first := idempotentPost(t, router, "/locations", "slots-final-error-1", finalBody)
+	if first.Code != http.StatusBadRequest {
+		t.Fatalf("first call status = %d, want 400 (body: %s)", first.Code, first.Body.String())
 	}
-
-	second := idempotentPost(t, router, "/locations", "slots-business-error-1", invalidBody)
-	if second.Code != first.Code || second.Body.String() != first.Body.String() {
+	second := idempotentPost(t, router, "/locations", "slots-final-error-1", finalBody)
+	if second.Code != first.Code || second.Body.String() != first.Body.String() ||
+		second.Header().Get(inboundhttp.IdempotencyReplayedHeader) != "true" {
 		t.Fatalf("replay differs from the first (cached) error response: first=%d %s second=%d %s",
 			first.Code, first.Body.String(), second.Code, second.Body.String())
 	}
+
+	// An unknown location type is rejected by RegisterLocationSlot after the
+	// key row was inserted; the type may be registered a moment later, so the
+	// refusal is RETRYABLE and its key is released.
+	unknownType := `{"locationCode":"WH1-STOR-AMB-A07-03-02-B","locationType":"Hovercraft"}`
+	third := idempotentPost(t, router, "/locations", "slots-retryable-error-1", unknownType)
+	if third.Code != http.StatusNotFound {
+		t.Fatalf("unknown type status = %d, want 404 (body: %s)", third.Code, third.Body.String())
+	}
+	if n := keyRows(t, pool, "slots-retryable-error-1"); n != 0 {
+		t.Fatalf("key rows after a RETRYABLE refusal = %d, want 0", n)
+	}
+	fourth := idempotentPost(t, router, "/locations", "slots-retryable-error-1", unknownType)
+	if fourth.Code != http.StatusNotFound || fourth.Header().Get(inboundhttp.IdempotencyReplayedHeader) == "true" {
+		t.Fatalf("the retry = %d replayed=%q, want an executed 404, not a replay", fourth.Code, fourth.Header().Get(inboundhttp.IdempotencyReplayedHeader))
+	}
 	if got := countRows(t, pool, "location_slots"); got != 0 {
-		t.Fatalf("location_slots rows = %d, want 0 (the invalid slot was never persisted, either time)", got)
+		t.Fatalf("location_slots rows = %d, want 0 (no refused slot was persisted)", got)
 	}
 }
 
