@@ -91,6 +91,23 @@ func TestNewLocationSlot(t *testing.T) {
 	t.Run("a location type with no default capacity and no override is rejected", testSlotRejectsBareStorageType)
 	t.Run("a Dock-role type with no capacity is accepted", testSlotAcceptsDockRole)
 	t.Run("a WorkCenter-role type with activities is accepted", testSlotAcceptsWorkCenterRole)
+	t.Run("a fresh slot is not yet persisted: version 0", testFreshSlotCarriesVersionZero)
+}
+
+// ADR-0047: a fresh aggregate carries version 0 — never persisted. The
+// first stored row is written at version 1 by the repository, and the
+// version guard turns a creation that finds the code taken into a refusal
+// instead of a silent overwrite.
+func testFreshSlotCarriesVersionZero(t *testing.T) {
+	t.Helper()
+	palletRack := mustLocationType(t, placement.PalletRack, 1200, 2.4)
+	s, err := slot.NewLocationSlot(mustCode(t, "WH1-STOR-AMB-A07-03-02-B"), palletRack, shared.Capacity{}, slot.FunctionalAttributes{}, ambientAttrs, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if s.Version() != 0 {
+		t.Fatalf("a fresh slot is not yet persisted: version = %d, want 0 (ADR-0047; the first stored row is 1)", s.Version())
+	}
 }
 
 func testSlotUsesTypeDefaultCapacity(t *testing.T) {

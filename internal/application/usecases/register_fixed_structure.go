@@ -46,8 +46,10 @@ func (uc *RegisterFixedStructure) Execute(ctx context.Context, id, siteCode stri
 		return nil, err
 	}
 	err = atomically(ctx, uc.UnitOfWork, func(ctx context.Context) error {
-		if err := uc.Structures.Save(ctx, f); err != nil {
-			return err
+		if err := uc.Structures.Create(ctx, f); err != nil {
+			// A lost concurrent creation of the same id is the
+			// duplicate refusal, not an overwrite (ADR-0047).
+			return lostCreationRace(err, ErrDuplicateFixedStructure)
 		}
 		event := shared.NewFixedStructureRegistered(uc.Clock.Now(), f.ID(), f.SiteCode(), string(f.Kind()), f.Footprint(), f.Label())
 		return uc.Events.Publish(ctx, event)

@@ -214,7 +214,9 @@ func (uc *RegisterLocationSlot) register(ctx context.Context, code shared.Locati
 			return err
 		}
 		if err := uc.Slots.Save(ctx, s); err != nil {
-			return err
+			// A lost concurrent creation of the same code is the
+			// duplicate refusal, not an overwrite (ADR-0047).
+			return lostCreationRace(err, ErrDuplicateLocationCode)
 		}
 		f := s.Functional()
 		event := shared.NewLocationSlotRegistered(

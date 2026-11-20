@@ -80,8 +80,10 @@ func (uc *RegisterZone) ExecuteWithGLN(ctx context.Context, siteCode, areaCode, 
 		if err := claimGLN(ctx, uc.GLNs, z.GLN(), zoneGLNOwner(z.ID())); err != nil {
 			return err
 		}
-		if err := uc.Zones.Save(ctx, z); err != nil {
-			return err
+		if err := uc.Zones.Create(ctx, z); err != nil {
+			// A lost concurrent creation of the same zone is the
+			// duplicate refusal, not an overwrite (ADR-0047).
+			return lostCreationRace(err, ErrDuplicateZone)
 		}
 		event := shared.NewZoneRegistered(uc.Clock.Now(), z.ID(), z.SiteCode(), z.AreaCode(), z.ZoneCode(), z.TemperatureClass(), z.Hazmat()).WithGLN(z.GLN())
 		return uc.Events.Publish(ctx, event)

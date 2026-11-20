@@ -25,8 +25,8 @@ func TestNewSiteStartsWithNoTransferCapabilityAndNoRevision(t *testing.T) {
 	if s.CapabilityRevision() != 0 {
 		t.Fatalf("a new site has never published a capability, revision = %d, want 0", s.CapabilityRevision())
 	}
-	if s.Version() != 1 {
-		t.Fatalf("a fresh aggregate starts at version 1, got %d", s.Version())
+	if s.Version() != 0 {
+		t.Fatalf("a fresh aggregate is not yet persisted: version = %d, want 0 (ADR-0047; the first stored row is 1)", s.Version())
 	}
 }
 

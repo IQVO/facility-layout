@@ -46,8 +46,10 @@ func (uc *RegisterAisle) Execute(ctx context.Context, zoneID, aisleCode string, 
 	}
 
 	err = atomically(ctx, uc.UnitOfWork, func(ctx context.Context) error {
-		if err := uc.Aisles.Save(ctx, a); err != nil {
-			return err
+		if err := uc.Aisles.Create(ctx, a); err != nil {
+			// A lost concurrent creation of the same aisle is the
+			// duplicate refusal, not an overwrite (ADR-0047).
+			return lostCreationRace(err, ErrDuplicateAisle)
 		}
 		event := shared.NewAisleRegistered(uc.Clock.Now(), a.ID(), a.ZoneID(), a.AisleCode(), a.SequenceHint(), a.Direction())
 		return uc.Events.Publish(ctx, event)

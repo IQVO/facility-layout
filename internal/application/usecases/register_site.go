@@ -62,7 +62,9 @@ func (uc *RegisterSite) ExecuteWithGLN(ctx context.Context, code, name string, r
 			return err
 		}
 		if err := uc.Sites.Save(ctx, s); err != nil {
-			return err
+			// A lost concurrent creation of the same code is the
+			// duplicate refusal, not an overwrite (ADR-0047).
+			return lostCreationRace(err, ErrDuplicateSite)
 		}
 		return uc.Events.Publish(ctx, shared.NewSiteRegistered(uc.Clock.Now(), s.Code(), s.Name(), string(s.Role())).WithGLN(s.GLN()))
 	})

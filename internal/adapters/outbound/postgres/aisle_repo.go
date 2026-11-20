@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/claudioed/facility-layout/internal/application/ports"
 	"github.com/claudioed/facility-layout/internal/domain/aisle"
 	"github.com/claudioed/facility-layout/internal/domain/shared"
 )
@@ -24,6 +25,36 @@ func NewAisleRepo(pool *pgxpool.Pool) *AisleRepo {
 const aisleColumns = `zone_id, aisle_code, sequence_hint, direction, status,
 	centreline_start_x_m, centreline_start_y_m, centreline_start_z_m,
 	centreline_end_x_m, centreline_end_y_m, centreline_end_z_m`
+
+// Create inserts a NEW aisle and refuses to create over an existing one
+// (ADR-0047): ON CONFLICT DO NOTHING affects 0 rows exactly when the id —
+// or the UNIQUE (zone_id, aisle_code) pair, which derives the same id — is
+// already held, answering ports.ErrNaturalKeyTaken so the registration use
+// case can refuse with duplicate-aisle. The INSERT arm waits on a
+// concurrent uncommitted registration of the same aisle, so one of the two
+// concurrent creations always loses here. Save remains the update path
+// (SetAisleGeometry).
+func (r *AisleRepo) Create(ctx context.Context, a *aisle.Aisle) error {
+	centreline := a.Centreline()
+	tag, err := querierFrom(ctx, r.pool).Exec(ctx, `
+		INSERT INTO aisles (
+			id, zone_id, aisle_code, sequence_hint, direction, status,
+			centreline_start_x_m, centreline_start_y_m, centreline_start_z_m,
+			centreline_end_x_m, centreline_end_y_m, centreline_end_z_m
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		ON CONFLICT (id) DO NOTHING
+	`, a.ID(), a.ZoneID(), a.AisleCode(), a.SequenceHint(), string(a.Direction()), string(a.Status()),
+		nullableSegmentStartX(centreline), nullableSegmentStartY(centreline), nullableSegmentStartZ(centreline),
+		nullableSegmentEndX(centreline), nullableSegmentEndY(centreline), nullableSegmentEndZ(centreline))
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ports.ErrNaturalKeyTaken
+	}
+	return nil
+}
 
 // Save upserts the aisle.
 func (r *AisleRepo) Save(ctx context.Context, a *aisle.Aisle) error {

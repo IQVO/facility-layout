@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/claudioed/facility-layout/internal/application/ports"
 	"github.com/claudioed/facility-layout/internal/domain/placement"
 	"github.com/claudioed/facility-layout/internal/domain/shared"
 )
@@ -19,6 +20,27 @@ type LocationTypeRepo struct {
 // NewLocationTypeRepo builds a LocationTypeRepo over pool.
 func NewLocationTypeRepo(pool *pgxpool.Pool) *LocationTypeRepo {
 	return &LocationTypeRepo{pool: pool}
+}
+
+// Create inserts a NEW location type and refuses to create over an
+// existing one (ADR-0047): ON CONFLICT DO NOTHING affects 0 rows exactly
+// when the name is already held, answering ports.ErrNaturalKeyTaken so the
+// registration use case can refuse with duplicate-location-type. The
+// INSERT arm waits on a concurrent uncommitted registration of the same
+// name, so one of the two concurrent creations always loses here.
+func (r *LocationTypeRepo) Create(ctx context.Context, t placement.LocationType) error {
+	tag, err := querierFrom(ctx, r.pool).Exec(ctx, `
+		INSERT INTO location_types (name, role, default_max_weight_kg, default_max_volume_m3)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (name) DO NOTHING
+	`, t.Name(), string(t.Role()), nullableFloat(t.DefaultCapacity()), nullableVolume(t.DefaultCapacity()))
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ports.ErrNaturalKeyTaken
+	}
+	return nil
 }
 
 // Save upserts the location type.
@@ -97,6 +119,32 @@ type PlacementRuleRepo struct {
 // NewPlacementRuleRepo builds a PlacementRuleRepo over pool.
 func NewPlacementRuleRepo(pool *pgxpool.Pool) *PlacementRuleRepo {
 	return &PlacementRuleRepo{pool: pool}
+}
+
+// Create inserts a NEW placement rule and refuses to create over an
+// existing one (ADR-0047): ON CONFLICT DO NOTHING affects 0 rows exactly
+// when the caller-chosen id is already held, answering
+// ports.ErrNaturalKeyTaken so the definition use case can refuse with
+// duplicate-placement-rule. The INSERT arm waits on a concurrent
+// uncommitted definition of the same id, so one of the two concurrent
+// creations always loses here.
+func (r *PlacementRuleRepo) Create(ctx context.Context, rule placement.PlacementRule) error {
+	predicate := rule.Predicate()
+	tag, err := querierFrom(ctx, r.pool).Exec(ctx, `
+		INSERT INTO placement_rules (id, location_type, effect, zone_code, temperature_class, hazmat)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (id) DO NOTHING
+	`, rule.ID(), rule.LocationType(), string(rule.Effect()),
+		nullableString(predicate.ZoneCode()),
+		nullableString(string(predicate.TemperatureClass())),
+		predicate.Hazmat())
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ports.ErrNaturalKeyTaken
+	}
+	return nil
 }
 
 // Save upserts the placement rule. An unconstrained predicate dimension is

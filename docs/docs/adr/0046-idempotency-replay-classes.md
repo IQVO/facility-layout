@@ -258,6 +258,9 @@ answer it today; its class is still declared. A slug that several sentinels shar
   version = 1` succeeds and overwrites the first row: both answer 201 instead of one answering
   `duplicate-site-code`. Not fixed here (it changes who wins a race, not what is replayed); a follow-up should
   give a new aggregate version 0 or make the first `INSERT` conflict an error.
+  **Fixed by [ADR 0047](./0047-concurrent-creation-race.md) (2026-11-20): version-0 new aggregates for the
+  versioned repos, a refusing `Create` for the non-versioned ones, and the loser answered with this table's
+  FINAL `duplicate-*` types.**
 
 ## Tests
 

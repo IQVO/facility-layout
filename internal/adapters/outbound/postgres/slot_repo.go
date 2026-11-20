@@ -37,6 +37,12 @@ const slotColumns = `code, site_segment, area_segment, zone_segment, aisle_segme
 // is returned when the row exists but its version no longer matches — the
 // caller must re-fetch and re-apply its change, not blindly re-Save the
 // same in-memory aggregate.
+//
+// A version-0 aggregate is a CREATION (ADR-0047): the INSERT arm writes
+// the first stored row at version 1, and the guarded ON CONFLICT arm can
+// never match a never-persisted aggregate against a stored row (>= 1), so
+// a creation that finds the code taken affects 0 rows and answers
+// ports.ErrNaturalKeyTaken instead of overwriting the winner's row.
 func (r *SlotRepo) Save(ctx context.Context, s *slot.LocationSlot) error {
 	code := s.Code()
 	functional := s.Functional()
@@ -82,6 +88,12 @@ func (r *SlotRepo) Save(ctx context.Context, s *slot.LocationSlot) error {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
+		if s.Version() == 0 {
+			// A never-persisted aggregate found its code taken (ADR-0047):
+			// the guarded arm above cannot match a stored row, so 0 rows
+			// means another writer's creation won.
+			return ports.ErrNaturalKeyTaken
+		}
 		// The row exists (this is the ON CONFLICT arm; a plain INSERT into
 		// an empty slot always affects exactly 1 row) but its version no
 		// longer matches what s was loaded at.

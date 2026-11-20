@@ -33,6 +33,12 @@ const siteColumns = `code, name, status, transfer_origin_enabled, transfer_desti
 // capability_revision: the loser gets ports.ErrConcurrentModification and
 // its SiteCapabilityChanged outbox row rolls back with it. The same guard
 // serialises role changes (ADR-0037).
+//
+// A version-0 aggregate is a CREATION (ADR-0047): the INSERT arm writes
+// the first stored row at version 1, and because a stored row is always at
+// version >= 1 the guarded ON CONFLICT arm can never match a version-0
+// save — a creation that finds the code taken affects 0 rows and answers
+// ports.ErrNaturalKeyTaken instead of overwriting the winner's row.
 func (r *SiteRepo) Save(ctx context.Context, s *site.Site) error {
 	capability := s.TransferCapability()
 	tag, err := querierFrom(ctx, r.pool).Exec(ctx, `
@@ -54,6 +60,12 @@ func (r *SiteRepo) Save(ctx context.Context, s *site.Site) error {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
+		if s.Version() == 0 {
+			// A never-persisted aggregate found its code taken (ADR-0047):
+			// the guarded arm above cannot match a stored row, so 0 rows
+			// means another writer's creation won.
+			return ports.ErrNaturalKeyTaken
+		}
 		// The ON CONFLICT arm matched an existing row whose version no
 		// longer equals the one s was loaded at.
 		return ports.ErrConcurrentModification
