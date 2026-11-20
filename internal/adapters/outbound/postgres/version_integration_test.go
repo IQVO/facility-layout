@@ -220,3 +220,42 @@ func mustGeometry(t *testing.T) (shared.Point3D, shared.Dimensions) {
 	}
 	return position, dim
 }
+
+// TestSlotRepo_Save_FreshAggregateNeverOverwrites is ADR-0047's repository
+// contract: a NEW slot carries version 0, so its Save can never satisfy the
+// guarded ON CONFLICT arm against a stored row — the second creation of the
+// same code is refused with ports.ErrNaturalKeyTaken and the committed row
+// keeps the FIRST writer's payload, where the pre-ADR-0047 upsert silently
+// answered 201 twice and replaced the winner's data.
+func TestSlotRepo_Save_FreshAggregateNeverOverwrites(t *testing.T) {
+	pool := outboxDB(t)
+	ctx := context.Background()
+	repo := postgres.NewSlotRepo(pool)
+
+	winner := seedVersionedSlotRow(t, ctx, pool)
+
+	storageType, err := placement.NewLocationType("PalletRack", placement.Storage, mustCapacity(t, 900, 1.8))
+	if err != nil {
+		t.Fatalf("build location type: %v", err)
+	}
+	loser, err := slot.NewLocationSlot(winner.Code(), storageType, mustCapacity(t, 500, 1.0), slot.FunctionalAttributes{},
+		placement.ZoneAttributes{ZoneID: winner.Code().ZoneID(), TemperatureClass: shared.Ambient}, placement.RuleSet{})
+	if err != nil {
+		t.Fatalf("build fresh slot: %v", err)
+	}
+	if loser.Version() != 0 {
+		t.Fatalf("a fresh slot carries version 0 (ADR-0047), got %d", loser.Version())
+	}
+	if err := repo.Save(ctx, loser); !errors.Is(err, ports.ErrNaturalKeyTaken) {
+		t.Fatalf("fresh Save over a committed row = %v, want ports.ErrNaturalKeyTaken", err)
+	}
+
+	reloaded, err := repo.FindByCode(ctx, winner.Code())
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if reloaded.Capacity().MaxWeightKg() != winner.Capacity().MaxWeightKg() {
+		t.Fatalf("max weight = %v, want the winner's %v (the loser overwrote it)",
+			reloaded.Capacity().MaxWeightKg(), winner.Capacity().MaxWeightKg())
+	}
+}

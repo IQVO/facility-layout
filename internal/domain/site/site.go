@@ -73,7 +73,8 @@ type Site struct {
 	capabilityHeartbeatAt time.Time
 	// version is optimistic-concurrency metadata (ADR-0025, extended to
 	// Site by ADR-0035): the persisted row version this aggregate was
-	// loaded at. Never read by business logic.
+	// loaded at. 0 means never persisted (ADR-0047). Never read by
+	// business logic.
 	version int
 }
 
@@ -86,7 +87,12 @@ func NewSite(code, name string) (*Site, error) {
 // NewSiteWithRole validates and constructs an Active Site with the given
 // role (ADR-0037; UNSPECIFIED is accepted at registration), no transfer
 // capability and no published capability revision yet. The role never
-// implies a capability: that stays the explicit ADR-0035 command.
+// implies a capability: that stays the explicit ADR-0035 command. The
+// aggregate carries version 0 — never persisted (ADR-0047): the first
+// stored row is written at version 1 by the repository, and a Save of a
+// version-0 aggregate can never satisfy the guarded ON CONFLICT arm
+// against a stored row, so a lost creation is refused instead of
+// overwriting the winner.
 func NewSiteWithRole(code, name string, role Role) (*Site, error) {
 	if err := validateSiteCode(code); err != nil {
 		return nil, err
@@ -97,7 +103,7 @@ func NewSiteWithRole(code, name string, role Role) (*Site, error) {
 	if !role.known() {
 		return nil, fmt.Errorf("%w: %q", ErrInvalidSiteRole, role)
 	}
-	return &Site{code: code, name: name, role: role, status: shared.Active, version: 1}, nil
+	return &Site{code: code, name: name, role: role, status: shared.Active, version: 0}, nil
 }
 
 // RehydrateSite rebuilds a Site from persisted state without re-running the
