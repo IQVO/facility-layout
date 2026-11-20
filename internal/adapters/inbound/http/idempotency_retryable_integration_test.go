@@ -69,7 +69,7 @@ func keyRows(t *testing.T, pool *pgxpool.Pool, key string) int {
 	return n
 }
 
-func replayed(rec *httptest.ResponseRecorder) bool {
+func wasReplayed(rec *httptest.ResponseRecorder) bool {
 	return rec.Header().Get(inboundhttp.IdempotencyReplayedHeader) == "true"
 }
 
@@ -92,30 +92,36 @@ func waitForLockWaiter(t *testing.T, pool *pgxpool.Pool) {
 	t.Fatal("no request ever waited on the other's row: the race was not staged")
 }
 
-// A genuine lost race. Request A registers site WH1 and is parked after its
-// Save, before its commit; request B (another key, same code) passes the
-// existence check (A's row is not visible yet), blocks on A's row, and once A
-// commits loses the version guard: 409 concurrent-modification. That refusal
-// is RETRYABLE: B's key row is gone, and B's retry under the SAME key executes
-// (now it finds the site: duplicate-site-code), and only that answer is stored.
+// A genuine lost race. Request A decommissions slot S and is parked after its
+// Save, before its commit; request B (another key, same slot) loaded the slot
+// at the same version, blocks on A's row and, once A commits, loses the version
+// guard: 409 concurrent-modification. That refusal is RETRYABLE: B's key row is
+// gone, and B's retry under the SAME key executes (now the slot is already
+// decommissioned: a FINAL 409 already-decommissioned), and only that answer is
+// stored and replayed.
 func TestReplayClass_ConcurrentModificationLoserIsReleasedAndItsRetryExecutes(t *testing.T) {
 	pool := idempotencyDB(t)
 	gate := newGatedPublisher(events.NewLogPublisher(slog.New(slog.NewTextHandler(io.Discard, nil))))
 	router := newIdempotencyRouterPublishing(t, pool, gate)
+	seedLocationChain(t, router)
+	if rec := idempotentPost(t, router, "/locations", "race-slot", validSlotBody); rec.Code != http.StatusCreated {
+		t.Fatalf("seed slot = %d %s", rec.Code, rec.Body.String())
+	}
+	path := "/locations/WH1-STOR-AMB-A07-03-02-B/decommissionings"
 
 	gate.arm()
 	a := make(chan *httptest.ResponseRecorder, 1)
-	go func() { a <- idempotentPost(t, router, "/sites", "race-a", validSiteBody) }()
+	go func() { a <- idempotentPost(t, router, path, "race-a", `{}`) }()
 	<-gate.arrived
 
 	b := make(chan *httptest.ResponseRecorder, 1)
-	go func() { b <- idempotentPost(t, router, "/sites", "race-b", validSiteBody) }()
+	go func() { b <- idempotentPost(t, router, path, "race-b", `{}`) }()
 	waitForLockWaiter(t, pool)
 	close(gate.freed)
 
 	winner, loser := <-a, <-b
-	if winner.Code != http.StatusCreated {
-		t.Fatalf("winner = %d %s, want 201", winner.Code, winner.Body.String())
+	if winner.Code != http.StatusNoContent {
+		t.Fatalf("winner = %d %s, want 204", winner.Code, winner.Body.String())
 	}
 	if loser.Code != http.StatusConflict || problemSlug(t, loser.Body.Bytes()) != "concurrent-modification" {
 		t.Fatalf("loser = %d %s, want 409 concurrent-modification", loser.Code, loser.Body.String())
@@ -127,23 +133,20 @@ func TestReplayClass_ConcurrentModificationLoserIsReleasedAndItsRetryExecutes(t 
 		t.Fatalf("the winner's key rows = %d, want 1", n)
 	}
 
-	retry := idempotentPost(t, router, "/sites", "race-b", validSiteBody)
-	if replayed(retry) {
+	retry := idempotentPost(t, router, path, "race-b", `{}`)
+	if wasReplayed(retry) {
 		t.Fatalf("the retry was replayed from the store; it must execute again (%d %s)", retry.Code, retry.Body.String())
 	}
-	if retry.Code != http.StatusConflict || problemSlug(t, retry.Body.Bytes()) != "duplicate-site-code" {
-		t.Fatalf("retry = %d %s, want 409 duplicate-site-code (the executed answer)", retry.Code, retry.Body.String())
+	if retry.Code != http.StatusConflict || problemSlug(t, retry.Body.Bytes()) != "already-decommissioned" {
+		t.Fatalf("retry = %d %s, want 409 already-decommissioned (the executed answer)", retry.Code, retry.Body.String())
 	}
 	if n := keyRows(t, pool, "race-b"); n != 1 {
 		t.Fatalf("after the executed retry the key rows = %d, want 1 (a FINAL answer is stored)", n)
 	}
 
-	again := idempotentPost(t, router, "/sites", "race-b", validSiteBody)
-	if !replayed(again) || again.Code != retry.Code || again.Body.String() != retry.Body.String() {
-		t.Fatalf("third call = %d replayed=%v %s, want the stored duplicate-site-code replayed", again.Code, replayed(again), again.Body.String())
-	}
-	if got := countRows(t, pool, "sites"); got != 1 {
-		t.Fatalf("sites rows = %d, want 1", got)
+	again := idempotentPost(t, router, path, "race-b", `{}`)
+	if !wasReplayed(again) || again.Code != retry.Code || again.Body.String() != retry.Body.String() {
+		t.Fatalf("third call = %d replayed=%v %s, want the stored already-decommissioned replayed", again.Code, wasReplayed(again), again.Body.String())
 	}
 }
 
@@ -168,12 +171,12 @@ func TestReplayClass_SiteNotFoundIsReleasedSoTheRetryFindsItOnceRegistered(t *te
 	}
 
 	retry := idempotentPost(t, router, "/sites/WH1/zones", "late-zone", zone)
-	if retry.Code != http.StatusCreated || replayed(retry) {
-		t.Fatalf("retry = %d replayed=%v %s, want a fresh 201", retry.Code, replayed(retry), retry.Body.String())
+	if retry.Code != http.StatusCreated || wasReplayed(retry) {
+		t.Fatalf("retry = %d replayed=%v %s, want a fresh 201", retry.Code, wasReplayed(retry), retry.Body.String())
 	}
 	again := idempotentPost(t, router, "/sites/WH1/zones", "late-zone", zone)
-	if again.Code != http.StatusCreated || !replayed(again) || again.Body.String() != retry.Body.String() {
-		t.Fatalf("third call = %d replayed=%v, want the stored 201 replayed", again.Code, replayed(again))
+	if again.Code != http.StatusCreated || !wasReplayed(again) || again.Body.String() != retry.Body.String() {
+		t.Fatalf("third call = %d replayed=%v, want the stored 201 replayed", again.Code, wasReplayed(again))
 	}
 	if got := countRows(t, pool, "zones"); got != 1 {
 		t.Fatalf("zones rows = %d, want 1", got)
