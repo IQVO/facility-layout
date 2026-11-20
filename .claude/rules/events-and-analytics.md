@@ -43,8 +43,9 @@ Language.
   them — sites, zones, fixed structures, aisles, cross-aisles, location
   types, placement rules, location slots) requires a caller-supplied
   `Idempotency-Key` header, always (Postgres is mandatory), so a lost-response
-  retry replays the original outcome instead of double-creating. Bulk
-  import and decommission are deliberately excluded. The memory test doubles
+  retry replays the original outcome instead of double-creating (a 2xx and a
+  `FINAL` refusal; a `RETRYABLE` refusal releases the key, ADR-0046). Since ADR-0044
+  the import and the decommission are keyed too. The memory test doubles
   carry no idempotency pool, which is why they are never a runtime.
 
 ## Events: CloudEvents 1.0 is MANDATORY

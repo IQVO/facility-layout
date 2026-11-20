@@ -95,9 +95,22 @@ fingerprint is method + path + SHA-256 of the body. `PUT` takes no key.
 |---|---|
 | Header missing | `400` (`idempotency-key-required`) |
 | Header not 1-128 printable ASCII | `400` (`idempotency-key-invalid`) |
-| Fresh key | the real response, cached verbatim |
-| Same key, same request | the original cached response, replayed with `Idempotency-Replayed: true`, handler not re-run |
-| Same key, different method, path or body | `409` (`idempotency-key-reused`) |
+| Fresh key | the real response; a `2xx` and a `FINAL` refusal are stored verbatim |
+| Same key, same request, answer stored | the original response, replayed with `Idempotency-Replayed: true`, handler not re-run |
+| Same key, same request, first answer was `RETRYABLE` or a `5xx` | nothing was stored: the key is released and the request executes again |
+| Same key, different method, path or body, answer stored | `409` (`idempotency-key-reused`) |
+| Same key, different request, first answer was released | a new request: it executes |
+
+Every problem type has a replay class declared on its catalogue entry (ADR-0046):
+`FINAL` (a function of the request alone, or a refusal that can never become false:
+validation, a code that is already taken, a decommissioned structure) is stored and
+replayed; `RETRYABLE` (a `concurrent-modification`, a `*-not-found` parent that may be
+registered a moment later, `placement-rule-violated`, `cross-aisle-aisle-mismatch`, the
+role-dependent location checks, the travel-graph refusals) is not stored, so a client
+that did the right thing and retried under the same key gets the retry executed.
+`OUTCOME` (the command committed state and then refused) exists in the vocabulary; no
+problem type of this service declares it. Nothing retries by itself: a released
+refusal means only that the same key may be tried again by whoever sent it.
 
 ## RFC 7807 problem details
 

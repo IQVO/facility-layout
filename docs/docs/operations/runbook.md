@@ -251,6 +251,10 @@ deletes, in batches of 1000:
 - **published** `outbox_events` rows older than `OUTBOX_RETENTION` (7d).
   Unpublished rows are never deleted.
 
+A replay does not test the age of its row: the purge alone bounds the 24 hours (ADR-0046, follow-up). A refusal
+whose problem type is `RETRYABLE` (`concurrent-modification`, a parent not registered yet, ...) and every 5xx leave
+no `idempotency_keys` row at all, so an empty table after a refused request is expected, not a bug.
+
 The sweeper is safe to run in several replicas at once. It logs
 `housekeeping sweep` with `idempotency_keys_deleted` and
 `outbox_events_deleted` when it removed rows, and `housekeeping sweep failed`

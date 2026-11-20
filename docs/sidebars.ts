@@ -174,6 +174,7 @@ const sidebars: SidebarsConfig = {
         'adr/0043-a2a-inbound-adapter',
         'adr/0044-adopt-fleet-rest-api-guideline',
         'adr/0045-gs1-location-identity',
+        'adr/0046-idempotency-replay-classes',
       ],
     },
   ],

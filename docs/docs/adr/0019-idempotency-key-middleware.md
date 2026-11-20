@@ -11,6 +11,10 @@ description: "ADR 0019 — every true resource-creation POST (sites, zones, stru
 
 ## Status
 
+> 2026-11-20: the sentence "every normal response is cached, 4xx included" is narrowed by
+> [ADR 0046](./0046-idempotency-replay-classes.md): a refusal is stored only when its problem type declares
+> `FINAL` or `OUTCOME`; a `RETRYABLE` refusal rolls back with its key row like a 5xx.
+
 **Accepted.** Ports order-management's reference implementation
 (PR #105, ADR 0023) to this service, applied to all eight true
 resource-creation POST endpoints this router exposes.

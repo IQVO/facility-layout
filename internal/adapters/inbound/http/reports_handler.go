@@ -144,14 +144,14 @@ func parseRequiredTime(w http.ResponseWriter, r *http.Request, raw, name string)
 // service-wide problem writer.
 func writeReportBadRequest(w http.ResponseWriter, r *http.Request, detail string) {
 	writeProblem(w, http.StatusBadRequest,
-		problemInfo{"invalid-report-query", "The report query is malformed or missing a required parameter"},
+		problemInvalidReportQuery,
 		detail, r.URL.Path)
 }
 
 // writeReportInternal writes the reports service's RFC 7807 500.
 func writeReportInternal(w http.ResponseWriter, r *http.Request, err error) {
 	writeProblem(w, http.StatusInternalServerError,
-		problemInfo{"report-store-error", "The report could not be served"},
+		problemReportStoreError,
 		err.Error(), r.URL.Path)
 }
 

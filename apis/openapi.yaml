@@ -1965,7 +1965,9 @@ paths:
         The import is a batch-job noun (`/location-imports`, REST API
         guideline 1.3 e) and is idempotent: a retry with the same
         Idempotency-Key replays the stored report with
-        `Idempotency-Replayed: true` instead of importing twice.
+        `Idempotency-Replayed: true` instead of importing twice. The only
+        refusal is `empty-import` (stored); a bad row is reported in the 200
+        body, never as an error.
       tags: [Locations]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -2209,6 +2211,9 @@ paths:
         (`decommissionings`) of the slot rather than a PATCH (REST API
         guideline 1.3 d). A retry with the same Idempotency-Key replays the
         stored 204 with `Idempotency-Replayed: true` instead of answering 409.
+        A refusal that can still change (`location-slot-not-found` for a code
+        not registered yet, `concurrent-modification`) is not stored: the key
+        is released and the retry executes again.
 
 
         The transition is **one-way** in v1: there is no reactivation use
@@ -2316,9 +2321,18 @@ components:
         key is answered 400 `idempotency-key-required`, a malformed one 400
         `idempotency-key-invalid`. A replay with the same key, method, path and
         body returns the original response verbatim plus the response header
-        `Idempotency-Replayed: true`; the same key with a different method,
-        path or body is 409 `idempotency-key-reused`. The key is global (not
-        per route).
+        `Idempotency-Replayed: true` when that response is final for the
+        request: a 2xx, or a refusal that cannot change on a retry (the
+        request's own validation, a code that is already taken, a
+        decommissioned structure; ADR 0046). A refusal that depends on state
+        that can change (`concurrent-modification`, a `*-not-found` parent that
+        another request may register, `placement-rule-violated`,
+        `cross-aisle-aisle-mismatch`, a location check that depends on the
+        location type) and every 5xx are NOT stored: the key is released and
+        the same request under the same key executes again, and a different
+        request under a released key is a new request. While a response is
+        stored, the same key with a different method, path or body is 409
+        `idempotency-key-reused`. The key is global (not per route).
       schema:
         type: string
         minLength: 1
@@ -2372,7 +2386,9 @@ components:
     IdempotencyReplayed:
       description: >-
         `true` when this response is the stored answer of an earlier request
-        with the same Idempotency-Key; never present on the first execution.
+        with the same Idempotency-Key (a 2xx or a refusal that cannot change on
+        a retry); never present on the first execution, and never on a
+        refusal that releases the key.
       schema:
         type: string
         enum: ["true"]
