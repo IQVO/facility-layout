@@ -26,6 +26,16 @@ import (
 // in-memory aggregate blindly.
 var ErrConcurrentModification = errors.New("aggregate was concurrently modified; reload and retry")
 
+// ErrNaturalKeyTaken is returned by a repository writing a NEW aggregate
+// when a stored row already holds the aggregate's natural key — the
+// caller-chosen site code, zone/aisle id, location code, location type
+// name, rule id, structure id or cross-aisle identity (ADR-0047). The
+// insert refused to create over it, so the creation use case maps this to
+// its per-entity duplicate refusal and the loser of a concurrent
+// registration of the same code gets the documented duplicate-* problem
+// (FINAL, ADR 0046) instead of silently overwriting the winner's row.
+var ErrNaturalKeyTaken = errors.New("the natural key is already held by a stored row")
+
 // SiteRepo persists and retrieves Site aggregates. FindByCode returns
 // (nil, nil) when the site does not exist — "not found" is an application
 // concern, not a repository error.
@@ -50,6 +60,10 @@ type SiteCapabilityHeartbeatSource interface {
 // ZoneRepo persists and retrieves Zone aggregates, keyed by zone id
 // (SITE-AREA-ZONE).
 type ZoneRepo interface {
+	// Create inserts a NEW zone; it refuses with ports.ErrNaturalKeyTaken
+	// when a stored row already holds the id (ADR-0047) — the second
+	// writer of a concurrent registration of the same zone loses.
+	Create(ctx context.Context, z *zone.Zone) error
 	Save(ctx context.Context, z *zone.Zone) error
 	FindByID(ctx context.Context, id string) (*zone.Zone, error)
 	ListBySite(ctx context.Context, siteCode string) ([]*zone.Zone, error)
@@ -58,6 +72,10 @@ type ZoneRepo interface {
 // AisleRepo persists and retrieves Aisle aggregates, keyed by aisle id
 // (SITE-AREA-ZONE-AISLE).
 type AisleRepo interface {
+	// Create inserts a NEW aisle; it refuses with ports.ErrNaturalKeyTaken
+	// when a stored row already holds the id (ADR-0047). Save remains the
+	// update path (SetAisleGeometry and the decommissioned-parent seeding).
+	Create(ctx context.Context, a *aisle.Aisle) error
 	Save(ctx context.Context, a *aisle.Aisle) error
 	FindByID(ctx context.Context, id string) (*aisle.Aisle, error)
 	ListByZone(ctx context.Context, zoneID string) ([]*aisle.Aisle, error)
@@ -66,6 +84,10 @@ type AisleRepo interface {
 // CrossAisleRepo persists and retrieves CrossAisle aggregates, scoped by
 // zone (ADR-0017).
 type CrossAisleRepo interface {
+	// Create inserts a NEW cross-aisle; it refuses with
+	// ports.ErrNaturalKeyTaken when a stored row already holds the
+	// (zone, from, to, bay) identity (ADR-0047).
+	Create(ctx context.Context, c *aisle.CrossAisle) error
 	Save(ctx context.Context, c *aisle.CrossAisle) error
 	// FindByAisles returns the cross-aisle connecting fromAisle and
 	// toAisle at atBay within zoneID, or (nil, nil) when none exists —
@@ -86,6 +108,10 @@ type SlotRepo interface {
 
 // LocationTypeRepo persists and retrieves LocationType definitions.
 type LocationTypeRepo interface {
+	// Create inserts a NEW location type; it refuses with
+	// ports.ErrNaturalKeyTaken when a stored row already holds the name
+	// (ADR-0047). Location types are never edited or deleted (ADR 0046 J1).
+	Create(ctx context.Context, t placement.LocationType) error
 	Save(ctx context.Context, t placement.LocationType) error
 	FindByName(ctx context.Context, name string) (*placement.LocationType, error)
 	List(ctx context.Context) ([]placement.LocationType, error)
@@ -94,6 +120,10 @@ type LocationTypeRepo interface {
 // PlacementRuleRepo persists and retrieves PlacementRules. List returns the
 // full rule set; the use case narrows it to the zone under consideration.
 type PlacementRuleRepo interface {
+	// Create inserts a NEW placement rule; it refuses with
+	// ports.ErrNaturalKeyTaken when a stored row already holds the id
+	// (ADR-0047). Rules are never edited or deleted (ADR 0046 J1).
+	Create(ctx context.Context, r placement.PlacementRule) error
 	Save(ctx context.Context, r placement.PlacementRule) error
 	FindByID(ctx context.Context, id string) (*placement.PlacementRule, error)
 	List(ctx context.Context) ([]placement.PlacementRule, error)
@@ -102,6 +132,10 @@ type PlacementRuleRepo interface {
 // FixedStructureRepo persists and retrieves FixedStructure aggregates,
 // keyed by their opaque id (ADR-0017).
 type FixedStructureRepo interface {
+	// Create inserts a NEW fixed structure; it refuses with
+	// ports.ErrNaturalKeyTaken when a stored row already holds the
+	// caller-chosen id (ADR-0047).
+	Create(ctx context.Context, f *structure.FixedStructure) error
 	Save(ctx context.Context, f *structure.FixedStructure) error
 	FindByID(ctx context.Context, id string) (*structure.FixedStructure, error)
 	ListBySite(ctx context.Context, siteCode string) ([]*structure.FixedStructure, error)

@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/claudioed/facility-layout/internal/application/ports"
 	"github.com/claudioed/facility-layout/internal/domain/aisle"
 	"github.com/claudioed/facility-layout/internal/domain/site"
 	"github.com/claudioed/facility-layout/internal/domain/structure"
@@ -23,7 +24,11 @@ func NewSiteRepo() *SiteRepo {
 	return &SiteRepo{sites: make(map[string]*site.Site)}
 }
 
-// Save stores the site under its code.
+// Save stores the site under its code. Plain upsert: this double keeps no
+// row version of its own, so the version-0 creation refusal is Postgres's
+// alone (ADR-0047) — the use cases' existence checks keep sequential flows
+// correct here, and the concurrent-creation contract is proven by the
+// Postgres integration suite.
 func (r *SiteRepo) Save(_ context.Context, s *site.Site) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -83,6 +88,18 @@ func NewZoneRepo() *ZoneRepo {
 	return &ZoneRepo{zones: make(map[string]*zone.Zone)}
 }
 
+// Create inserts a NEW zone and refuses to create over an existing one,
+// mirroring the Postgres INSERT ... ON CONFLICT DO NOTHING (ADR-0047).
+func (r *ZoneRepo) Create(_ context.Context, z *zone.Zone) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.zones[z.ID()]; exists {
+		return ports.ErrNaturalKeyTaken
+	}
+	r.zones[z.ID()] = z
+	return nil
+}
+
 // Save stores the zone under its id.
 func (r *ZoneRepo) Save(_ context.Context, z *zone.Zone) error {
 	r.mu.Lock()
@@ -125,6 +142,20 @@ type AisleRepo struct {
 // NewAisleRepo builds an empty AisleRepo.
 func NewAisleRepo() *AisleRepo {
 	return &AisleRepo{aisles: make(map[string]*aisle.Aisle)}
+}
+
+// Create inserts a NEW aisle and refuses to create over an existing one,
+// mirroring the Postgres INSERT ... ON CONFLICT DO NOTHING (ADR-0047).
+// Save stays the plain upsert the update path (SetAisleGeometry, the
+// decommissioned-parent seeding) uses.
+func (r *AisleRepo) Create(_ context.Context, a *aisle.Aisle) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.aisles[a.ID()]; exists {
+		return ports.ErrNaturalKeyTaken
+	}
+	r.aisles[a.ID()] = a
+	return nil
 }
 
 // Save stores the aisle under its id.
@@ -189,6 +220,19 @@ func NewCrossAisleRepo() *CrossAisleRepo {
 	return &CrossAisleRepo{rows: make(map[crossAisleKey]*aisle.CrossAisle)}
 }
 
+// Create inserts a NEW cross-aisle and refuses to create over an existing
+// one, mirroring the Postgres INSERT ... ON CONFLICT DO NOTHING (ADR-0047).
+func (r *CrossAisleRepo) Create(_ context.Context, c *aisle.CrossAisle) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	key := newCrossAisleKey(c.ZoneID(), c.FromAisle(), c.ToAisle(), c.AtBay())
+	if _, exists := r.rows[key]; exists {
+		return ports.ErrNaturalKeyTaken
+	}
+	r.rows[key] = c
+	return nil
+}
+
 // Save stores the cross-aisle under its symmetric key.
 func (r *CrossAisleRepo) Save(_ context.Context, c *aisle.CrossAisle) error {
 	r.mu.Lock()
@@ -241,6 +285,19 @@ type FixedStructureRepo struct {
 // NewFixedStructureRepo builds an empty FixedStructureRepo.
 func NewFixedStructureRepo() *FixedStructureRepo {
 	return &FixedStructureRepo{structures: make(map[string]*structure.FixedStructure)}
+}
+
+// Create inserts a NEW fixed structure and refuses to create over an
+// existing one, mirroring the Postgres INSERT ... ON CONFLICT DO NOTHING
+// (ADR-0047).
+func (r *FixedStructureRepo) Create(_ context.Context, f *structure.FixedStructure) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.structures[f.ID()]; exists {
+		return ports.ErrNaturalKeyTaken
+	}
+	r.structures[f.ID()] = f
+	return nil
 }
 
 // Save stores the structure under its id.

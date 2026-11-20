@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/claudioed/facility-layout/internal/application/ports"
 	"github.com/claudioed/facility-layout/internal/domain/shared"
 	"github.com/claudioed/facility-layout/internal/domain/zone"
 )
@@ -19,6 +20,29 @@ type ZoneRepo struct {
 // NewZoneRepo builds a ZoneRepo over pool.
 func NewZoneRepo(pool *pgxpool.Pool) *ZoneRepo {
 	return &ZoneRepo{pool: pool}
+}
+
+// Create inserts a NEW zone and refuses to create over an existing one
+// (ADR-0047): ON CONFLICT DO NOTHING affects 0 rows exactly when the id —
+// or the UNIQUE (site_code, area_code, zone_code) triple, which derives
+// the same id — is already held, answering ports.ErrNaturalKeyTaken so the
+// registration use case can refuse with duplicate-zone. The INSERT arm
+// waits on a concurrent uncommitted registration of the same zone, so one
+// of the two concurrent creations always loses here.
+func (r *ZoneRepo) Create(ctx context.Context, z *zone.Zone) error {
+	tag, err := querierFrom(ctx, r.pool).Exec(ctx, `
+		INSERT INTO zones (id, site_code, area_code, zone_code, temperature_class, hazmat, status, bay_pitch_m, level_pitch_m, gln)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		ON CONFLICT (id) DO NOTHING
+	`, z.ID(), z.SiteCode(), z.AreaCode(), z.ZoneCode(), string(z.TemperatureClass()), z.Hazmat(), string(z.Status()),
+		nullablePitch(rawBayPitch(z)), nullablePitch(rawLevelPitch(z)), nullableGLN(z.GLN()))
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ports.ErrNaturalKeyTaken
+	}
+	return nil
 }
 
 // Save upserts the zone. bay_pitch_m/level_pitch_m persist as NULL when

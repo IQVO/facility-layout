@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/claudioed/facility-layout/internal/application/ports"
 	"github.com/claudioed/facility-layout/internal/domain/aisle"
 )
 
@@ -18,6 +19,28 @@ type CrossAisleRepo struct {
 // NewCrossAisleRepo builds a CrossAisleRepo over pool.
 func NewCrossAisleRepo(pool *pgxpool.Pool) *CrossAisleRepo {
 	return &CrossAisleRepo{pool: pool}
+}
+
+// Create inserts a NEW cross-aisle and refuses to create over an existing
+// one (ADR-0047): ON CONFLICT DO NOTHING affects 0 rows exactly when the
+// (zone_id, from_aisle, to_aisle, at_bay) identity is already held,
+// answering ports.ErrNaturalKeyTaken so the registration use case can
+// refuse with duplicate-cross-aisle. The INSERT arm waits on a concurrent
+// uncommitted registration of the same cross-aisle, so one of the two
+// concurrent creations always loses here.
+func (r *CrossAisleRepo) Create(ctx context.Context, c *aisle.CrossAisle) error {
+	tag, err := querierFrom(ctx, r.pool).Exec(ctx, `
+		INSERT INTO cross_aisles (zone_id, from_aisle, to_aisle, at_bay, decommissioned)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (zone_id, from_aisle, to_aisle, at_bay) DO NOTHING
+	`, c.ZoneID(), c.FromAisle(), c.ToAisle(), c.AtBay(), !c.IsActive())
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ports.ErrNaturalKeyTaken
+	}
+	return nil
 }
 
 // Save upserts the cross-aisle.

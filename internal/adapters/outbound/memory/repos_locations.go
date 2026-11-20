@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/claudioed/facility-layout/internal/application/ports"
 	"github.com/claudioed/facility-layout/internal/domain/placement"
 	"github.com/claudioed/facility-layout/internal/domain/shared"
 	"github.com/claudioed/facility-layout/internal/domain/slot"
@@ -75,6 +76,19 @@ func NewLocationTypeRepo() *LocationTypeRepo {
 	return &LocationTypeRepo{types: make(map[string]placement.LocationType)}
 }
 
+// Create inserts a NEW location type and refuses to create over an
+// existing one, mirroring the Postgres INSERT ... ON CONFLICT DO NOTHING
+// (ADR-0047).
+func (r *LocationTypeRepo) Create(_ context.Context, t placement.LocationType) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.types[t.Name()]; exists {
+		return ports.ErrNaturalKeyTaken
+	}
+	r.types[t.Name()] = t
+	return nil
+}
+
 // Save stores the location type under its name.
 func (r *LocationTypeRepo) Save(_ context.Context, t placement.LocationType) error {
 	r.mu.Lock()
@@ -115,6 +129,19 @@ type PlacementRuleRepo struct {
 // NewPlacementRuleRepo builds an empty PlacementRuleRepo.
 func NewPlacementRuleRepo() *PlacementRuleRepo {
 	return &PlacementRuleRepo{rules: make(map[string]placement.PlacementRule)}
+}
+
+// Create inserts a NEW placement rule and refuses to create over an
+// existing one, mirroring the Postgres INSERT ... ON CONFLICT DO NOTHING
+// (ADR-0047).
+func (r *PlacementRuleRepo) Create(_ context.Context, rule placement.PlacementRule) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.rules[rule.ID()]; exists {
+		return ports.ErrNaturalKeyTaken
+	}
+	r.rules[rule.ID()] = rule
+	return nil
 }
 
 // Save stores the rule under its id.
