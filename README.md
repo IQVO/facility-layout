@@ -435,11 +435,16 @@ Every `POST` (`/sites`, `/sites/{siteCode}/zones`,
 `/locations`, `/location-imports`, `/locations/{locationCode}/decommissionings`) requires a caller-supplied `Idempotency-Key` header, always
 (Postgres-backed `IdempotencyPool`; there is no database-less run). A
 retry with the same key and the same request replays the original
-response verbatim (with `Idempotency-Replayed: true`) instead of double-creating; the same key with a
-different request is rejected `409` (`idempotency-key-reused`). Missing the header is `400` `idempotency-key-required`; a key that is not
+response verbatim (with `Idempotency-Replayed: true`) instead of double-creating, **when that answer was final for the request**: a `2xx`, and a
+refusal whose problem type is `FINAL` (the request's own validation, a code that is taken for good). A `RETRYABLE` refusal (a
+`concurrent-modification`, a `*-not-found` parent that another request registers a moment later, a placement rule defined later, ...)
+and every `5xx` is **not stored**: the key is released and a retry under the same key executes again. The class of every problem type is
+declared on its catalogue entry and listed in [ADR-0046](docs/docs/adr/0046-idempotency-replay-classes.md). The same key with a
+different request is rejected `409` (`idempotency-key-reused`) while an answer is stored under it (after a released refusal the key is free and a
+different body is a new request). Missing the header is `400` `idempotency-key-required`; a key that is not
 1-128 printable ASCII characters is `400` `idempotency-key-invalid`. The key is global
 (a fingerprint of method + path + body), so reusing it on another route is the same `409`. See
-[ADR-0019](docs/docs/adr/0019-idempotency-key-middleware.md).
+[ADR-0019](docs/docs/adr/0019-idempotency-key-middleware.md) and [ADR-0046](docs/docs/adr/0046-idempotency-replay-classes.md).
 
 ### Structural (write side)
 

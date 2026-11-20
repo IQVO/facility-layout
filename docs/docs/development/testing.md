@@ -113,7 +113,7 @@ both.
 | `internal/adapters/outbound/analyticsstore` | `postgres_integration_test.go` (projection and report) |
 | `internal/adapters/outbound/kafka` | `publisher_partition_integration_test.go` (Hash balancer keeps aggregate order) |
 | `internal/adapters/inbound/kafka` | `analytics_dlq_integration_test.go` (retry then DLQ) |
-| `internal/adapters/inbound/http` | `idempotency_integration_test.go` (Idempotency-Key replay and reuse) |
+| `internal/adapters/inbound/http` | `idempotency_integration_test.go` (Idempotency-Key replay and reuse), `idempotency_replay_classes_integration_test.go` + `_wiring_` (the fleet replay-class template over every problem type, one shared Postgres), `idempotency_retryable_integration_test.go` (a staged `concurrent-modification` race and a parent not registered yet: the key is released and the retry executes), `idempotency_outcome_integration_test.go`; `replay_class_test.go` is Docker-free (every problem type has a class, the ADR-0046 table equals the catalogue) |
 | `internal/adapters/inbound/mcp` | `streamable_http_integration_test.go` |
 | `cmd/facility` | `e2e_integration_test.go` (`TestRunOnRealPostgresAndKafka`: boots the real `run()` on testcontainers Postgres and Kafka, drives only REST, asserts the Postgres rows, the byte-exact CloudEvents on both topics, `Idempotency-Key` replay, an in-process restart, and `/readyz` following Postgres and Kafka going away) |
 | `internal/application/usecases` | `usecases_wiring_integration_test.go` |

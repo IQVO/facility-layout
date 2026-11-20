@@ -12,7 +12,14 @@ paths:
 
 Structural / write side (builds up the model). Every route marked **(idem)**
 requires a caller-supplied `Idempotency-Key` header, always (ADR-0019,
-ADR 0039; Postgres is mandatory):
+ADR 0039; Postgres is mandatory). A retry under the same key replays only an
+answer that is final for the request: a 2xx and a `FINAL` refusal. Every
+problem type declares a replay class (`FINAL`, `OUTCOME`, `RETRYABLE`) on its
+catalogue entry (`errors.go` rows, `problems.go` `register(...)`; ADR-0046); a
+`RETRYABLE` refusal and a 5xx are NOT stored, the key is released and the retry
+executes again. Adding a problem type means classifying it
+(`TestEveryProblemTypeDeclaresAReplayClass`, the ADR-0046 table is held equal
+to the catalogue by test):
 
 - `POST   /sites`                                    -> RegisterSite (idem)
 - `GET    /sites`                                    -> list sites (paged: `limit` + keyset

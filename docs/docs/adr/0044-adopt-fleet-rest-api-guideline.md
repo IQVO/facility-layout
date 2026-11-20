@@ -10,6 +10,10 @@ description: "ADR 0044 — noun routes, every POST keyed with a global Idempoten
 
 ## Status
 
+> 2026-11-20: the replay sentence of decision 2 (a replay returns the stored answer verbatim) holds for a `2xx`
+> and for a refusal whose problem type is `FINAL` or `OUTCOME`; a `RETRYABLE` refusal is not stored and its key is
+> released ([ADR 0046](./0046-idempotency-replay-classes.md)).
+
 **Accepted** (2026-11-01). Amends [ADR 0019](./0019-idempotency-key-middleware.md)
 (key reuse is `409`, not `422`; the key is global; the two excluded commands are
 now keyed) and [ADR 0006](./0006-partial-success-bulk-import.md) (the route).
