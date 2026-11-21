@@ -1479,6 +1479,9 @@ paths:
         capacity envelope its slots inherit unless they override it. Both
         capacity dimensions must be strictly positive: a slot that can hold
         nothing is not a slot. Publishes LocationTypeRegistered.
+        The names `AutomatedStorage` (role Storage), `AsrsPort` and
+        `HandoffPoint` (role Drop) are well-known (ADR-0048): registering one
+        with another role is 422 `location-type-role-mismatch`.
       tags: [Location Types]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -1555,6 +1558,14 @@ paths:
                     status: 422
                     detail: "location type violates a placement rule for this zone: Shelf is denied in zone WH1-STOR-FRZ by rule [RULE-FRZ-NO-SHELF: Deny Shelf where temperatureClass=Frozen]"
                     instance: /locations
+                locationTypeRoleMismatch:
+                  summary: A well-known type registered with another role
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/location-type-role-mismatch
+                    title: A well-known location type must carry its canonical role
+                    status: 422
+                    detail: "a well-known location type must carry its canonical role: AutomatedStorage is Storage, AsrsPort and HandoffPoint are Drop: AutomatedStorage must be Storage, got Dock"
+                    instance: /location-types
         "500":
           $ref: "#/components/responses/InternalError"
     get:
@@ -1834,6 +1845,12 @@ paths:
         it is 422 `spot-kind-not-allowed`; an unknown value is 422
         `unknown-spot-kind`. Neither field can be changed after registration
         in this version. Omit both and the request behaves exactly as before.
+
+
+        An aisle holds at most one active `AutomatedStorage` slot (409
+        `automated-storage-already-in-aisle`), and an `AsrsPort` slot is
+        accepted only in an aisle that holds one (422
+        `asrs-port-without-automated-storage`) (ADR-0048).
       tags: [Locations]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -1920,7 +1937,9 @@ paths:
           $ref: "#/components/responses/Conflict"
         "422":
           description: >
-            Semantically invalid.
+            Semantically invalid: a placement-rule violation, or an `AsrsPort`
+            slot in an aisle with no active `AutomatedStorage` slot
+            (`asrs-port-without-automated-storage`, ADR-0048).
           content:
             application/problem+json:
               schema:
@@ -1932,6 +1951,14 @@ paths:
                     title: Location type is not legal in this zone
                     status: 422
                     detail: "location type violates a placement rule for this zone: Shelf is denied in zone WH1-STOR-FRZ by rule [RULE-FRZ-NO-SHELF: Deny Shelf where temperatureClass=Frozen]"
+                    instance: /locations
+                asrsPortWithoutAutomatedStorage:
+                  summary: An AsrsPort before its AS/RS
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/asrs-port-without-automated-storage
+                    title: An AsrsPort location must be in an aisle that holds an active AutomatedStorage location
+                    status: 422
+                    detail: an AsrsPort location must be in an aisle holding an active AutomatedStorage location
                     instance: /locations
         "500":
           $ref: "#/components/responses/InternalError"
@@ -1968,6 +1995,12 @@ paths:
         `Idempotency-Replayed: true` instead of importing twice. The only
         refusal is `empty-import` (stored); a bad row is reported in the 200
         body, never as an error.
+
+
+        An aisle holds at most one active `AutomatedStorage` slot, and an
+        `AsrsPort` slot is accepted only in an aisle that holds one
+        (ADR-0048): a row breaking either rule is rejected in the report with
+        that reason, like any other bad row.
       tags: [Locations]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -2464,8 +2497,10 @@ components:
       description: >
         A state conflict: a code already taken, a GS1 Global Location Number
         already assigned to another location (`gln-already-assigned`,
-        ADR-0045), a parent that exists but is no longer Active, or a slot
-        already decommissioned. On a POST it is
+        ADR-0045), an aisle that already holds an active AutomatedStorage
+        location (`automated-storage-already-in-aisle`, ADR-0048), a parent
+        that exists but is no longer Active, or a slot already
+        decommissioned. On a POST it is
         also the answer to an Idempotency-Key reused with a different method,
         path or body (`idempotency-key-reused`); the problem type tells the
         two apart.
@@ -2487,6 +2522,13 @@ components:
                 title: This GLN is already assigned to another location
                 status: 409
                 detail: this GLN is already assigned to another location
+                instance: /locations
+            automatedStorageAlreadyInAisle:
+              value:
+                type: https://errors.facility-layout.warehouse-systems.dev/automated-storage-already-in-aisle
+                title: "This aisle already holds an AutomatedStorage location: one AS/RS is one logical location"
+                status: 409
+                detail: this aisle already holds an active AutomatedStorage location
                 instance: /locations
             idempotencyKeyReused:
               value:
@@ -3310,7 +3352,10 @@ components:
           $ref: "#/components/schemas/Coordinates"
         locationType:
           type: string
-          description: The slot's LocationType.
+          description: >
+            The slot's LocationType. Well-known WCS types (ADR-0048):
+            `AutomatedStorage` (one AS/RS as one logical location, role
+            Storage), `AsrsPort`, `HandoffPoint` (role Drop).
           example: PalletRack
         role:
           $ref: "#/components/schemas/LocationRole"
@@ -3323,8 +3368,10 @@ components:
           type: array
           items:
             type: string
-            enum: [Pack, Sort, QC, VAS, Deconsolidate, Receive, Kit]
-          description: Set only when role is WorkCenter (ADR-0016).
+            enum: [Pack, Sort, QC, VAS, Deconsolidate, Receive, Kit, Pick]
+          description: >
+            Set only when role is WorkCenter (ADR-0016). `Pick` marks a
+            goods-to-person station (ADR-0048).
           example: [Pack, VAS]
         capacity:
           $ref: "#/components/schemas/ResolvedCapacity"
@@ -3393,7 +3440,7 @@ components:
           type: array
           items:
             type: string
-            enum: [Pack, Sort, QC, VAS, Deconsolidate, Receive, Kit]
+            enum: [Pack, Sort, QC, VAS, Deconsolidate, Receive, Kit, Pick]
           description: Required (non-empty) when the LocationType's role is WorkCenter; rejected for every other role.
           example: [Pack, VAS]
         capacityOverride:
@@ -3485,7 +3532,7 @@ components:
           type: array
           items:
             type: string
-            enum: [Pack, Sort, QC, VAS, Deconsolidate, Receive, Kit]
+            enum: [Pack, Sort, QC, VAS, Deconsolidate, Receive, Kit, Pick]
           description: Required (non-empty) when the row's LocationType role is WorkCenter; rejected for every other role.
           example: [Pack, VAS]
         capacityOverride:

@@ -84,13 +84,17 @@ type LocationType struct {
 // must be strictly positive when role.RequiresCapacity() (Storage,
 // RoleStaging, Drop, Consolidation); it may be the zero Capacity for a role
 // that does not hold inventory the way storage does (Dock, Yard,
-// WorkCenter, QC, Shipping).
+// WorkCenter, QC, Shipping). A well-known name (AutomatedStorage, AsrsPort,
+// HandoffPoint) must carry its canonical role (ADR-0048).
 func NewLocationType(name string, role LocationRole, defaultCapacity shared.Capacity) (LocationType, error) {
 	if name == "" {
 		return LocationType{}, ErrEmptyLocationTypeName
 	}
 	if _, err := ParseLocationRole(string(role)); err != nil {
 		return LocationType{}, err
+	}
+	if want, ok := CanonicalRole(name); ok && role != want {
+		return LocationType{}, fmt.Errorf("%w: %s must be %s, got %s", ErrLocationTypeRoleMismatch, name, want, role)
 	}
 	if role.RequiresCapacity() && defaultCapacity.IsZero() {
 		return LocationType{}, shared.ErrInvalidMaxWeight

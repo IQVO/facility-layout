@@ -36,6 +36,12 @@ var ErrConcurrentModification = errors.New("aggregate was concurrently modified;
 // (FINAL, ADR 0046) instead of silently overwriting the winner's row.
 var ErrNaturalKeyTaken = errors.New("the natural key is already held by a stored row")
 
+// ErrAutomatedStorageAisleTaken is returned by a persistence adapter when a
+// slot save would give one aisle a second active AutomatedStorage location
+// (ADR-0048): the database refuses the race the use case's own check cannot
+// see.
+var ErrAutomatedStorageAisleTaken = errors.New("this aisle already holds an active AutomatedStorage location")
+
 // SiteRepo persists and retrieves Site aggregates. FindByCode returns
 // (nil, nil) when the site does not exist — "not found" is an application
 // concern, not a repository error.
