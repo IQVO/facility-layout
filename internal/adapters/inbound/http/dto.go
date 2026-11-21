@@ -10,6 +10,8 @@ type registerSiteRequest struct {
 	Name     string `json:"name"`
 	// SiteRole is optional (ADR-0037): omitted means UNSPECIFIED.
 	SiteRole string `json:"siteRole,omitempty"`
+	// GLN is the optional GS1 Global Location Number (ADR-0045).
+	GLN string `json:"gln,omitempty"`
 }
 
 // setSiteRoleRequest is the body of PUT /sites/{siteCode}/role (ADR-0037).
@@ -37,6 +39,8 @@ type registerZoneRequest struct {
 	// supplying exactly one of the two is a 422 (invalid-pitch).
 	BayPitchM   *float64 `json:"bayPitchM,omitempty"`
 	LevelPitchM *float64 `json:"levelPitchM,omitempty"`
+	// GLN is the optional GS1 Global Location Number (ADR-0045).
+	GLN string `json:"gln,omitempty"`
 }
 
 type registerAisleRequest struct {
@@ -80,6 +84,10 @@ type registerLocationSlotRequest struct {
 	Activities       []string         `json:"activities,omitempty"`
 	CapacityOverride *capacityRequest `json:"capacityOverride,omitempty"`
 	HandlingUnit     string           `json:"handlingUnit,omitempty"`
+	// GLN and SpotKind are optional (ADR-0045); SpotKind is only legal on a
+	// slot whose location type has the Yard role.
+	GLN      string `json:"gln,omitempty"`
+	SpotKind string `json:"spotKind,omitempty"`
 }
 
 // declareHandlingUnitRequest is the body of PUT /locations/{code}/handling-unit

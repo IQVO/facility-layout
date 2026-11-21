@@ -59,13 +59,19 @@ type LocationSlot struct {
 	// handlingUnit is the OPTIONAL unit of handling this slot accepts
 	// (ADR-0040); the zero value means none was ever recorded.
 	handlingUnit shared.HandlingUnit
+	// gln and spotKind are the OPTIONAL location identity and yard spot kind
+	// (ADR-0045); the zero values mean none was ever recorded.
+	gln      shared.GLN
+	spotKind shared.SpotKind
 	// version is the optimistic-concurrency token (ADR-0025): inert
 	// infrastructure metadata exactly like the aggregate's own id, never
-	// read by business logic. NewLocationSlot starts it at 1;
-	// RehydrateLocationSlot populates it from the row that was read, and a
-	// persistence adapter's Save rejects the write when the stored row's
-	// version has moved on (ports.ErrConcurrentModification) so a
-	// read-modify-write caller must re-fetch rather than blind-overwrite.
+	// read by business logic. NewLocationSlot starts it at 0 — never
+	// persisted (ADR-0047): the first stored row is written at 1 by the
+	// repository; RehydrateLocationSlot populates it from the row that was
+	// read, and a persistence adapter's Save rejects the write when the
+	// stored row's version has moved on (ports.ErrConcurrentModification)
+	// so a read-modify-write caller must re-fetch rather than
+	// blind-overwrite.
 	version int
 }
 
@@ -124,7 +130,10 @@ func NewLocationSlot(
 		functional:   functional,
 		capacity:     capacity,
 		status:       shared.Active,
-		version:      1,
+		// version 0 = never persisted (ADR-0047): the first stored row is
+		// written at 1 by the repository, and the version guard makes a
+		// lost creation a refusal instead of a silent overwrite.
+		version: 0,
 	}, nil
 }
 

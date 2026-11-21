@@ -8,6 +8,9 @@ type siteResponse struct {
 	Status   string `json:"status"`
 	// SiteRole is the site's role in the fulfilment network (ADR-0037).
 	SiteRole string `json:"siteRole"`
+	// GLN is the site's GS1 Global Location Number, omitted when none was
+	// recorded (ADR-0045).
+	GLN string `json:"gln,omitempty"`
 }
 
 // siteRoleTransferDefaultResponse is one row of
@@ -41,6 +44,9 @@ type zoneResponse struct {
 	// about estimated distances.
 	BayPitchM   float64 `json:"bayPitchM"`
 	LevelPitchM float64 `json:"levelPitchM"`
+	// GLN is the zone's GS1 Global Location Number, omitted when none was
+	// recorded (ADR-0045).
+	GLN string `json:"gln,omitempty"`
 }
 
 type aisleResponse struct {
@@ -105,6 +111,10 @@ type locationSlotResponse struct {
 	Dimensions   *dimensionsResponse `json:"dimensions,omitempty"`
 	PickSequence *int                `json:"pickSequence,omitempty"`
 	HandlingUnit string              `json:"handlingUnit,omitempty"`
+	// GLN and SpotKind are omitted when none was recorded (ADR-0045);
+	// SpotKind is only ever present on a Yard slot.
+	GLN      string `json:"gln,omitempty"`
+	SpotKind string `json:"spotKind,omitempty"`
 }
 
 // point3DResponse mirrors point3DRequest for a slot/structure position.

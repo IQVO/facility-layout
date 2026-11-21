@@ -64,6 +64,14 @@ empty or contains characters other than `[A-Z0-9]`.
   (`Active`/`Decommissioned`/`UnderMaintenance`), plus optional geometry
   (position, dimensions, pick sequence — ADR-0017). `inventory-storage`
   validates stows against a Kafka-fed local cache of these slots.
+- **GLN / SpotKind** (ADR-0045) — a Site, Zone or LocationSlot may carry an
+  optional GS1 Global Location Number (`gln`: 13 digits, mod-10 check digit,
+  unique across every location; `invalid-gln` 422, `gln-already-assigned` 409)
+  and a `Yard` slot an optional `spotKind` (`PARKING`, `HOLDING`,
+  `REEFER_PLUG`, `HAZMAT`, `STAGING_LANE`; any other role is
+  `spot-kind-not-allowed` 422). Set at registration only, carried additively
+  (omitted when absent) on `SiteRegistered`, `ZoneRegistered` and
+  `LocationSlotRegistered`.
 - **CrossAisle / FixedStructure / travel graph** (ADR-0017) — a walkable
   connection between two aisles of a zone at one bay; a wall/column/office/
   conveyor footprint on a site; and the pure-domain graph of a zone's

@@ -157,3 +157,30 @@ func TestSiteRegisteredCarriesTheSiteRole(t *testing.T) {
 		t.Fatalf("site role = %q", event.SiteRole)
 	}
 }
+
+func TestRegisteredEventsCarryTheOptionalIdentity(t *testing.T) {
+	at := time.Date(2026, 2, 3, 4, 5, 6, 0, time.UTC)
+	code, err := shared.ParseLocationCode("WH1-YARD-NORTH-Y01-01-01-A")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if e := shared.NewSiteRegistered(at, "WH1", "Main", "UNSPECIFIED"); e.GLN != "" {
+		t.Errorf("SiteRegistered has no GLN by default, got %q", e.GLN)
+	}
+	if e := shared.NewSiteRegistered(at, "WH1", "Main", "UNSPECIFIED").WithGLN("4006381333931"); e.GLN != "4006381333931" {
+		t.Errorf("SiteRegistered GLN = %q", e.GLN)
+	}
+	zone := shared.NewZoneRegistered(at, "WH1-YARD-NORTH", "WH1", "YARD", "NORTH", shared.Ambient, false)
+	if zone.GLN != "" || zone.WithGLN("5412345000013").GLN != "5412345000013" {
+		t.Errorf("ZoneRegistered GLN wiring broken: %q", zone.GLN)
+	}
+	slot := shared.NewLocationSlotRegistered(at, code, "YardSpot", "Yard", "", nil, shared.Capacity{})
+	if slot.GLN != "" || slot.SpotKind != "" {
+		t.Errorf("LocationSlotRegistered has no identity by default, got %q / %q", slot.GLN, slot.SpotKind)
+	}
+	slot = slot.WithGLN("4012345000009").WithSpotKind(shared.SpotKindReeferPlug)
+	if slot.GLN != "4012345000009" || slot.SpotKind != shared.SpotKindReeferPlug {
+		t.Errorf("LocationSlotRegistered identity = %q / %q", slot.GLN, slot.SpotKind)
+	}
+}

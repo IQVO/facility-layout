@@ -15,13 +15,15 @@ contexts read but never write.
 **Strategic classification:** Generic Subdomain, extracted rather than
 duplicated. It is an **Open Host Service** with a **Published Language** (its
 domain events on the `warehouse.facility.events` Kafka topic, plus its REST
-API). It depends on no other service. Its downstream **Conformists** today:
-`inventory-storage` (consumes the Kafka topic to validate stows),
-`warehouse-planning` (consumes slot registrations/decommissions for its
-storage-capacity tally), `wes-work-planning` (`GET /distance`),
-`fulfillment-execution`
-(`GET /locations/{code}` for a location's role), and `warehouse-ops-agent`
-(the MCP tools and the catalog-growth report).
+API). It depends on no other service. Its downstream **Conformists** today, over the Kafka topic:
+`inventory-storage` (validates stows), `warehouse-planning` (storage-capacity
+tally), `inbound-receiving`, `dock-scheduling` and `yard-management` (dock
+doors and yard spots), `outbound-shipping`, `slotting-optimization`,
+`pick-face-replenishment` and `task-interleaving` (layout copies) and
+`network-inventory-planning` (site capability); over REST, `wes-work-planning`
+(`GET /distance`) and `fulfillment-execution` (`GET /locations/{code}` for a
+location's role); and `warehouse-ops-agent` (the MCP tools and the
+catalog-growth report).
 
 ## Disclaimer
 
@@ -135,7 +137,7 @@ into its sibling, or if `ports` grows a concrete type.
 | **Aisle** | A physical corridor scoped to a Zone. Carries a `SequenceHint` (walk-order position — the concrete travel-distance input the WES tier needs) and a `Direction` (OneWay/TwoWay). |
 | **LocationType** | A reusable classification of slot shape/kind (`PalletRack`, `Shelf`, `ToteWall`, `BulkFloor`, `Staging`, `Amnesty`) with a default capacity envelope and a `LocationRole`. |
 | **LocationRole** | What a location is *for* (ADR-0016): `Storage` (default), `Dock`, `Yard`, `WorkCenter`, `Drop`, `Staging`, `QC`, `Consolidation`, `Shipping`. Capacity is required only for `Storage`/`Staging`/`Drop`/`Consolidation`. A `Dock` slot carries a `dockFlow` (`Inbound`/`Outbound`/`Both`); a `WorkCenter` slot carries `activities` (`Pack`, `Sort`, `QC`, `VAS`, `Deconsolidate`, `Receive`, `Kit`). |
-| **LocationSlot** | The coded leaf aggregate. Its identity **is** its `LocationCode`. Has a LocationType (and so a role), a capacity envelope, optional physical geometry, an optional handling unit (`EACH`/`CASE`/`PALLET`, ADR-0040), and a Status (`Active`/`UnderMaintenance`/`Decommissioned`). |
+| **LocationSlot** | The coded leaf aggregate. Its identity **is** its `LocationCode`. Has a LocationType (and so a role), a capacity envelope, optional physical geometry, an optional handling unit (`EACH`/`CASE`/`PALLET`, ADR-0040), an optional GS1 `gln` and, on a Yard slot, an optional `spotKind` (ADR-0045), and a Status (`Active`/`UnderMaintenance`/`Decommissioned`). |
 | **CrossAisle / FixedStructure** | Physical geometry (ADR-0017): a walkable connection between two aisles of a zone, and a wall/column/office/conveyor footprint on a site. Together with aisle centrelines they form each zone's **travel graph**. |
 | **PlacementRule** | Declares which LocationTypes are legal in which Zones. The mechanism that prevents "ambient product in the frozen zone" — enforced once, at registration time. |
 | **Facility layout** | The readable, drawable projection of the whole structure: zones → aisles → slots, shaped for a UI to render directly. |
@@ -433,11 +435,16 @@ Every `POST` (`/sites`, `/sites/{siteCode}/zones`,
 `/locations`, `/location-imports`, `/locations/{locationCode}/decommissionings`) requires a caller-supplied `Idempotency-Key` header, always
 (Postgres-backed `IdempotencyPool`; there is no database-less run). A
 retry with the same key and the same request replays the original
-response verbatim (with `Idempotency-Replayed: true`) instead of double-creating; the same key with a
-different request is rejected `409` (`idempotency-key-reused`). Missing the header is `400` `idempotency-key-required`; a key that is not
+response verbatim (with `Idempotency-Replayed: true`) instead of double-creating, **when that answer was final for the request**: a `2xx`, and a
+refusal whose problem type is `FINAL` (the request's own validation, a code that is taken for good). A `RETRYABLE` refusal (a
+`concurrent-modification`, a `*-not-found` parent that another request registers a moment later, a placement rule defined later, ...)
+and every `5xx` is **not stored**: the key is released and a retry under the same key executes again. The class of every problem type is
+declared on its catalogue entry and listed in [ADR-0046](docs/docs/adr/0046-idempotency-replay-classes.md). The same key with a
+different request is rejected `409` (`idempotency-key-reused`) while an answer is stored under it (after a released refusal the key is free and a
+different body is a new request). Missing the header is `400` `idempotency-key-required`; a key that is not
 1-128 printable ASCII characters is `400` `idempotency-key-invalid`. The key is global
 (a fingerprint of method + path + body), so reusing it on another route is the same `409`. See
-[ADR-0019](docs/docs/adr/0019-idempotency-key-middleware.md).
+[ADR-0019](docs/docs/adr/0019-idempotency-key-middleware.md) and [ADR-0046](docs/docs/adr/0046-idempotency-replay-classes.md).
 
 ### Structural (write side)
 
@@ -570,6 +577,18 @@ Location: /location-types/PalletRack
 
 {"name":"PalletRack","role":"Storage","defaultCapacity":{"maxWeightKg":1200,"maxVolumeM3":2.4}}
 ```
+
+**WCS location types** ([ADR 0048](docs/docs/adr/0048-automated-storage-location-type.md)).
+Three names are well known and carry a fixed role: `AutomatedStorage` (`Storage`),
+`AsrsPort` (`Drop`) and `HandoffPoint` (`Drop`); registering one of them with another
+role answers `422 location-type-role-mismatch`, and every other name stays free. One
+AS/RS is one aisle holding exactly one active `AutomatedStorage` slot (a second answers
+`409 automated-storage-already-in-aisle`, guarded by a partial unique index under
+concurrency), and an `AsrsPort` slot is accepted only in an aisle that already holds
+one (`422 asrs-port-without-automated-storage`). By convention the AS/RS zone is
+`<site>-AUTO-ASRS`, the aisle code is asrs-control's `asrsId`, and a port is
+`<site>-AUTO-ASRS-<asrsId>-<aisle>-00-<portId>` (e.g. `WH1-AUTO-ASRS-ASRS1-01-00-IN1`).
+A goods-to-person station is a `WorkCenter` slot declaring the activity `Pick`.
 
 ### 5 — Define a placement rule
 
@@ -771,9 +790,11 @@ consumes the same read model the JSON endpoint does.
 
 `POST /location-imports` takes a JSON array of fully-specified rows and
 bootstraps a whole building in one call, creating the Site/Zone/Aisle
-structure on first sight. Validation is **atomic per row**: every row is
-processed, and the report says exactly which rows failed and why. A 500-row
-export with 3 bad rows still creates the other 497.
+structure on first sight. Validation is **per row, never all-or-nothing**: every row is
+processed on its own, and the report says exactly which rows failed and why. A 500-row
+export with 3 bad rows still creates the other 497. A row is not one transaction: each
+step (a missing site, zone or aisle, the slot, its geometry) commits on its own, so a row
+refused at the slot step keeps the parents it already created.
 
 ```sh
 curl -X POST localhost:8080/location-imports -H 'Content-Type: application/json' -d '[

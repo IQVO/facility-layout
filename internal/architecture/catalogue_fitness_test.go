@@ -4,8 +4,9 @@ package architecture
 // (tools/migrate_v3.py): do not edit in a service repo.
 //
 // Rule: every full CloudEvents type string that this service's contract (apis/asyncapi.yaml) declares for ITSELF
-// must also appear in a CloudEvents ADR under docs/docs/adr/ or docs/adr/ (the fleet type catalogue). "Declares for itself" means
-// the service segment of com.warehouse.<subdomain>.<service>.<entity>.<Event> equals this module's name (last path
+// must also appear in a CloudEvents ADR under docs/docs/adr/ or docs/adr/ (the fleet type catalogue). Declares for itself means
+// the service segment of com.warehouse.<wms|wes>.<service>.<entity>.<Event> or
+// com.retailnetwork.<domain>.<service>.<entity>.<Event> equals this module's name (last path
 // element of go.mod), so types a service only CONSUMES are never required in its catalogue.
 //
 // Why this and not the context map: a survey of the 10 contexts showed the catalogue ADR tracks the contract
@@ -25,7 +26,9 @@ import (
 	"testing"
 )
 
-var cloudEventTypeRx = regexp.MustCompile(`com\.warehouse\.(?:wms|wes)\.([a-z][a-z-]*)\.[a-z][a-z-]*\.[A-Z][A-Za-z0-9]*`)
+// The type shapes are com.warehouse.<wms|wes>.<service>.<entity>.<Event> and
+// com.retailnetwork.<domain>.<service>.<entity>.<Event>; in both the service is capture group 1.
+var cloudEventTypeRx = regexp.MustCompile(`com\.(?:warehouse\.(?:wms|wes)|retailnetwork\.[a-z][a-z-]*)\.([a-z][a-z-]*)\.[a-z][a-z-]*\.[A-Z][A-Za-z0-9]*`)
 
 // moduleServiceName returns the last path element of the module line of go.mod ("" if unknown).
 func moduleServiceName(goMod string) string {
@@ -110,5 +113,16 @@ func TestEventCatalogueDetector(t *testing.T) {
 	}
 	if moduleServiceName("module github.com/acme/wms-thing\n\ngo 1.22\n") != "wms-thing" {
 		t.Fatal("module name not derived from the last path element")
+	}
+	// com.retailnetwork types (domain segment between the prefix and the service) are checked too.
+	const rn = "type: com.retailnetwork.partner.my-svc.order.OrderPlaced\n" +
+		"type: com.retailnetwork.partner.my-svc.order.OrderShipped\n" +
+		"type: com.retailnetwork.logistics.other-svc.node.NodeActivated\n" // consumed: not ours
+	if got := missingFromCatalogue(rn, "my-svc", []string{"com.retailnetwork.partner.my-svc.order.OrderPlaced"}); len(got) != 1 ||
+		!strings.HasSuffix(got[0], "OrderShipped") {
+		t.Fatalf("retailnetwork: want only OrderShipped missing, got %v", got)
+	}
+	if got := missingFromCatalogue(rn, "my-svc", nil); len(got) != 2 {
+		t.Fatalf("retailnetwork: with no catalogue both own types are missing (and the consumed one is not), got %v", got)
 	}
 }

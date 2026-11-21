@@ -13,7 +13,7 @@ import (
 )
 
 func toSiteResponse(s *site.Site) siteResponse {
-	return siteResponse{SiteCode: s.Code(), Name: s.Name(), Status: string(s.Status()), SiteRole: string(s.Role())}
+	return siteResponse{SiteCode: s.Code(), Name: s.Name(), Status: string(s.Status()), SiteRole: string(s.Role()), GLN: string(s.GLN())}
 }
 
 // fromRegisterSiteRole maps the optional registration role (ADR-0037): an
@@ -78,6 +78,7 @@ func toZoneResponse(z *zone.Zone) zoneResponse {
 		Status:           string(z.Status()),
 		BayPitchM:        z.BayPitchM(),
 		LevelPitchM:      z.LevelPitchM(),
+		GLN:              string(z.GLN()),
 	}
 }
 
@@ -160,6 +161,8 @@ func toLocationSlotResponse(s *slot.LocationSlot) locationSlotResponse {
 		Status:       string(s.Status()),
 		PickSequence: s.PickSequence(),
 		HandlingUnit: string(s.HandlingUnit()),
+		GLN:          string(s.GLN()),
+		SpotKind:     string(s.SpotKind()),
 	}
 	if position := s.Position(); !position.IsZero() {
 		p := toPoint3DResponse(position)

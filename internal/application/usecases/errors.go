@@ -5,7 +5,11 @@
 // allowed to exist, and assembling the drawable read models.
 package usecases
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/claudioed/facility-layout/internal/application/ports"
+)
 
 var (
 	// ErrSiteNotFound is returned when a referenced site does not exist.
@@ -53,6 +57,11 @@ var (
 	// resurrected by re-registration.
 	ErrDuplicateLocationCode = errors.New("a location slot with this code already exists")
 
+	// ErrGLNAlreadyAssigned is returned when a GS1 Global Location Number is
+	// already held by another location (ADR-0045). A GLN identifies exactly
+	// one site, zone or slot.
+	ErrGLNAlreadyAssigned = errors.New("this GLN is already assigned to another location")
+
 	// ErrEmptyImport is returned when a bulk import carries no rows.
 	ErrEmptyImport = errors.New("facility layout import must contain at least one row")
 
@@ -69,4 +78,12 @@ var (
 	// available: the travel graph is per-zone and cross-aisles are
 	// zone-scoped, so without geometry there is nothing honest to report.
 	ErrNoRouteBetweenZones = errors.New("no route: the two locations are in different zones and at least one has no recorded position geometry")
+
+	// ErrAutomatedStorageAlreadyInAisle: one AS/RS is one logical location
+	// (ADR-0048), so an aisle holds at most one active AutomatedStorage slot.
+	// It is the ports sentinel, so a lost concurrent registration maps to it.
+	ErrAutomatedStorageAlreadyInAisle = ports.ErrAutomatedStorageAisleTaken
+	// ErrAsrsPortWithoutAutomatedStorage: an AsrsPort belongs to the AS/RS of
+	// its aisle (ADR-0048).
+	ErrAsrsPortWithoutAutomatedStorage = errors.New("an AsrsPort location must be in an aisle holding an active AutomatedStorage location")
 )

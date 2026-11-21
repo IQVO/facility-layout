@@ -34,8 +34,10 @@ func (uc *RegisterLocationType) Execute(ctx context.Context, name string, role p
 		return placement.LocationType{}, err
 	}
 	err = atomically(ctx, uc.UnitOfWork, func(ctx context.Context) error {
-		if err := uc.LocationTypes.Save(ctx, lt); err != nil {
-			return err
+		if err := uc.LocationTypes.Create(ctx, lt); err != nil {
+			// A lost concurrent creation of the same name is the
+			// duplicate refusal, not an overwrite (ADR-0047).
+			return lostCreationRace(err, ErrDuplicateLocationType)
 		}
 		return uc.Events.Publish(ctx, shared.NewLocationTypeRegistered(uc.Clock.Now(), lt.Name(), string(lt.Role()), lt.DefaultCapacity()))
 	})

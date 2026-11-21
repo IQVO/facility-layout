@@ -21,8 +21,9 @@ Language.
 
 - **Integration (ADR-0009)**: `outbound/kafka` publishes every domain event
   to `warehouse.facility.events`, always, through the transactional outbox
-  (ADR 0039: no log-only publisher, no direct fan-out in any binary). No OTel package
-  on this publisher — it is trace-free by design.
+  (ADR 0039: no log-only publisher, no direct fan-out in any binary). The
+  Kafka adapters inject the W3C trace context into message headers, and
+  ADR 0038 carries it across the outbox (`outbox_events.headers`).
 - **Analytics (ADR-0010)**: additive read side built from this service's
   OWN events. OLTP domain/application must NOT import the analytics store
   (enforced by `internal/architecture` arch-tests); `internal/analytics/report/`
@@ -42,8 +43,9 @@ Language.
   them — sites, zones, fixed structures, aisles, cross-aisles, location
   types, placement rules, location slots) requires a caller-supplied
   `Idempotency-Key` header, always (Postgres is mandatory), so a lost-response
-  retry replays the original outcome instead of double-creating. Bulk
-  import and decommission are deliberately excluded. The memory test doubles
+  retry replays the original outcome instead of double-creating (a 2xx and a
+  `FINAL` refusal; a `RETRYABLE` refusal releases the key, ADR-0046). Since ADR-0044
+  the import and the decommission are keyed too. The memory test doubles
   carry no idempotency pool, which is why they are never a runtime.
 
 ## Events: CloudEvents 1.0 is MANDATORY

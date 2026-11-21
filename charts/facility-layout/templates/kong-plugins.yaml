@@ -62,8 +62,11 @@ config:
     # custom request header is not CORS-safelisted, so the preflight must
     # allow it or the browser blocks the call before it reaches Kong.
     - Idempotency-Key
+    - If-Match
   exposed_headers:
     - Content-Length
+    - ETag
+    - Idempotency-Replayed
     - Mcp-Session-Id
   credentials: false
   max_age: 3600

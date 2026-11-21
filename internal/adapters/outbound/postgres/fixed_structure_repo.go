@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/claudioed/facility-layout/internal/application/ports"
 	"github.com/claudioed/facility-layout/internal/domain/shared"
 	"github.com/claudioed/facility-layout/internal/domain/structure"
 )
@@ -20,6 +21,32 @@ type FixedStructureRepo struct {
 // NewFixedStructureRepo builds a FixedStructureRepo over pool.
 func NewFixedStructureRepo(pool *pgxpool.Pool) *FixedStructureRepo {
 	return &FixedStructureRepo{pool: pool}
+}
+
+// Create inserts a NEW fixed structure and refuses to create over an
+// existing one (ADR-0047): ON CONFLICT DO NOTHING affects 0 rows exactly
+// when the caller-chosen id is already held, answering
+// ports.ErrNaturalKeyTaken so the registration use case can refuse with
+// duplicate-fixed-structure. The INSERT arm waits on a concurrent
+// uncommitted registration of the same id, so one of the two concurrent
+// creations always loses here.
+func (r *FixedStructureRepo) Create(ctx context.Context, f *structure.FixedStructure) error {
+	footprint := f.Footprint()
+	tag, err := querierFrom(ctx, r.pool).Exec(ctx, `
+		INSERT INTO fixed_structures (id, site_code, kind, x_m, y_m, z_m, width_m, depth_m, height_m, label)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		ON CONFLICT (id) DO NOTHING
+	`, f.ID(), f.SiteCode(), string(f.Kind()),
+		footprint.Origin().XM(), footprint.Origin().YM(), footprint.Origin().ZM(),
+		footprint.Size().WidthM(), footprint.Size().DepthM(), footprint.Size().HeightM(),
+		f.Label())
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ports.ErrNaturalKeyTaken
+	}
+	return nil
 }
 
 // Save upserts the structure.

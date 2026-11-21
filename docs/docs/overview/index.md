@@ -55,8 +55,10 @@ and is not a competitive differentiator, and it is needed by contexts on both
 sides of the WMS/WES line: `inventory-storage` needs location validity to
 accept a stow, and `wes-work-planning` / `fulfillment-execution` need
 zone/aisle adjacency for travel-path and congestion reasoning. Neither owns
-it; both consume it (as do `warehouse-planning`, for storage capacity, and
-`warehouse-ops-agent`, over MCP). Following the reference's discipline —
+it; both consume it (as do, over Kafka, `warehouse-planning` for storage capacity,
+`inbound-receiving`, `dock-scheduling`, `yard-management`, `outbound-shipping`,
+`slotting-optimization`, `pick-face-replenishment`, `task-interleaving` and
+`network-inventory-planning`, and `warehouse-ops-agent`, over MCP). Following the reference's discipline —
 *"extract generic logic instead of duplicating it"* — it is therefore its own
 bounded context and its own service, not a package bolted onto
 `inventory-storage`. See

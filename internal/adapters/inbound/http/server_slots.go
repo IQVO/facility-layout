@@ -32,7 +32,7 @@ func (s *Server) handleRegisterLocationSlot(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	registered, err := s.RegisterLocationSlot.ExecuteWithHandlingUnit(r.Context(), code, req.LocationType, override, req.DockFlow, req.Activities, req.HandlingUnit)
+	registered, err := s.RegisterLocationSlot.ExecuteWithOptions(r.Context(), code, req.LocationType, override, req.DockFlow, req.Activities, usecases.SlotOptions{HandlingUnit: req.HandlingUnit, GLN: req.GLN, SpotKind: req.SpotKind})
 	if err != nil {
 		writeError(w, r, err)
 		return

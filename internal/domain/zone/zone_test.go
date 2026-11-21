@@ -167,3 +167,26 @@ func testZonePitchRehydrateZero(t *testing.T) {
 		t.Fatalf("expected default pitch, got (%v, %v)", z.BayPitchM(), z.LevelPitchM())
 	}
 }
+
+func TestZoneAssignGLN(t *testing.T) {
+	z := mustNewAmbientZone(t)
+	if !z.GLN().IsZero() {
+		t.Fatalf("a new zone has no GLN, got %q", z.GLN())
+	}
+	if err := z.AssignGLN("5412345000012"); !errors.Is(err, shared.ErrInvalidGLN) {
+		t.Fatalf("wrong check digit: err = %v", err)
+	}
+	if !z.GLN().IsZero() {
+		t.Fatalf("a rejected GLN must not be kept, got %q", z.GLN())
+	}
+	if err := z.AssignGLN("5412345000013"); err != nil || z.GLN() != "5412345000013" {
+		t.Fatalf("err=%v gln=%q", err, z.GLN())
+	}
+}
+
+func TestZoneWithPersistedGLN(t *testing.T) {
+	z := mustNewAmbientZone(t).WithPersistedGLN("5412345000013")
+	if z.GLN() != "5412345000013" {
+		t.Fatalf("GLN = %q", z.GLN())
+	}
+}

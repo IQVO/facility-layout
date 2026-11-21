@@ -61,7 +61,10 @@ type Site struct {
 	code string
 	name string
 	// role is the site's role in the fulfilment network (ADR-0037).
-	role               Role
+	role Role
+	// gln is the site's OPTIONAL GS1 Global Location Number (ADR-0045);
+	// "" means none recorded.
+	gln                shared.GLN
 	status             shared.Status
 	capability         TransferCapability
 	capabilityRevision int64
@@ -70,7 +73,8 @@ type Site struct {
 	capabilityHeartbeatAt time.Time
 	// version is optimistic-concurrency metadata (ADR-0025, extended to
 	// Site by ADR-0035): the persisted row version this aggregate was
-	// loaded at. Never read by business logic.
+	// loaded at. 0 means never persisted (ADR-0047). Never read by
+	// business logic.
 	version int
 }
 
@@ -83,7 +87,12 @@ func NewSite(code, name string) (*Site, error) {
 // NewSiteWithRole validates and constructs an Active Site with the given
 // role (ADR-0037; UNSPECIFIED is accepted at registration), no transfer
 // capability and no published capability revision yet. The role never
-// implies a capability: that stays the explicit ADR-0035 command.
+// implies a capability: that stays the explicit ADR-0035 command. The
+// aggregate carries version 0 — never persisted (ADR-0047): the first
+// stored row is written at version 1 by the repository, and a Save of a
+// version-0 aggregate can never satisfy the guarded ON CONFLICT arm
+// against a stored row, so a lost creation is refused instead of
+// overwriting the winner.
 func NewSiteWithRole(code, name string, role Role) (*Site, error) {
 	if err := validateSiteCode(code); err != nil {
 		return nil, err
@@ -94,7 +103,7 @@ func NewSiteWithRole(code, name string, role Role) (*Site, error) {
 	if !role.known() {
 		return nil, fmt.Errorf("%w: %q", ErrInvalidSiteRole, role)
 	}
-	return &Site{code: code, name: name, role: role, status: shared.Active, version: 1}, nil
+	return &Site{code: code, name: name, role: role, status: shared.Active, version: 0}, nil
 }
 
 // RehydrateSite rebuilds a Site from persisted state without re-running the
@@ -117,6 +126,12 @@ func RehydrateSite(code, name string, role Role, status shared.Status, capabilit
 
 // RehydrateOption restores optional persisted state in RehydrateSite.
 type RehydrateOption func(*Site)
+
+// PersistedGLN restores the site's GLN read from storage without
+// re-validating it (ADR-0045); "" means none recorded.
+func PersistedGLN(gln shared.GLN) RehydrateOption {
+	return func(s *Site) { s.gln = gln }
+}
 
 // CapabilityHeartbeatAt restores when the site's last capability heartbeat
 // was raised (ADR-0041); the zero time means none yet.
@@ -145,6 +160,25 @@ func (s *Site) Name() string { return s.name }
 
 // Role returns the site's role in the fulfilment network (ADR-0037).
 func (s *Site) Role() Role { return s.role }
+
+// GLN returns the site's GS1 Global Location Number, or "" when none was
+// recorded (ADR-0045).
+func (s *Site) GLN() shared.GLN { return s.gln }
+
+// AssignGLN records the site's GS1 Global Location Number, validating the
+// 13-digit GS1 mod-10 rule (shared.ErrInvalidGLN). A decommissioned site's
+// identity is frozen: ErrSiteDecommissioned. Whether another location
+// already holds the number is the use case's question, not the aggregate's.
+func (s *Site) AssignGLN(gln shared.GLN) error {
+	if !s.IsActive() {
+		return ErrSiteDecommissioned
+	}
+	if _, err := shared.ParseGLN(string(gln)); err != nil {
+		return err
+	}
+	s.gln = gln
+	return nil
+}
 
 // Status returns the site's lifecycle status.
 func (s *Site) Status() shared.Status { return s.status }

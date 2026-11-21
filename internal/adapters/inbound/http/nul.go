@@ -22,18 +22,18 @@ import (
 func rejectNUL(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.ContainsRune(r.URL.Path, 0) || strings.ContainsRune(r.URL.RawPath, 0) || strings.Contains(r.URL.RawPath, "%00") {
-			writeProblem(w, http.StatusNotFound, problemInfo{"resource-not-found", "Resource not found"}, "no resource matches the requested path", r.URL.Path)
+			writeProblem(w, http.StatusNotFound, problemResourceNotFound, "no resource matches the requested path", r.URL.Path)
 			return
 		}
 		if r.Body != nil && r.Body != http.NoBody {
 			body, err := io.ReadAll(r.Body)
 			_ = r.Body.Close()
 			if err != nil {
-				writeProblem(w, http.StatusBadRequest, problemInfo{slugMalformedRequestBody, "The request body could not be read"}, err.Error(), r.URL.Path)
+				writeProblem(w, http.StatusBadRequest, problemBodyUnreadable, err.Error(), r.URL.Path)
 				return
 			}
 			if containsNUL(body) {
-				writeProblem(w, http.StatusBadRequest, problemInfo{slugMalformedRequestBody, "The request body contains a NUL character"}, "a NUL character (U+0000) is not allowed in a request body", r.URL.Path)
+				writeProblem(w, http.StatusBadRequest, problemBodyHasNUL, "a NUL character (U+0000) is not allowed in a request body", r.URL.Path)
 				return
 			}
 			r.Body = io.NopCloser(bytes.NewReader(body))

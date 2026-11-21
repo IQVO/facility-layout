@@ -23,7 +23,7 @@ func NewSiteRepo(pool *pgxpool.Pool) *SiteRepo {
 	return &SiteRepo{pool: pool}
 }
 
-const siteColumns = `code, name, status, transfer_origin_enabled, transfer_destination_enabled, capability_revision, version, site_role, capability_heartbeat_at`
+const siteColumns = `code, name, status, transfer_origin_enabled, transfer_destination_enabled, capability_revision, version, site_role, capability_heartbeat_at, gln`
 
 // Save upserts the site, version-guarded against a concurrent writer
 // (ADR-0025, extended to Site by ADR-0035): on an existing row it only
@@ -33,11 +33,17 @@ const siteColumns = `code, name, status, transfer_origin_enabled, transfer_desti
 // capability_revision: the loser gets ports.ErrConcurrentModification and
 // its SiteCapabilityChanged outbox row rolls back with it. The same guard
 // serialises role changes (ADR-0037).
+//
+// A version-0 aggregate is a CREATION (ADR-0047): the INSERT arm writes
+// the first stored row at version 1, and because a stored row is always at
+// version >= 1 the guarded ON CONFLICT arm can never match a version-0
+// save — a creation that finds the code taken affects 0 rows and answers
+// ports.ErrNaturalKeyTaken instead of overwriting the winner's row.
 func (r *SiteRepo) Save(ctx context.Context, s *site.Site) error {
 	capability := s.TransferCapability()
 	tag, err := querierFrom(ctx, r.pool).Exec(ctx, `
 		INSERT INTO sites (`+siteColumns+`)
-		VALUES ($1, $2, $3, $4, $5, $6, 1, $8, $9)
+		VALUES ($1, $2, $3, $4, $5, $6, 1, $8, $9, $10)
 		ON CONFLICT (code) DO UPDATE SET
 			name = EXCLUDED.name,
 			site_role = EXCLUDED.site_role,
@@ -49,11 +55,17 @@ func (r *SiteRepo) Save(ctx context.Context, s *site.Site) error {
 			version = sites.version + 1
 		WHERE sites.version = $7
 	`, s.Code(), s.Name(), string(s.Status()),
-		capability.OriginEnabled(), capability.DestinationEnabled(), s.CapabilityRevision(), s.Version(), string(s.Role()), nullableTime(s.CapabilityHeartbeatAt()))
+		capability.OriginEnabled(), capability.DestinationEnabled(), s.CapabilityRevision(), s.Version(), string(s.Role()), nullableTime(s.CapabilityHeartbeatAt()), nullableGLN(s.GLN()))
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
+		if s.Version() == 0 {
+			// A never-persisted aggregate found its code taken (ADR-0047):
+			// the guarded arm above cannot match a stored row, so 0 rows
+			// means another writer's creation won.
+			return ports.ErrNaturalKeyTaken
+		}
 		// The ON CONFLICT arm matched an existing row whose version no
 		// longer equals the one s was loaded at.
 		return ports.ErrConcurrentModification
@@ -68,6 +80,9 @@ func nullableTime(t time.Time) *time.Time {
 	}
 	return &t
 }
+
+// Save never rewrites gln: a GLN is assigned once, at registration (ADR-0045),
+// and the ON CONFLICT arm above leaves the stored value as it is.
 
 // ListCapabilityHeartbeatDue implements ports.SiteCapabilityHeartbeatSource
 // (ADR-0041): active sites with a declared capability whose last heartbeat
@@ -131,8 +146,9 @@ func scanSite(row pgx.Row) (*site.Site, error) {
 		capabilityRevision         int64
 		version                    int
 		heartbeatAt                *time.Time
+		gln                        *string
 	)
-	if err := row.Scan(&code, &name, &status, &originEnabled, &destEnabled, &capabilityRevision, &version, &role, &heartbeatAt); err != nil {
+	if err := row.Scan(&code, &name, &status, &originEnabled, &destEnabled, &capabilityRevision, &version, &role, &heartbeatAt, &gln); err != nil {
 		return nil, err
 	}
 	parsed, err := shared.ParseStatus(status)
@@ -146,6 +162,9 @@ func scanSite(row pgx.Row) (*site.Site, error) {
 	var opts []site.RehydrateOption
 	if heartbeatAt != nil {
 		opts = append(opts, site.CapabilityHeartbeatAt(*heartbeatAt))
+	}
+	if gln != nil {
+		opts = append(opts, site.PersistedGLN(shared.GLN(*gln)))
 	}
 	return site.RehydrateSite(code, name, parsedRole, parsed, site.NewTransferCapability(originEnabled, destEnabled), capabilityRevision, version, opts...), nil
 }

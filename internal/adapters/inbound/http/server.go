@@ -244,7 +244,7 @@ func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, dest any) bool {
 	if err := json.NewDecoder(r.Body).Decode(dest); err != nil {
-		writeProblem(w, http.StatusBadRequest, problemInfo{slugMalformedRequestBody, "The request body is not valid JSON"}, err.Error(), r.URL.Path)
+		writeProblem(w, http.StatusBadRequest, problemMalformedJSON, err.Error(), r.URL.Path)
 		return false
 	}
 	return true
@@ -256,7 +256,12 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 	writeProblem(w, statusFor(err), problemFor(err), err.Error(), r.URL.Path)
 }
 
+// writeProblem answers an RFC 7807 problem and tells the Idempotency-Key
+// middleware's capturing writer (if w is one) the replay class of the problem
+// type, so the middleware stores or releases the answer by the class the
+// catalogue entry declares, never by a slug or a status range.
 func writeProblem(w http.ResponseWriter, status int, info problemInfo, detail, instance string) {
+	markReplayClass(w, info.class)
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(problemDetails{

@@ -11,6 +11,8 @@ export interface Site {
   /** The site's role in the fulfilment network (ADR-0037); wire value is
    *  the UPPER_SNAKE SiteRole enum, "UNSPECIFIED" until classified. */
   siteRole: string;
+  /** GS1 Global Location Number (ADR-0045); absent when none was recorded. */
+  gln?: string;
 }
 
 /** SiteRole (ADR-0037) -- what kind of network node the building is.
@@ -60,6 +62,8 @@ export interface Zone {
   temperatureClass: string;
   hazmat: boolean;
   status: string;
+  /** GS1 Global Location Number (ADR-0045); absent when none was recorded. */
+  gln?: string;
 }
 
 export interface Aisle {
@@ -145,6 +149,11 @@ export interface LocationSlot {
   dimensions?: Dimensions;
   /** Explicit pick-path override, when set (ADR-0017). */
   pickSequence?: number;
+  /** GS1 Global Location Number (ADR-0045); absent when none was recorded. */
+  gln?: string;
+  /** Yard spot kind (ADR-0045): PARKING | HOLDING | REEFER_PLUG | HAZMAT |
+   *  STAGING_LANE. Set only when role is Yard; absent when none was recorded. */
+  spotKind?: string;
 }
 
 /** locationClassificationResponse -- the denormalized Hazmat/TemperatureClass

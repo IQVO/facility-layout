@@ -33,6 +33,7 @@ type siteRegisteredData struct {
 	SiteCode string `json:"siteCode"`
 	SiteName string `json:"siteName"`
 	SiteRole string `json:"siteRole"`
+	GLN      string `json:"gln,omitempty"`
 }
 
 type siteRoleChangedData struct {
@@ -58,6 +59,7 @@ type zoneRegisteredData struct {
 	ZoneCode         string `json:"zoneCode"`
 	TemperatureClass string `json:"temperatureClass"`
 	Hazmat           bool   `json:"hazmat"`
+	GLN              string `json:"gln,omitempty"`
 }
 
 type aisleRegisteredData struct {
@@ -97,6 +99,8 @@ type locationSlotRegisteredData struct {
 	MaxWeightKg  float64  `json:"maxWeightKg,omitempty"`
 	MaxVolumeM3  float64  `json:"maxVolumeM3,omitempty"`
 	HandlingUnit string   `json:"handlingUnit,omitempty"`
+	GLN          string   `json:"gln,omitempty"`
+	SpotKind     string   `json:"spotKind,omitempty"`
 }
 
 type locationSlotHandlingUnitDeclaredData struct {
@@ -169,7 +173,7 @@ type crossAisleRegisteredData struct {
 func siteWireData(env wireEnvelope, event shared.DomainEvent) (any, bool) {
 	switch e := event.(type) {
 	case shared.SiteRegistered:
-		return siteRegisteredData{env, e.SiteCode, e.SiteName, e.SiteRole}, true
+		return siteRegisteredData{env, e.SiteCode, e.SiteName, e.SiteRole, string(e.GLN)}, true
 	case shared.SiteRoleChanged:
 		return siteRoleChangedData{env, e.SiteCode, e.SiteRole, e.PreviousSiteRole}, true
 	case shared.SiteCapabilityChanged:
@@ -191,7 +195,7 @@ func WireData(event shared.DomainEvent) (any, error) {
 	}
 	switch e := event.(type) {
 	case shared.ZoneRegistered:
-		return zoneRegisteredData{env, e.ZoneID, e.SiteCode, e.AreaCode, e.ZoneCode, string(e.TemperatureClass), e.Hazmat}, nil
+		return zoneRegisteredData{env, e.ZoneID, e.SiteCode, e.AreaCode, e.ZoneCode, string(e.TemperatureClass), e.Hazmat, string(e.GLN)}, nil
 	case shared.AisleRegistered:
 		return aisleRegisteredData{env, e.AisleID, e.ZoneID, e.AisleCode, e.SequenceHint, string(e.Direction)}, nil
 	case shared.LocationTypeRegistered:
@@ -199,7 +203,7 @@ func WireData(event shared.DomainEvent) (any, error) {
 	case shared.PlacementRuleDefined:
 		return placementRuleDefinedData{env, e.RuleID, e.LocationType, e.Effect, e.Predicate}, nil
 	case shared.LocationSlotRegistered:
-		return locationSlotRegisteredData{env, e.LocationCode, e.AisleID, e.ZoneID, e.LocationType, e.Role, e.DockFlow, e.Activities, e.MaxWeightKg, e.MaxVolumeM3, string(e.HandlingUnit)}, nil
+		return locationSlotRegisteredData{env, e.LocationCode, e.AisleID, e.ZoneID, e.LocationType, e.Role, e.DockFlow, e.Activities, e.MaxWeightKg, e.MaxVolumeM3, string(e.HandlingUnit), string(e.GLN), string(e.SpotKind)}, nil
 	case shared.LocationSlotHandlingUnitDeclared:
 		return locationSlotHandlingUnitDeclaredData{env, e.LocationCode, string(e.HandlingUnit), e.DeclaredAt}, nil
 	case shared.LocationSlotDecommissioned:

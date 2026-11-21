@@ -73,6 +73,9 @@ type siteRef struct {
 	TransferOriginEnabled      bool   `json:"transferOriginEnabled"`
 	TransferDestinationEnabled bool   `json:"transferDestinationEnabled"`
 	CapabilityRevision         int64  `json:"capabilityRevision"`
+	// GLN is the site's GS1 Global Location Number (ADR-0045), omitted when
+	// none was recorded.
+	GLN string `json:"gln,omitempty"`
 }
 
 // siteLayoutDTO is the compact, nested projection of one Site's structure --
@@ -98,12 +101,15 @@ type fixedStructureDTO struct {
 }
 
 type zoneLayoutDTO struct {
-	ZoneID           string           `json:"zoneId"`
-	AreaCode         string           `json:"areaCode"`
-	ZoneCode         string           `json:"zoneCode"`
-	TemperatureClass string           `json:"temperatureClass"`
-	Hazmat           bool             `json:"hazmat"`
-	Aisles           []aisleLayoutDTO `json:"aisles"`
+	ZoneID           string `json:"zoneId"`
+	AreaCode         string `json:"areaCode"`
+	ZoneCode         string `json:"zoneCode"`
+	TemperatureClass string `json:"temperatureClass"`
+	Hazmat           bool   `json:"hazmat"`
+	// GLN is the zone's GS1 Global Location Number (ADR-0045), omitted when
+	// none was recorded.
+	GLN    string           `json:"gln,omitempty"`
+	Aisles []aisleLayoutDTO `json:"aisles"`
 }
 
 type aisleLayoutDTO struct {
@@ -140,6 +146,7 @@ func toSiteRef(s *site.Site) siteRef {
 		TransferOriginEnabled:      c.OriginEnabled(),
 		TransferDestinationEnabled: c.DestinationEnabled(),
 		CapabilityRevision:         s.CapabilityRevision(),
+		GLN:                        string(s.GLN()),
 	}
 }
 
@@ -157,6 +164,7 @@ func toSiteLayoutDTO(layout *usecases.SiteLayout) siteLayoutDTO {
 			ZoneCode:         zl.Zone.ZoneCode(),
 			TemperatureClass: string(zl.Zone.TemperatureClass()),
 			Hazmat:           zl.Zone.Hazmat(),
+			GLN:              string(zl.Zone.GLN()),
 			Aisles:           make([]aisleLayoutDTO, 0, len(zl.Aisles)),
 		}
 		for _, al := range zl.Aisles {

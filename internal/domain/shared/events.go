@@ -45,65 +45,6 @@ func newBase(entity, name string, occurredAt time.Time) base {
 	return base{Name: name, Type: eventTypePrefix + entity + "." + name, At: occurredAt}
 }
 
-// SiteRegistered: a physical facility was added to the warehouse map.
-// SiteRole is additive (ADR-0037): the site's role in the fulfilment
-// network, UNSPECIFIED when the registration did not state one.
-type SiteRegistered struct {
-	base
-	SiteCode string
-	SiteName string
-	SiteRole string
-}
-
-// NewSiteRegistered builds a SiteRegistered event.
-func NewSiteRegistered(occurredAt time.Time, siteCode, siteName, siteRole string) SiteRegistered {
-	return SiteRegistered{base: newBase("site", "SiteRegistered", occurredAt), SiteCode: siteCode, SiteName: siteName, SiteRole: siteRole}
-}
-
-// SiteRoleChanged: an operator changed a site's role in the fulfilment
-// network (ADR-0037). It carries the new and the replaced role; it never
-// implies a transfer-capability change (that is SiteCapabilityChanged,
-// raised only by the explicit ADR-0035 command).
-type SiteRoleChanged struct {
-	base
-	SiteCode         string
-	SiteRole         string
-	PreviousSiteRole string
-}
-
-// NewSiteRoleChanged builds a SiteRoleChanged event.
-func NewSiteRoleChanged(occurredAt time.Time, siteCode, siteRole, previousSiteRole string) SiteRoleChanged {
-	return SiteRoleChanged{
-		base:             newBase("site", "SiteRoleChanged", occurredAt),
-		SiteCode:         siteCode,
-		SiteRole:         siteRole,
-		PreviousSiteRole: previousSiteRole,
-	}
-}
-
-// SiteCapabilityChanged: a site's transfer capability state changed. The
-// payload is a complete, PII-free last-write-wins snapshot; consumers use
-// CapabilityRevision to retain the newest state and never infer it from
-// physical layout topology.
-type SiteCapabilityChanged struct {
-	base
-	SiteCode                   string
-	TransferOriginEnabled      bool
-	TransferDestinationEnabled bool
-	CapabilityRevision         int64
-}
-
-// NewSiteCapabilityChanged builds a full last-write-wins capability snapshot.
-func NewSiteCapabilityChanged(occurredAt time.Time, siteCode string, transferOriginEnabled, transferDestinationEnabled bool, capabilityRevision int64) SiteCapabilityChanged {
-	return SiteCapabilityChanged{
-		base:                       newBase("site", "SiteCapabilityChanged", occurredAt),
-		SiteCode:                   siteCode,
-		TransferOriginEnabled:      transferOriginEnabled,
-		TransferDestinationEnabled: transferDestinationEnabled,
-		CapabilityRevision:         capabilityRevision,
-	}
-}
-
 // ZoneRegistered: a behavioral zone was added inside a Site's area.
 type ZoneRegistered struct {
 	base
@@ -113,6 +54,8 @@ type ZoneRegistered struct {
 	ZoneCode         string
 	TemperatureClass TemperatureClass
 	Hazmat           bool
+	// GLN is OPTIONAL (ADR-0045): "" when the zone has none.
+	GLN GLN
 }
 
 // NewZoneRegistered builds a ZoneRegistered event.
@@ -126,6 +69,13 @@ func NewZoneRegistered(occurredAt time.Time, zoneID, siteCode, areaCode, zoneCod
 		TemperatureClass: temperatureClass,
 		Hazmat:           hazmat,
 	}
+}
+
+// WithGLN returns a copy of the event carrying the zone's optional GS1 Global
+// Location Number (ADR-0045).
+func (e ZoneRegistered) WithGLN(gln GLN) ZoneRegistered {
+	e.GLN = gln
+	return e
 }
 
 // AisleRegistered: a physical corridor was added inside a Zone.
@@ -209,6 +159,10 @@ type LocationSlotRegistered struct {
 	// HandlingUnit is OPTIONAL (ADR-0040): "" when none was recorded at
 	// registration, which keeps the wire payload byte-identical to before.
 	HandlingUnit HandlingUnit
+	// GLN and SpotKind are OPTIONAL (ADR-0045): "" when none was recorded.
+	// SpotKind is only ever set on a Yard slot.
+	GLN      GLN
+	SpotKind SpotKind
 }
 
 // NewLocationSlotRegistered builds a LocationSlotRegistered event. Role,
@@ -235,6 +189,20 @@ func NewLocationSlotRegistered(occurredAt time.Time, code LocationCode, location
 // constructor signature — and every caller of it — is unchanged.
 func (e LocationSlotRegistered) WithHandlingUnit(unit HandlingUnit) LocationSlotRegistered {
 	e.HandlingUnit = unit
+	return e
+}
+
+// WithGLN returns a copy of the event carrying the slot's optional GS1 Global
+// Location Number (ADR-0045).
+func (e LocationSlotRegistered) WithGLN(gln GLN) LocationSlotRegistered {
+	e.GLN = gln
+	return e
+}
+
+// WithSpotKind returns a copy of the event carrying the yard slot's optional
+// spot kind (ADR-0045).
+func (e LocationSlotRegistered) WithSpotKind(kind SpotKind) LocationSlotRegistered {
+	e.SpotKind = kind
 	return e
 }
 

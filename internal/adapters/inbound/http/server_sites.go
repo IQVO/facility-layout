@@ -21,7 +21,7 @@ func (s *Server) handleRegisterSite(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	registered, err := s.RegisterSite.Execute(r.Context(), req.SiteCode, req.Name, role)
+	registered, err := s.RegisterSite.ExecuteWithGLN(r.Context(), req.SiteCode, req.Name, role, req.GLN)
 	if err != nil {
 		writeError(w, r, err)
 		return

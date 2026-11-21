@@ -58,6 +58,9 @@ type Zone struct {
 	status           shared.Status
 	bayPitchM        float64
 	levelPitchM      float64
+	// gln is the zone's OPTIONAL GS1 Global Location Number (ADR-0045);
+	// "" means none recorded.
+	gln shared.GLN
 }
 
 // NewZone validates and constructs an Active Zone scoped to siteCode.
@@ -113,6 +116,28 @@ func validateCode(code string) error {
 		return fmt.Errorf("%w: %q", ErrInvalidCode, code)
 	}
 	return nil
+}
+
+// GLN returns the zone's GS1 Global Location Number, or "" when none was
+// recorded (ADR-0045).
+func (z *Zone) GLN() shared.GLN { return z.gln }
+
+// AssignGLN records the zone's GS1 Global Location Number, validating the
+// 13-digit GS1 mod-10 rule (shared.ErrInvalidGLN). Whether another location
+// already holds the number is the use case's question, not the aggregate's.
+func (z *Zone) AssignGLN(gln shared.GLN) error {
+	if _, err := shared.ParseGLN(string(gln)); err != nil {
+		return err
+	}
+	z.gln = gln
+	return nil
+}
+
+// WithPersistedGLN restores the GLN read from storage onto a rehydrated zone
+// without re-validating it. "" means none recorded. Persistence adapters only.
+func (z *Zone) WithPersistedGLN(gln shared.GLN) *Zone {
+	z.gln = gln
+	return z
 }
 
 // ID returns the zone's identity: SITE-AREA-ZONE, e.g. "WH1-STOR-AMB". It

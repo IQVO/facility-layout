@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/claudioed/facility-layout/internal/application/ports"
 	"github.com/claudioed/facility-layout/internal/domain/placement"
 	"github.com/claudioed/facility-layout/internal/domain/shared"
 	"github.com/claudioed/facility-layout/internal/domain/slot"
@@ -75,6 +76,19 @@ func NewLocationTypeRepo() *LocationTypeRepo {
 	return &LocationTypeRepo{types: make(map[string]placement.LocationType)}
 }
 
+// Create inserts a NEW location type and refuses to create over an
+// existing one, mirroring the Postgres INSERT ... ON CONFLICT DO NOTHING
+// (ADR-0047).
+func (r *LocationTypeRepo) Create(_ context.Context, t placement.LocationType) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.types[t.Name()]; exists {
+		return ports.ErrNaturalKeyTaken
+	}
+	r.types[t.Name()] = t
+	return nil
+}
+
 // Save stores the location type under its name.
 func (r *LocationTypeRepo) Save(_ context.Context, t placement.LocationType) error {
 	r.mu.Lock()
@@ -117,6 +131,19 @@ func NewPlacementRuleRepo() *PlacementRuleRepo {
 	return &PlacementRuleRepo{rules: make(map[string]placement.PlacementRule)}
 }
 
+// Create inserts a NEW placement rule and refuses to create over an
+// existing one, mirroring the Postgres INSERT ... ON CONFLICT DO NOTHING
+// (ADR-0047).
+func (r *PlacementRuleRepo) Create(_ context.Context, rule placement.PlacementRule) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.rules[rule.ID()]; exists {
+		return ports.ErrNaturalKeyTaken
+	}
+	r.rules[rule.ID()] = rule
+	return nil
+}
+
 // Save stores the rule under its id.
 func (r *PlacementRuleRepo) Save(_ context.Context, rule placement.PlacementRule) error {
 	r.mu.Lock()
@@ -146,4 +173,29 @@ func (r *PlacementRuleRepo) List(_ context.Context) ([]placement.PlacementRule, 
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID() < out[j].ID() })
 	return out, nil
+}
+
+// GLNRegistry is an in-memory implementation of ports.GLNRegistry. Unlike the
+// Postgres one it has no transaction to roll back, so a claim made by an
+// attempt that later fails stays claimed; the test doubles never rely on that.
+type GLNRegistry struct {
+	mu      sync.Mutex
+	holders map[shared.GLN]string
+}
+
+// NewGLNRegistry builds an empty GLNRegistry.
+func NewGLNRegistry() *GLNRegistry {
+	return &GLNRegistry{holders: make(map[shared.GLN]string)}
+}
+
+// Claim records gln as held by owner; it reports false when a different owner
+// already holds it and true otherwise (including a repeat claim by owner).
+func (r *GLNRegistry) Claim(_ context.Context, gln shared.GLN, owner string) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if holder, taken := r.holders[gln]; taken {
+		return holder == owner, nil
+	}
+	r.holders[gln] = owner
+	return true, nil
 }

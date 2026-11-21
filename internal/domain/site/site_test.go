@@ -70,3 +70,42 @@ func TestRehydrateSitePreservesPersistedStatus(t *testing.T) {
 		t.Fatal("a rehydrated Decommissioned site must not be Active")
 	}
 }
+
+func TestSiteAssignGLN(t *testing.T) {
+	s, err := site.NewSite("WH1", "Main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.GLN().IsZero() {
+		t.Fatalf("a new site has no GLN, got %q", s.GLN())
+	}
+	if err := s.AssignGLN("4006381333932"); !errors.Is(err, shared.ErrInvalidGLN) {
+		t.Fatalf("wrong check digit: err = %v", err)
+	}
+	if !s.GLN().IsZero() {
+		t.Fatalf("a rejected GLN must not be kept, got %q", s.GLN())
+	}
+	if err := s.AssignGLN("4006381333931"); err != nil || s.GLN() != "4006381333931" {
+		t.Fatalf("err=%v gln=%q", err, s.GLN())
+	}
+}
+
+func TestSiteAssignGLNIsFrozenWhenDecommissioned(t *testing.T) {
+	s, _ := site.NewSite("WH1", "Main")
+	if err := s.Decommission(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AssignGLN("4006381333931"); !errors.Is(err, site.ErrSiteDecommissioned) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestRehydrateSiteRestoresPersistedGLN(t *testing.T) {
+	s := site.RehydrateSite("WH1", "Main", site.RoleUnspecified, shared.Active, site.NewTransferCapability(false, false), 0, 1, site.PersistedGLN("4006381333931"))
+	if s.GLN() != "4006381333931" {
+		t.Fatalf("GLN = %q", s.GLN())
+	}
+	if none := site.RehydrateSite("WH1", "Main", site.RoleUnspecified, shared.Active, site.NewTransferCapability(false, false), 0, 1); !none.GLN().IsZero() {
+		t.Fatalf("no option, no GLN; got %q", none.GLN())
+	}
+}

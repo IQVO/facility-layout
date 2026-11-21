@@ -172,6 +172,13 @@ paths:
         unknown role is 422 `invalid-site-role`. The role never sets the
         transfer capability (ADR-0035 stays the only writer; see
         `GET /site-roles/transfer-defaults` for the per-role defaults).
+
+
+        `gln` (ADR-0045) is an optional GS1 Global Location Number. It must be
+        13 digits ending in the GS1 mod-10 check digit (otherwise 422
+        `invalid-gln`) and a GLN identifies exactly one location across sites,
+        zones and slots (otherwise 409 `gln-already-assigned`). A site
+        registered without a `gln` is exactly as valid as before.
       tags: [Sites]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -185,6 +192,7 @@ paths:
               siteCode: ABE8
               name: ABE8 - Non-Sortable Fulfillment Center (Breinigsville, PA)
               siteRole: NON_SORTABLE_FC
+              gln: "4006381333931"
       responses:
         "201":
           description: Site registered.
@@ -205,6 +213,7 @@ paths:
                 name: ABE8 - Non-Sortable Fulfillment Center (Breinigsville, PA)
                 status: Active
                 siteRole: NON_SORTABLE_FC
+                gln: "4006381333931"
         "400":
           description: >
             Malformed input, or the Idempotency-Key header is absent
@@ -236,12 +245,21 @@ paths:
         "422":
           description: >
             The `siteRole` is not one of the known site roles
-            (`invalid-site-role`, ADR-0037).
+            (`invalid-site-role`, ADR-0037), or the `gln` is not 13 digits
+            with a valid GS1 check digit (`invalid-gln`, ADR-0045).
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
               examples:
+                invalidGln:
+                  summary: Wrong GS1 check digit
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/invalid-gln
+                    title: GLN must be 13 digits ending in the GS1 mod-10 check digit
+                    status: 422
+                    detail: gln must be 13 digits ending in the GS1 mod-10 check digit
+                    instance: /sites
                 invalidSiteRole:
                   summary: Unknown site role
                   value:
@@ -553,6 +571,11 @@ paths:
         registered against an unknown or non-Active Site. The TemperatureClass
         and Hazmat flag set here are what PlacementRules match on later, so
         they are behavioral, not descriptive. Publishes ZoneRegistered.
+
+
+        `gln` (ADR-0045) is an optional GS1 Global Location Number: 13 digits
+        with a valid mod-10 check digit (422 `invalid-gln`), unique across
+        every site, zone and slot (409 `gln-already-assigned`).
       tags: [Zones]
       parameters:
         - $ref: "#/components/parameters/SiteCode"
@@ -571,6 +594,14 @@ paths:
                   zoneCode: FRZ
                   temperatureClass: Frozen
                   hazmat: false
+              withGln:
+                summary: A zone carrying a GS1 Global Location Number (ADR-0045)
+                value:
+                  areaCode: YARD
+                  zoneCode: NORTH
+                  temperatureClass: Ambient
+                  hazmat: false
+                  gln: "5412345000013"
               casePickFaces:
                 summary: A case-pick (CPK) zone, a convention on the free-form zone code (ADR 0042)
                 value:
@@ -603,6 +634,7 @@ paths:
                 status: Active
                 bayPitchM: 1.2
                 levelPitchM: 1.5
+                gln: "5412345000013"
         "400":
           description: >
             Malformed input, or the Idempotency-Key header is absent
@@ -633,12 +665,24 @@ paths:
           $ref: "#/components/responses/Conflict"
         "422":
           description: >
-            Semantically invalid.
+            Semantically invalid: a placement-rule violation, a `gln` that is
+            not 13 digits with a valid GS1 check digit (`invalid-gln`), an
+            unknown `spotKind` (`unknown-spot-kind`), or a `spotKind` on a
+            location whose role is not Yard (`spot-kind-not-allowed`)
+            (ADR-0045).
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
               examples:
+                spotKindNotAllowed:
+                  summary: spotKind sent for a dock door
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/spot-kind-not-allowed
+                    title: spotKind may only be set on a Yard location
+                    status: 422
+                    detail: spotKind may only be set on a Yard location
+                    instance: /locations
                 semantic:
                   value:
                     type: https://errors.facility-layout.warehouse-systems.dev/placement-rule-violated
@@ -1435,6 +1479,9 @@ paths:
         capacity envelope its slots inherit unless they override it. Both
         capacity dimensions must be strictly positive: a slot that can hold
         nothing is not a slot. Publishes LocationTypeRegistered.
+        The names `AutomatedStorage` (role Storage), `AsrsPort` and
+        `HandoffPoint` (role Drop) are well-known (ADR-0048): registering one
+        with another role is 422 `location-type-role-mismatch`.
       tags: [Location Types]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -1511,6 +1558,14 @@ paths:
                     status: 422
                     detail: "location type violates a placement rule for this zone: Shelf is denied in zone WH1-STOR-FRZ by rule [RULE-FRZ-NO-SHELF: Deny Shelf where temperatureClass=Frozen]"
                     instance: /locations
+                locationTypeRoleMismatch:
+                  summary: A well-known type registered with another role
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/location-type-role-mismatch
+                    title: A well-known location type must carry its canonical role
+                    status: 422
+                    detail: "a well-known location type must carry its canonical role: AutomatedStorage is Storage, AsrsPort and HandoffPoint are Drop: AutomatedStorage must be Storage, got Dock"
+                    instance: /location-types
         "500":
           $ref: "#/components/responses/InternalError"
     get:
@@ -1779,6 +1834,23 @@ paths:
         existing slot is Decommissioned, since decommission is one-way and a
         retired code is never resurrected by re-registration. Publishes
         LocationSlotRegistered.
+
+
+        `gln` (ADR-0045) is an optional GS1 Global Location Number for a dock
+        door or a yard spot: 13 digits with a valid mod-10 check digit (422
+        `invalid-gln`), unique across every site, zone and slot (409
+        `gln-already-assigned`). `spotKind` (ADR-0045) classifies a yard spot
+        (`PARKING`, `HOLDING`, `REEFER_PLUG`, `HAZMAT`, `STAGING_LANE`) and is
+        only legal when the LocationType's role is `Yard`: on any other role
+        it is 422 `spot-kind-not-allowed`; an unknown value is 422
+        `unknown-spot-kind`. Neither field can be changed after registration
+        in this version. Omit both and the request behaves exactly as before.
+
+
+        An aisle holds at most one active `AutomatedStorage` slot (409
+        `automated-storage-already-in-aisle`), and an `AsrsPort` slot is
+        accepted only in an aisle that holds one (422
+        `asrs-port-without-automated-storage`) (ADR-0048).
       tags: [Locations]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -1788,9 +1860,19 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/RegisterLocationSlotRequest"
-            example:
-              locationCode: WH1-STOR-AMB-A07-03-02-B
-              locationType: PalletRack
+            examples:
+              storageBin:
+                summary: A storage bin without the optional identity fields
+                value:
+                  locationCode: WH1-STOR-AMB-A07-03-02-B
+                  locationType: PalletRack
+              yardSpot:
+                summary: A refrigerated-trailer yard spot with a GLN (ADR-0045)
+                value:
+                  locationCode: WH1-YARD-NORTH-Y01-01-01-A
+                  locationType: YardSpot
+                  gln: "4006381333931"
+                  spotKind: REEFER_PLUG
       responses:
         "201":
           description: Location slot registered.
@@ -1855,7 +1937,9 @@ paths:
           $ref: "#/components/responses/Conflict"
         "422":
           description: >
-            Semantically invalid.
+            Semantically invalid: a placement-rule violation, or an `AsrsPort`
+            slot in an aisle with no active `AutomatedStorage` slot
+            (`asrs-port-without-automated-storage`, ADR-0048).
           content:
             application/problem+json:
               schema:
@@ -1867,6 +1951,14 @@ paths:
                     title: Location type is not legal in this zone
                     status: 422
                     detail: "location type violates a placement rule for this zone: Shelf is denied in zone WH1-STOR-FRZ by rule [RULE-FRZ-NO-SHELF: Deny Shelf where temperatureClass=Frozen]"
+                    instance: /locations
+                asrsPortWithoutAutomatedStorage:
+                  summary: An AsrsPort before its AS/RS
+                  value:
+                    type: https://errors.facility-layout.warehouse-systems.dev/asrs-port-without-automated-storage
+                    title: An AsrsPort location must be in an aisle that holds an active AutomatedStorage location
+                    status: 422
+                    detail: an AsrsPort location must be in an aisle holding an active AutomatedStorage location
                     instance: /locations
         "500":
           $ref: "#/components/responses/InternalError"
@@ -1900,7 +1992,15 @@ paths:
         The import is a batch-job noun (`/location-imports`, REST API
         guideline 1.3 e) and is idempotent: a retry with the same
         Idempotency-Key replays the stored report with
-        `Idempotency-Replayed: true` instead of importing twice.
+        `Idempotency-Replayed: true` instead of importing twice. The only
+        refusal is `empty-import` (stored); a bad row is reported in the 200
+        body, never as an error.
+
+
+        An aisle holds at most one active `AutomatedStorage` slot, and an
+        `AsrsPort` slot is accepted only in an aisle that holds one
+        (ADR-0048): a row breaking either rule is rejected in the report with
+        that reason, like any other bad row.
       tags: [Locations]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -2144,6 +2244,9 @@ paths:
         (`decommissionings`) of the slot rather than a PATCH (REST API
         guideline 1.3 d). A retry with the same Idempotency-Key replays the
         stored 204 with `Idempotency-Replayed: true` instead of answering 409.
+        A refusal that can still change (`location-slot-not-found` for a code
+        not registered yet, `concurrent-modification`) is not stored: the key
+        is released and the retry executes again.
 
 
         The transition is **one-way** in v1: there is no reactivation use
@@ -2251,9 +2354,18 @@ components:
         key is answered 400 `idempotency-key-required`, a malformed one 400
         `idempotency-key-invalid`. A replay with the same key, method, path and
         body returns the original response verbatim plus the response header
-        `Idempotency-Replayed: true`; the same key with a different method,
-        path or body is 409 `idempotency-key-reused`. The key is global (not
-        per route).
+        `Idempotency-Replayed: true` when that response is final for the
+        request: a 2xx, or a refusal that cannot change on a retry (the
+        request's own validation, a code that is already taken, a
+        decommissioned structure; ADR 0046). A refusal that depends on state
+        that can change (`concurrent-modification`, a `*-not-found` parent that
+        another request may register, `placement-rule-violated`,
+        `cross-aisle-aisle-mismatch`, a location check that depends on the
+        location type) and every 5xx are NOT stored: the key is released and
+        the same request under the same key executes again, and a different
+        request under a released key is a new request. While a response is
+        stored, the same key with a different method, path or body is 409
+        `idempotency-key-reused`. The key is global (not per route).
       schema:
         type: string
         minLength: 1
@@ -2307,7 +2419,9 @@ components:
     IdempotencyReplayed:
       description: >-
         `true` when this response is the stored answer of an earlier request
-        with the same Idempotency-Key; never present on the first execution.
+        with the same Idempotency-Key (a 2xx or a refusal that cannot change on
+        a retry); never present on the first execution, and never on a
+        refusal that releases the key.
       schema:
         type: string
         enum: ["true"]
@@ -2381,8 +2495,12 @@ components:
             instance: /sites/NOPE
     Conflict:
       description: >
-        A state conflict: a code already taken, a parent that exists but is
-        no longer Active, or a slot already decommissioned. On a POST it is
+        A state conflict: a code already taken, a GS1 Global Location Number
+        already assigned to another location (`gln-already-assigned`,
+        ADR-0045), an aisle that already holds an active AutomatedStorage
+        location (`automated-storage-already-in-aisle`, ADR-0048), a parent
+        that exists but is no longer Active, or a slot already
+        decommissioned. On a POST it is
         also the answer to an Idempotency-Key reused with a different method,
         path or body (`idempotency-key-reused`); the problem type tells the
         two apart.
@@ -2397,6 +2515,20 @@ components:
                 title: A location slot with this code already exists
                 status: 409
                 detail: a location slot with this code already exists
+                instance: /locations
+            glnAlreadyAssigned:
+              value:
+                type: https://errors.facility-layout.warehouse-systems.dev/gln-already-assigned
+                title: This GLN is already assigned to another location
+                status: 409
+                detail: this GLN is already assigned to another location
+                instance: /locations
+            automatedStorageAlreadyInAisle:
+              value:
+                type: https://errors.facility-layout.warehouse-systems.dev/automated-storage-already-in-aisle
+                title: "This aisle already holds an AutomatedStorage location: one AS/RS is one logical location"
+                status: 409
+                detail: this aisle already holds an active AutomatedStorage location
                 instance: /locations
             idempotencyKeyReused:
               value:
@@ -2565,6 +2697,26 @@ components:
           description: Left-to-right slot on that level.
           example: B
 
+    Gln:
+      type: string
+      pattern: "^[0-9]{13}$"
+      description: >
+        A GS1 Global Location Number (ADR-0045): 13 digits whose last digit is
+        the GS1 mod-10 check digit of the first twelve (weights 3 and 1,
+        alternating from the right). The pattern only checks the shape; the
+        check digit is verified by the service (422 `invalid-gln`). A GLN
+        identifies exactly one site, zone or slot (409 `gln-already-assigned`).
+        Optional everywhere; omitted when none was recorded.
+      example: "4006381333931"
+
+    SpotKind:
+      type: string
+      enum: [PARKING, HOLDING, REEFER_PLUG, HAZMAT, STAGING_LANE]
+      description: >
+        What a yard spot is for (ADR-0045). Only meaningful on a slot whose
+        role is `Yard`; omitted when none was recorded.
+      example: REEFER_PLUG
+
     Site:
       type: object
       description: A physical facility/building — the root of the location hierarchy.
@@ -2582,6 +2734,8 @@ components:
           $ref: "#/components/schemas/Status"
         siteRole:
           $ref: "#/components/schemas/SiteRole"
+        gln:
+          $ref: "#/components/schemas/Gln"
 
     SiteRole:
       type: string
@@ -2674,6 +2828,8 @@ components:
           example: Fulfilment Centre One
         siteRole:
           $ref: "#/components/schemas/SiteRole"
+        gln:
+          $ref: "#/components/schemas/Gln"
 
     Zone:
       type: object
@@ -2724,6 +2880,8 @@ components:
             default (1.5 m). Used only by the travel graph's estimated
             vertical spacing between adjacent levels.
           example: 1.5
+        gln:
+          $ref: "#/components/schemas/Gln"
 
     RegisterZoneRequest:
       type: object
@@ -2773,6 +2931,8 @@ components:
             default (1.5 m). Must be sent together with `bayPitchM`: a
             one-sided pitch is rejected 422 `invalid-pitch`.
           example: 2.0
+        gln:
+          $ref: "#/components/schemas/Gln"
 
     Point3D:
       type: object
@@ -3192,7 +3352,10 @@ components:
           $ref: "#/components/schemas/Coordinates"
         locationType:
           type: string
-          description: The slot's LocationType.
+          description: >
+            The slot's LocationType. Well-known WCS types (ADR-0048):
+            `AutomatedStorage` (one AS/RS as one logical location, role
+            Storage), `AsrsPort`, `HandoffPoint` (role Drop).
           example: PalletRack
         role:
           $ref: "#/components/schemas/LocationRole"
@@ -3205,8 +3368,10 @@ components:
           type: array
           items:
             type: string
-            enum: [Pack, Sort, QC, VAS, Deconsolidate, Receive, Kit]
-          description: Set only when role is WorkCenter (ADR-0016).
+            enum: [Pack, Sort, QC, VAS, Deconsolidate, Receive, Kit, Pick]
+          description: >
+            Set only when role is WorkCenter (ADR-0016). `Pick` marks a
+            goods-to-person station (ADR-0048).
           example: [Pack, VAS]
         capacity:
           $ref: "#/components/schemas/ResolvedCapacity"
@@ -3228,6 +3393,10 @@ components:
           example: 42
         handlingUnit:
           $ref: "#/components/schemas/HandlingUnit"
+        gln:
+          $ref: "#/components/schemas/Gln"
+        spotKind:
+          $ref: "#/components/schemas/SpotKind"
 
     LocationClassification:
       type: object
@@ -3271,7 +3440,7 @@ components:
           type: array
           items:
             type: string
-            enum: [Pack, Sort, QC, VAS, Deconsolidate, Receive, Kit]
+            enum: [Pack, Sort, QC, VAS, Deconsolidate, Receive, Kit, Pick]
           description: Required (non-empty) when the LocationType's role is WorkCenter; rejected for every other role.
           example: [Pack, VAS]
         capacityOverride:
@@ -3281,6 +3450,10 @@ components:
             Optional. Omit to inherit the LocationType's default envelope.
         handlingUnit:
           $ref: "#/components/schemas/HandlingUnit"
+        gln:
+          $ref: "#/components/schemas/Gln"
+        spotKind:
+          $ref: "#/components/schemas/SpotKind"
 
     ImportRow:
       type: object
@@ -3359,7 +3532,7 @@ components:
           type: array
           items:
             type: string
-            enum: [Pack, Sort, QC, VAS, Deconsolidate, Receive, Kit]
+            enum: [Pack, Sort, QC, VAS, Deconsolidate, Receive, Kit, Pick]
           description: Required (non-empty) when the row's LocationType role is WorkCenter; rejected for every other role.
           example: [Pack, VAS]
         capacityOverride:

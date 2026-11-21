@@ -27,9 +27,11 @@ language everywhere. Module `github.com/claudioed/facility-layout`, Go 1.26.
 - **Analytics isolation (ADR-0010)**: OLTP domain/application must NOT
   import the analytics store (arch-tests enforce it); `internal/analytics/report/`
   depends on nothing. Only `cmd/facility-projector` writes the analytics DB.
-- **Publisher is trace-free (ADR-0009)**: no OTel package on the Kafka
-  publisher. Default (`EVENT_PUBLISHER` unset) is the `outbound/events`
-  log/outbox publisher; `kafka` publishes to `warehouse.facility.events`.
+- **Postgres + Kafka are the only runtime (ADR-0039)**: every domain event
+  goes through the transactional outbox to `warehouse.facility.events`
+  (`EVENT_PUBLISHER` unset or `kafka`; `log` is rejected at boot). The Kafka
+  adapters inject the W3C trace context into headers (ADR-0009 as amended
+  by ADR-0038, which carries it across the outbox).
 - **No auth layer (ADR-0014 reverted by ADR-0015)**: do not re-add
   `AUTH_MODE`/`API_READ_KEY`/etc. on REST or MCP without re-reading ADR-0015.
 - **Idempotency (ADR-0019, ADR-0044)**: EVERY POST requires a caller-supplied
@@ -42,15 +44,17 @@ language everywhere. Module `github.com/claudioed/facility-layout`, Go 1.26.
 - **Errors**: typed domain errors mapped to HTTP status in the adapter; RFC
   7807 `application/problem+json` for every error (ADR-0004) — never a
   bespoke `{"error": ...}` shape.
-- **`.golangci.yml`** is copied VERBATIM from `../inventory-storage/.golangci.yml`
-  — do not hand-edit; re-copy if the fleet's shared config changes.
+- **`.golangci.yml`** mirrors `../inventory-storage/.golangci.yml` (same
+  linters and settings) — do not hand-edit; re-copy if the fleet's shared
+  config changes.
 - **`web/`** (`facility-mfe`) has its own `package.json`/build and is NOT
   part of the Go module or its quality gate.
 - Every package has a doc comment; gofmt/go vet clean. Table-driven tests
   (domain + application with in-memory adapter), one httptest per endpoint,
   build-tagged Postgres integration tests (testcontainers; need Docker, never skip).
-- Config via env: `DATABASE_URL`, `HTTP_ADDR` (default `:8080`),
-  `ANALYTICS_DATABASE_URL`, `EVENT_PUBLISHER` (`kafka` or unset).
+- Config via env: `DATABASE_URL` and `KAFKA_BROKERS` (both required, boot
+  error if missing), `HTTP_ADDR` (default `:8080`), `EVENT_PUBLISHER`
+  (`kafka` or unset); the projector/reports read `ANALYTICS_DATABASE_URL`.
 
 ## Events: CloudEvents 1.0 is MANDATORY (ADR-0024)
 

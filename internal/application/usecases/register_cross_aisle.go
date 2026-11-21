@@ -58,8 +58,10 @@ func (uc *RegisterCrossAisle) Execute(ctx context.Context, zoneID, fromAisleCode
 	}
 
 	err = atomically(ctx, uc.UnitOfWork, func(ctx context.Context) error {
-		if err := uc.CrossAisles.Save(ctx, c); err != nil {
-			return err
+		if err := uc.CrossAisles.Create(ctx, c); err != nil {
+			// A lost concurrent creation of the same cross-aisle is the
+			// duplicate refusal, not an overwrite (ADR-0047).
+			return lostCreationRace(err, ErrDuplicateCrossAisle)
 		}
 		event := shared.NewCrossAisleRegistered(uc.Clock.Now(), zoneID, fromAisleCode, toAisleCode, atBay)
 		return uc.Events.Publish(ctx, event)

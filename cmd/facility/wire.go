@@ -33,7 +33,10 @@ type adapterSet struct {
 	rules                  ports.PlacementRuleRepo
 	structures             ports.FixedStructureRepo
 	crossAisles            ports.CrossAisleRepo
-	publisher              ports.EventPublisher
+	// glns claims GS1 Global Location Numbers so one number identifies at
+	// most one location (ADR-0045).
+	glns      ports.GLNRegistry
+	publisher ports.EventPublisher
 	// unitOfWork brackets a use case's Save(s) + Publish(es) atomically
 	// (ADR-0018).
 	unitOfWork ports.UnitOfWork
@@ -48,7 +51,7 @@ type adapterSet struct {
 // place in the codebase that knows about all three layers at once.
 func newServer(a adapterSet, clock ports.Clock, locationMetrics ports.LocationMetrics, readiness *inboundhttp.Readiness) *inboundhttp.Server {
 	return &inboundhttp.Server{
-		RegisterSite: &usecases.RegisterSite{Sites: a.sites, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork},
+		RegisterSite: &usecases.RegisterSite{Sites: a.sites, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork, GLNs: a.glns},
 		GetSite:      &usecases.GetSite{Sites: a.sites},
 		ListSites:    &usecases.ListSites{Sites: a.sites},
 		ChangeSiteTransferCapability: &usecases.ChangeSiteTransferCapability{
@@ -59,7 +62,7 @@ func newServer(a adapterSet, clock ports.Clock, locationMetrics ports.LocationMe
 		},
 		ListSiteRoleTransferDefaults: &usecases.ListSiteRoleTransferDefaults{},
 
-		RegisterZone: &usecases.RegisterZone{Sites: a.sites, Zones: a.zones, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork},
+		RegisterZone: &usecases.RegisterZone{Sites: a.sites, Zones: a.zones, Events: a.publisher, Clock: clock, UnitOfWork: a.unitOfWork, GLNs: a.glns},
 		GetZone:      &usecases.GetZone{Zones: a.zones},
 		ListZones:    &usecases.ListZones{Sites: a.sites, Zones: a.zones},
 
@@ -78,7 +81,7 @@ func newServer(a adapterSet, clock ports.Clock, locationMetrics ports.LocationMe
 		RegisterLocationSlot: &usecases.RegisterLocationSlot{
 			Sites: a.sites, Zones: a.zones, Aisles: a.aisles, Slots: a.slots,
 			LocationTypes: a.locationTypes, Rules: a.rules, Events: a.publisher, Clock: clock,
-			Metrics: locationMetrics, UnitOfWork: a.unitOfWork,
+			Metrics: locationMetrics, UnitOfWork: a.unitOfWork, GLNs: a.glns,
 		},
 		GetLocationSlot:           &usecases.GetLocationSlot{Slots: a.slots},
 		GetLocationClassification: &usecases.GetLocationClassification{Slots: a.slots, Zones: a.zones},
@@ -193,6 +196,7 @@ func buildAdapters(cfg publisherConfig, logger *slog.Logger) (adapterSet, *postg
 		zones:                  postgres.NewZoneRepo(pool),
 		aisles:                 postgres.NewAisleRepo(pool),
 		slots:                  postgres.NewSlotRepo(pool),
+		glns:                   postgres.NewGLNRegistry(pool),
 		locationTypes:          postgres.NewLocationTypeRepo(pool),
 		rules:                  postgres.NewPlacementRuleRepo(pool),
 		structures:             postgres.NewFixedStructureRepo(pool),
