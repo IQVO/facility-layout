@@ -136,6 +136,12 @@ func TestASRSRace_ALostKeyedImportRollsBackReleasesItsKeyAndItsRetryRejectsTheRo
 	if loser.Code != http.StatusInternalServerError {
 		t.Fatalf("loser import = %d %s, want 500 (the index violation aborts the import's shared transaction)", loser.Code, loser.Body.String())
 	}
+	if ct := loser.Header().Get("Content-Type"); ct != "application/problem+json" {
+		t.Fatalf("loser import Content-Type = %q, want application/problem+json", ct)
+	}
+	if slug := problemSlug(t, loser.Body.Bytes()); slug != "internal-error" {
+		t.Fatalf("loser import problem = %q, want internal-error (the unmapped fallback, errors.go statusFor)", slug)
+	}
 	assertOneASRSInTheAisle(t, pool)
 	if n := keyRows(t, pool, "asrs-import-b"); n != 0 {
 		t.Fatalf("loser key rows = %d, want 0 (a 5xx rolls the key back, ADR 0019)", n)
