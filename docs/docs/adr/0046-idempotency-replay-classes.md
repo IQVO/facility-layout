@@ -111,16 +111,16 @@ answer it today; its class is still declared. A slug that several sentinels shar
 
 | Problem type | Status | Class | Why |
 |---|---|---|---|
-| `aisle-not-active` | 409 | FINAL | Same for aisles (`register_location_slot.go:303`) (J2). |
-| `aisle-not-found` | 404 | RETRYABLE | The aisle of the location code is not registered yet (`register_location_slot.go:300`); caller-chosen codes (J3). Before any write. |
-| `already-decommissioned` | 409 | FINAL | `slot.Decommission` (`slot/location_slot.go:189`): decommission is one-way (ADR 0005); the sibling aggregates' variants are not reachable from a keyed route (J2). |
+| `aisle-not-active` | 409 | FINAL | Same for aisles (`register_location_slot.go:308`) (J2). |
+| `aisle-not-found` | 404 | RETRYABLE | The aisle of the location code is not registered yet (`register_location_slot.go:305`); caller-chosen codes (J3). Before any write. |
+| `already-decommissioned` | 409 | FINAL | `slot.Decommission` (`slot/location_slot.go:196`): decommission is one-way (ADR 0005); the sibling aggregates' variants are not reachable from a keyed route (J2). |
 | `asrs-port-without-automated-storage` | 422 | RETRYABLE | `automated_storage_rule.go:27` (ADR 0048): the aisle holds no active `AutomatedStorage` slot yet; registering it lets the same request pass (the J3 argument). Before any write. |
 | `automated-storage-already-in-aisle` | 409 | RETRYABLE | `automated_storage_rule.go:25` (ADR 0048), or the lost race on migration 0014's partial unique index (`postgres/slot_repo.go`, rolled back with the scope): decommissioning the aisle's AS/RS frees it, so a retry can pass. Nothing committed. |
-| `concurrent-modification` | 409 | RETRYABLE | A version-guarded `Save` of an existing row found it at another version (`postgres/site_repo.go:56-59`, `slot_repo.go:85-90`): the answer depends on another writer's commit (two concurrent `POST /locations/{code}/decommissionings` of one slot). The whole request transaction rolls back, key row included. Proven by `TestReplayClass_ConcurrentModificationLoserIsReleasedAndItsRetryExecutes` (a staged genuine race: the loser's key row is absent, its retry executes and is then stored and replayed). |
+| `concurrent-modification` | 409 | RETRYABLE | A version-guarded `Save` of an existing row found it at another version (`postgres/site_repo.go:56-71`, `slot_repo.go:78-104`): the answer depends on another writer's commit (two concurrent `POST /locations/{code}/decommissionings` of one slot). The whole request transaction rolls back, key row included. Proven by `TestReplayClass_ConcurrentModificationLoserIsReleasedAndItsRetryExecutes` (a staged genuine race: the loser's key row is absent, its retry executes and is then stored and replayed). |
 | `cross-aisle-aisle-mismatch` | 422 | RETRYABLE | `register_cross_aisle.go:49`: the two aisles must already exist in the zone; they can be registered after the first attempt (J6). Before any write. |
 | `cross-aisle-same-aisle` | 422 | FINAL | Validation of the request's own fields or path: a function of the request alone. |
 | `dependency-unavailable` | 503 | RETRYABLE | 503 of `/readyz`, never behind the middleware; a 5xx is never stored. |
-| `dock-flow-required` | 422 | RETRYABLE | `functionalAttributesFor(locationType.Role(), ...)` (`slot/functional.go:105`): a function of the request AND the named type's role (J4). Before any write. |
+| `dock-flow-required` | 422 | RETRYABLE | `functionalAttributesFor(locationType.Role(), ...)` (`slot/functional.go:108`): a function of the request AND the named type's role (J4). Before any write. |
 | `duplicate-aisle` | 409 | FINAL | `register_aisle.go:45`; same argument (J1). |
 | `duplicate-cross-aisle` | 409 | FINAL | `register_cross_aisle.go:57` (J1). |
 | `duplicate-fixed-structure` | 409 | FINAL | `register_fixed_structure.go:41` (J1). |
@@ -138,11 +138,11 @@ answer it today; its class is still declared. A slug that several sentinels shar
 | `empty-fixed-structure-kind` | 400 | FINAL | Validation of the request's own fields or path: a function of the request alone. |
 | `empty-fixed-structure-label` | 400 | FINAL | Validation of the request's own fields or path: a function of the request alone. |
 | `empty-fixed-structure-site-code` | 400 | FINAL | Validation of the request's own fields or path: a function of the request alone. |
-| `empty-import` | 400 | FINAL | `import_facility_layout.go:101`: the request has no rows; nothing was written. |
+| `empty-import` | 400 | FINAL | `import_facility_layout.go:102`: the request has no rows; nothing was written. |
 | `empty-placement-rule-id` | 400 | FINAL | Validation of the request's own fields or path: a function of the request alone. |
 | `empty-site-name` | 400 | FINAL | Validation of the request's own fields or path: a function of the request alone. |
 | `empty-zone-predicate` | 422 | FINAL | Validation of the request's own fields or path: a function of the request alone. |
-| `functional-attributes-not-allowed` | 422 | RETRYABLE | Same (`slot/functional.go:111`, `:117`, `:130`) (J4). |
+| `functional-attributes-not-allowed` | 422 | RETRYABLE | Same (`slot/functional.go:114`, `:120`, `:133`) (J4). |
 | `gln-already-assigned` | 409 | FINAL | `gln.go:39`: `location_glns` is claim-only, no row is ever deleted (`postgres/gln_registry.go:28-43`); the claim is the first step of the scope and a refused claim writes nothing (J1). |
 | `idempotency-key-invalid` | 400 | FINAL | The key header of this request; answered before the store. |
 | `idempotency-key-required` | 400 | FINAL | The key header of this request; answered before the store. |
@@ -182,8 +182,8 @@ answer it today; its class is still declared. A slug that several sentinels shar
 | `resource-not-found` | 404 | FINAL | A NUL in the path can never name a resource (`nul.go`); answered before the middleware. |
 | `segment-endpoints-not-real` | 422 | FINAL | Validation of the request's own fields or path: a function of the request alone. |
 | `segment-start-end-equal` | 422 | FINAL | Validation of the request's own fields or path: a function of the request alone. |
-| `site-not-active` | 409 | FINAL | A decommissioned site never returns (ADR 0005); no use case decommissions a site, so no keyed route can answer it today (`import_facility_layout.go:205` answers it per row) (J2). |
-| `site-not-found` | 404 | RETRYABLE | `FindByCode` found no site (`register_zone.go:51`, `register_fixed_structure.go:33`, `register_location_slot.go:278`). Site codes are chosen by the caller, so another request can register the site a moment later; nothing is deleted, but absence is what can change (J3). Nothing committed (before `atomically`). Proven by `TestReplayClass_SiteNotFoundIsReleasedSoTheRetryFindsItOnceRegistered`. |
+| `site-not-active` | 409 | FINAL | A decommissioned site never returns (ADR 0005); no use case decommissions a site, so no keyed route can answer it today (`import_facility_layout.go:206` answers it per row) (J2). |
+| `site-not-found` | 404 | RETRYABLE | `FindByCode` found no site (`register_zone.go:51`, `register_fixed_structure.go:33`, `register_location_slot.go:283`). Site codes are chosen by the caller, so another request can register the site a moment later; nothing is deleted, but absence is what can change (J3). Nothing committed (before `atomically`). Proven by `TestReplayClass_SiteNotFoundIsReleasedSoTheRetryFindsItOnceRegistered`. |
 | `spot-kind-not-allowed` | 422 | RETRYABLE | `slot/identity.go:49`: the slot's role comes from the named location type (J4). |
 | `unknown-activity` | 422 | FINAL | Validation of the request's own fields or path: a function of the request alone. |
 | `unknown-direction` | 422 | FINAL | Validation of the request's own fields or path: a function of the request alone. |
@@ -197,10 +197,10 @@ answer it today; its class is still declared. A slug that several sentinels shar
 | `unknown-status` | 422 | FINAL | Validation of the request's own fields or path: a function of the request alone. |
 | `unknown-temperature-class` | 422 | FINAL | Validation of the request's own fields or path: a function of the request alone. |
 | `unknown-travel-waypoint` | 422 | RETRYABLE | `GET /distance` only (`travel/graph.go:190`, `:193`): the graph has no waypoint for the aisle/bay yet; not keyed. |
-| `work-center-activities-required` | 422 | RETRYABLE | Same (`slot/functional.go:120`) (J4). |
-| `zone-mismatch` | 422 | FINAL | `slot/location_slot.go:108-109`: compares the zone id derived from the location code with the attributes of the zone found by that same id: an invariant of the code, never raised in practice (J7). |
-| `zone-not-active` | 409 | FINAL | Same for zones (`register_aisle.go:32`, `register_location_slot.go:292`) (J2). |
-| `zone-not-found` | 404 | RETRYABLE | The parent zone of an aisle, cross-aisle or slot is not there yet (`register_aisle.go:29`, `register_cross_aisle.go:33`, `register_location_slot.go:289`); zone ids derive from caller-chosen codes (J3). Before any write. |
+| `work-center-activities-required` | 422 | RETRYABLE | Same (`slot/functional.go:123`) (J4). |
+| `zone-mismatch` | 422 | FINAL | `slot/location_slot.go:110-111`: compares the zone id derived from the location code with the attributes of the zone found by that same id: an invariant of the code, never raised in practice (J7). |
+| `zone-not-active` | 409 | FINAL | Same for zones (`register_aisle.go:32`, `register_location_slot.go:297`) (J2). |
+| `zone-not-found` | 404 | RETRYABLE | The parent zone of an aisle, cross-aisle or slot is not there yet (`register_aisle.go:29`, `register_cross_aisle.go:33`, `register_location_slot.go:294`); zone ids derive from caller-chosen codes (J3). Before any write. |
 
 ## Consequences
 

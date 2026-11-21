@@ -44,7 +44,10 @@ today, and nothing says which ports belong to which AS/RS.
    backed by a Postgres partial unique index for concurrent registrations). An
    `AsrsPort` slot is accepted only in an aisle that holds an active
    `AutomatedStorage` slot (`422 asrs-port-without-automated-storage`).
-   Decommissioning the AS/RS slot does not cascade to its ports.
+   Decommissioning the AS/RS slot does not cascade to its ports. A keyed
+   `POST /location-imports` that loses the aisle race on the index answers `500
+   internal-error`: the whole import rolls back, its key is released, and a retry
+   re-executes (and reports the row rejected).
 3. **Convention** (not enforced beyond decision 2): the AS/RS zone is `<site>-AUTO-ASRS`
    (area `AUTO`, zone code `ASRS`), the aisle code is asrs-control's `asrsId`, the
    storage slot is `<site>-AUTO-ASRS-<asrsId>-00-00-S`, a port is
