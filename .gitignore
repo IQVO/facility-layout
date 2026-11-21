@@ -17,3 +17,7 @@ bin/
 .schemathesis/
 .github/tooling/spectral/node_modules/
 .claude/settings.local.json
+
+# Python bytecode (never commit compiled .pyc).
+__pycache__/
+*.pyc
