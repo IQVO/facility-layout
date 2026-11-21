@@ -578,6 +578,18 @@ Location: /location-types/PalletRack
 {"name":"PalletRack","role":"Storage","defaultCapacity":{"maxWeightKg":1200,"maxVolumeM3":2.4}}
 ```
 
+**WCS location types** ([ADR 0048](docs/docs/adr/0048-automated-storage-location-type.md)).
+Three names are well known and carry a fixed role: `AutomatedStorage` (`Storage`),
+`AsrsPort` (`Drop`) and `HandoffPoint` (`Drop`); registering one of them with another
+role answers `422 location-type-role-mismatch`, and every other name stays free. One
+AS/RS is one aisle holding exactly one active `AutomatedStorage` slot (a second answers
+`409 automated-storage-already-in-aisle`, guarded by a partial unique index under
+concurrency), and an `AsrsPort` slot is accepted only in an aisle that already holds
+one (`422 asrs-port-without-automated-storage`). By convention the AS/RS zone is
+`<site>-AUTO-ASRS`, the aisle code is asrs-control's `asrsId`, and a port is
+`<site>-AUTO-ASRS-<asrsId>-<aisle>-00-<portId>` (e.g. `WH1-AUTO-ASRS-ASRS1-01-00-IN1`).
+A goods-to-person station is a `WorkCenter` slot declaring the activity `Pick`.
+
 ### 5 — Define a placement rule
 
 Pallet racking is not rated for the cold, so deny it anywhere `Frozen`:
