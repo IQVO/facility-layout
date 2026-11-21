@@ -2,6 +2,7 @@ package usecases_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/claudioed/facility-layout/internal/adapters/outbound/memory"
@@ -246,5 +247,29 @@ func TestImportAdoptsAParentThatLostItsCreationRace(t *testing.T) {
 	}
 	if report.RowsRejected != 0 || report.SlotsImported != 1 {
 		t.Fatalf("rejected = %d, imported = %d, want 0/1 (the raced parent is adopted)", report.RowsRejected, report.SlotsImported)
+	}
+}
+
+type aisleTakenSlotRepo struct{ *memory.SlotRepo }
+
+func (r *aisleTakenSlotRepo) Save(context.Context, *slot.LocationSlot) error {
+	return ports.ErrAutomatedStorageAisleTaken
+}
+
+// lostCreationRace maps only ports.ErrNaturalKeyTaken: any other Save error
+// passes through, so the AS/RS-per-aisle index violation (ADR-0048) reaches
+// the caller as ErrAutomatedStorageAlreadyInAisle, not as a duplicate code.
+func TestLostCreationRacePassesOtherSaveErrorsThrough(t *testing.T) {
+	h := newHarness(t)
+	h.seedASRS()
+	uc := &usecases.RegisterLocationSlot{
+		Sites: h.sites, Zones: h.zones, Aisles: h.aisles,
+		Slots:         &aisleTakenSlotRepo{SlotRepo: h.slots},
+		LocationTypes: h.locationTypes, Rules: h.rules,
+		Events: h.publisher, Clock: h.clock,
+	}
+	_, err := uc.Execute(h.ctx(), mustCode(t, asrsStore), placement.AutomatedStorage, shared.Capacity{}, "", nil)
+	if !errors.Is(err, usecases.ErrAutomatedStorageAlreadyInAisle) || errors.Is(err, usecases.ErrDuplicateLocationCode) {
+		t.Fatalf("err = %v, want the AS/RS-per-aisle refusal passed through", err)
 	}
 }

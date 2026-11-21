@@ -114,6 +114,8 @@ answer it today; its class is still declared. A slug that several sentinels shar
 | `aisle-not-active` | 409 | FINAL | Same for aisles (`register_location_slot.go:303`) (J2). |
 | `aisle-not-found` | 404 | RETRYABLE | The aisle of the location code is not registered yet (`register_location_slot.go:300`); caller-chosen codes (J3). Before any write. |
 | `already-decommissioned` | 409 | FINAL | `slot.Decommission` (`slot/location_slot.go:189`): decommission is one-way (ADR 0005); the sibling aggregates' variants are not reachable from a keyed route (J2). |
+| `asrs-port-without-automated-storage` | 422 | RETRYABLE | `automated_storage_rule.go:27` (ADR 0048): the aisle holds no active `AutomatedStorage` slot yet; registering it lets the same request pass (the J3 argument). Before any write. |
+| `automated-storage-already-in-aisle` | 409 | RETRYABLE | `automated_storage_rule.go:25` (ADR 0048), or the lost race on migration 0014's partial unique index (`postgres/slot_repo.go`, rolled back with the scope): decommissioning the aisle's AS/RS frees it, so a retry can pass. Nothing committed. |
 | `concurrent-modification` | 409 | RETRYABLE | A version-guarded `Save` of an existing row found it at another version (`postgres/site_repo.go:56-59`, `slot_repo.go:85-90`): the answer depends on another writer's commit (two concurrent `POST /locations/{code}/decommissionings` of one slot). The whole request transaction rolls back, key row included. Proven by `TestReplayClass_ConcurrentModificationLoserIsReleasedAndItsRetryExecutes` (a staged genuine race: the loser's key row is absent, its retry executes and is then stored and replayed). |
 | `cross-aisle-aisle-mismatch` | 422 | RETRYABLE | `register_cross_aisle.go:49`: the two aisles must already exist in the zone; they can be registered after the first attempt (J6). Before any write. |
 | `cross-aisle-same-aisle` | 422 | FINAL | Validation of the request's own fields or path: a function of the request alone. |
@@ -163,6 +165,7 @@ answer it today; its class is still declared. A slug that several sentinels shar
 | `invalid-z` | 422 | FINAL | Validation of the request's own fields or path: a function of the request alone. |
 | `location-slot-not-found` | 404 | RETRYABLE | `POST /locations/{code}/decommissionings` names a code nobody registered yet (`decommission_location_slot.go:28`); location codes are caller-chosen (J3). Before any write. |
 | `location-type-not-found` | 404 | RETRYABLE | A slot or a placement rule names a location type that is not registered yet (`register_location_slot.go:192`, `define_placement_rule.go:29`); caller-chosen names (J3). Before any write. |
+| `location-type-role-mismatch` | 422 | FINAL | `placement.NewLocationType` (`domain/placement/placement.go:97`, ADR 0048): a well-known type name with another role; a function of the request alone. |
 | `malformed-location-code` | 400 | FINAL | Validation of the request's own fields or path: a function of the request alone. |
 | `malformed-request-body` | 400 | FINAL | `decodeJSON` (`server.go`), the unreadable body (`idempotency.go`) and a NUL in the body (`nul.go`): a function of the bytes of the request. Three titles, one slug, one class. |
 | `missing-geometry-field` | 400 | FINAL | Validation of the request's own fields or path: a function of the request alone. |

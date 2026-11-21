@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS uq_location_slots_automated_storage_per_aisle;

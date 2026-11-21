@@ -663,7 +663,10 @@ components:
                     properties:
                       locationType:
                         type: string
-                        description: e.g. `PalletRack`, `ShelfBin`.
+                        description: >
+                          e.g. `PalletRack`, `ShelfBin`, or a well-known WCS
+                          type (ADR-0048): `AutomatedStorage` (role
+                          Storage), `AsrsPort`, `HandoffPoint` (role Drop).
                       role:
                         type: string
                         description: >
@@ -827,6 +830,11 @@ components:
                         type: string
                       locationType:
                         type: string
+                        description: >
+                          The slot's LocationType. Well-known WCS types
+                          (ADR-0048): `AutomatedStorage` (one AS/RS as one
+                          logical location, role Storage), `AsrsPort`,
+                          `HandoffPoint` (role Drop).
                       role:
                         type: string
                         description: >
@@ -844,9 +852,9 @@ components:
                         items:
                           type: string
                         description: >
-                          Pack, Sort, QC, VAS, Deconsolidate, Receive
-                          and/or Kit. Present only when role is WorkCenter
-                          (ADR-0016).
+                          Pack, Sort, QC, VAS, Deconsolidate, Receive, Kit
+                          and/or Pick (a goods-to-person station, ADR-0048).
+                          Present only when role is WorkCenter (ADR-0016).
                       maxWeightKg:
                         type: number
                         description: >

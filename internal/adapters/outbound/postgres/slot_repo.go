@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/claudioed/facility-layout/internal/application/ports"
@@ -85,6 +86,9 @@ func (r *SlotRepo) Save(ctx context.Context, s *slot.LocationSlot) error {
 		nullableDimensionWidth(dimensions), nullableDimensionDepth(dimensions), nullableDimensionHeight(dimensions),
 		s.PickSequence(), s.Version(), nullableHandlingUnit(s.HandlingUnit()), nullableGLN(s.GLN()), nullableSpotKind(s.SpotKind()))
 	if err != nil {
+		if isUniqueViolation(err, automatedStoragePerAisleIndex) {
+			return ports.ErrAutomatedStorageAisleTaken
+		}
 		return err
 	}
 	if tag.RowsAffected() == 0 {
@@ -347,4 +351,14 @@ func geometryFromColumns(xM, yM, zM, widthM, depthM, heightM *float64) (shared.P
 		return shared.Point3D{}, shared.Dimensions{}, err
 	}
 	return position, dimensions, nil
+}
+
+// automatedStoragePerAisleIndex is migration 0014's partial unique index.
+const automatedStoragePerAisleIndex = "uq_location_slots_automated_storage_per_aisle"
+
+// isUniqueViolation reports a unique_violation (SQLSTATE 23505) raised by the
+// named constraint or index.
+func isUniqueViolation(err error, constraint string) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == constraint
 }

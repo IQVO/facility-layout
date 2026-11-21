@@ -191,6 +191,9 @@ func (uc *RegisterLocationSlot) register(ctx context.Context, code shared.Locati
 	if locationType == nil {
 		return nil, ErrLocationTypeNotFound
 	}
+	if err := checkAutomatedStorage(ctx, uc.Slots, code, locationType.Name()); err != nil {
+		return nil, err
+	}
 
 	functional, err := functionalAttributesFor(locationType.Role(), dockFlow, activityNames)
 	if err != nil {
