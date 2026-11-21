@@ -1017,5 +1017,6 @@ func InitializeScenario(sc *godog.ScenarioContext) {
 	w.registerSiteRoleSteps(sc)
 	w.registerIdentitySteps(sc)
 	w.registerRulesSteps(sc)
+	w.registerAutomatedStorageSteps(sc)
 	sc.Step(`^the classification reports hazmat (true|false) and temperature class "([^"]*)"$`, w.theClassificationReports)
 }
