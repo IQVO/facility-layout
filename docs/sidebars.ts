@@ -175,6 +175,8 @@ const sidebars: SidebarsConfig = {
         'adr/0044-adopt-fleet-rest-api-guideline',
         'adr/0045-gs1-location-identity',
         'adr/0046-idempotency-replay-classes',
+        'adr/0047-concurrent-creation-race',
+        'adr/0048-automated-storage-location-type',
       ],
     },
   ],

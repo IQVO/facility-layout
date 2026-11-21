@@ -14,7 +14,7 @@ var ErrUnknownDockFlow = errors.New("dock flow must be one of Inbound, Outbound,
 
 // ErrUnknownActivity is returned when an Activity string is not one of the
 // known values.
-var ErrUnknownActivity = errors.New("activity must be one of Pack, Sort, QC, VAS, Deconsolidate, Receive, Kit")
+var ErrUnknownActivity = errors.New("activity must be one of Pack, Sort, QC, VAS, Deconsolidate, Receive, Kit, Pick")
 
 // ErrDockFlowRequired is returned when a Dock-role slot is registered with
 // no DockFlow.
@@ -74,12 +74,15 @@ const (
 	Receive Activity = "Receive"
 	// Kit is kitting (assembling several SKUs into one sellable unit).
 	Kit Activity = "Kit"
+	// Pick is goods-to-person picking: a container is brought to the station
+	// and the picker takes eaches out of it (ADR-0048).
+	Pick Activity = "Pick"
 )
 
 // ParseActivity validates and converts the string form.
 func ParseActivity(value string) (Activity, error) {
 	switch Activity(value) {
-	case Pack, Sort, ActivityQC, VAS, Deconsolidate, Receive, Kit:
+	case Pack, Sort, ActivityQC, VAS, Deconsolidate, Receive, Kit, Pick:
 		return Activity(value), nil
 	default:
 		return "", ErrUnknownActivity
