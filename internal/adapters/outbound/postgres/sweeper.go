@@ -115,7 +115,7 @@ func (s *Sweeper) Run(ctx context.Context) error {
 		res, err := s.SweepOnce(ctx)
 		switch {
 		case err != nil && ctx.Err() == nil:
-			s.logger.Error("housekeeping sweep failed", "error", err,
+			s.logger.Error("housekeeping sweep failed", "error", sanitizeErr(err),
 				"idempotency_keys_deleted", res.IdempotencyKeys, "outbox_events_deleted", res.OutboxEvents)
 		case res.IdempotencyKeys > 0 || res.OutboxEvents > 0:
 			s.logger.Info("housekeeping sweep",

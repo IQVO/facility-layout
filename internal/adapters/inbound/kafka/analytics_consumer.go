@@ -233,7 +233,7 @@ func (c *AnalyticsConsumer) handleMessage(ctx context.Context, msg kafkago.Messa
 	}
 	if errors.Is(err, cloudevents.ErrNotCloudEvent) {
 		c.Logger.WarnContext(ctx, "analytics: message is not a valid CloudEvent, sending to dead-letter topic",
-			"topic", msg.Topic, "partition", msg.Partition, "offset", msg.Offset, "error", err)
+			"topic", msg.Topic, "partition", msg.Partition, "offset", msg.Offset, "error", sanitizeErr(err))
 		if dlqErr := c.dlqPublish(ctx, msg, err); dlqErr != nil {
 			return fmt.Errorf("analytics: publish to dead-letter topic: %w", dlqErr)
 		}
@@ -245,7 +245,7 @@ func (c *AnalyticsConsumer) handleMessage(ctx context.Context, msg kafkago.Messa
 
 	c.Logger.ErrorContext(ctx, "analytics: exhausted retries, sending to dead-letter topic",
 		"topic", c.Reader.Config().Topic, "dlq_topic", c.Reader.Config().Topic+dlqTopicSuffix,
-		"attempts", maxHandlerAttempts, "error", err)
+		"attempts", maxHandlerAttempts, "error", sanitizeErr(err))
 	if dlqErr := c.dlqPublish(ctx, msg, err); dlqErr != nil {
 		return fmt.Errorf("analytics: publish to dead-letter topic: %w", dlqErr)
 	}
