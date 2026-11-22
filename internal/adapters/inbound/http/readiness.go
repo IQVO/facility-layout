@@ -104,7 +104,7 @@ func (g *Readiness) Failing(ctx context.Context) []string {
 	var failing []string
 	for _, d := range g.deps {
 		if err := d.Check(checkCtx); err != nil {
-			slog.WarnContext(ctx, "readiness: dependency is not ready", "dependency", d.Name, "error", err)
+			slog.WarnContext(ctx, "readiness: dependency is not ready", "dependency", d.Name, "error", sanitizeForLog(err.Error()))
 			failing = append(failing, d.Name)
 		}
 	}

@@ -41,12 +41,12 @@ func RequestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 
 			duration := time.Since(start)
 			attrs := []any{
-				"method", r.Method,
+				"method", sanitizeForLog(r.Method),
 				"path", sanitizeForLog(r.URL.Path),
 				statusField, ww.Status(),
 				"duration_ms", duration.Milliseconds(),
 				"bytes", ww.BytesWritten(),
-				"request_id", middleware.GetReqID(r.Context()),
+				"request_id", sanitizeForLog(middleware.GetReqID(r.Context())),
 			}
 
 			if ww.Status() >= http.StatusInternalServerError {
