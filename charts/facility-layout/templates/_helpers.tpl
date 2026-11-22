@@ -196,6 +196,15 @@ Fully qualified name of the A2A agent Deployment/Service (<release>-a2a, ADR-004
 {{- include "facility-layout.fullname" . }}-a2a
 {{- end }}
 
+{{/* agents.colocate (warehouse-infra ADR 0012): "true" iff colocate, mcp and a2a are all on; else empty. */}}
+{{- define "facility-layout.agentsColocated" -}}
+{{- if and (.Values.agents | default dict).colocate .Values.mcp.enabled .Values.a2a.enabled }}true{{ end -}}
+{{- end }}
+
+{{- define "facility-layout.agentsFullname" -}}
+{{- printf "%s-agents" (include "facility-layout.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
 {{/*
 Fully qualified name of the frontend Module Federation remote deployment/service.
 
