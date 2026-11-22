@@ -1,4 +1,4 @@
-{{- if .Values.mcp.enabled }}
+{{- if and .Values.mcp.enabled (not (include "facility-layout.agentsColocated" .)) }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -6,6 +6,12 @@ metadata:
   labels:
     {{- include "facility-layout.labels" . | nindent 4 }}
     app.kubernetes.io/component: mcp
+  annotations:
+    # agents.colocate cutover (ADR 0012): ArgoCD prunes this Deployment only after <release>-agents serves
+    # (PruneLast); on the un-flip wave -1 recreates it Healthy before the wave-0 Services switch back.
+    # Deployment-object annotations: syncing them rolls no pod.
+    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/sync-options: PruneLast=true
 spec:
   replicas: {{ .Values.mcp.replicaCount }}
   selector:
@@ -32,6 +38,15 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["/app/mcp"]
+          # Endpoint-removal drain (capacity step 3 follow-up): Kong routes to pod IPs and drops a terminating
+          # pod only on its next config sync, seconds later, while cmd/mcp closes its listener at SIGTERM and an
+          # idle process exits at once; without this delay Kong keeps sending to a vanished pod IP (a 502 or a
+          # connect timeout through Kong on every roll). The kubelet-native sleep needs no shell (distroless).
+          # terminationGracePeriodSeconds must stay above this sleep + the 10 s HTTP drain.
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 10
           ports:
             - name: http
               containerPort: {{ .Values.mcp.service.targetPort }}

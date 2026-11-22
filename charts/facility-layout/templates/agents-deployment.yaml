@@ -1,0 +1,87 @@
+{{- if include "facility-layout.agentsColocated" . }}
+{{- /*
+agents.colocate (capacity step 3; fleet ADR in IQVO/warehouse-infra docs/adr): cmd/mcp and cmd/a2a run as
+two containers of ONE <release>-agents Deployment. The binaries, image, env, probes and resources stay
+per container. Reference copy: IQVO/warehouse-harness-template templates/packaging/charts/ (README.md
+lists the companion edits); copy it verbatim, replacing only the facility-layout. helper prefix.
+
+The two standalone templates (mcp-/a2a-deployment.yaml) stay the single source of each container: this
+file renders them with agents.colocate forced off and takes their containers, volumes and pod
+annotations verbatim. Only the container port NAME changes (http -> mcp / a2a, probe port refs too):
+two containers of one pod cannot both be "http", or a Service's named targetPort would resolve to the
+first one. The pod spec (service account, security context, scheduling, pull secrets) comes from mcp;
+the render FAILS if the mcp and a2a pod specs ever diverge, rather than silently picking one.
+*/ -}}
+{{- $vals := mergeOverwrite (deepCopy .Values) (dict "agents" (dict "colocate" false)) -}}
+{{- $inner := dict "Values" $vals "Release" .Release "Chart" .Chart "Capabilities" .Capabilities "Template" .Template "Files" .Files -}}
+{{- $mcp := include (print .Template.BasePath "/mcp-deployment.yaml") $inner | fromYaml -}}
+{{- $a2a := include (print .Template.BasePath "/a2a-deployment.yaml") $inner | fromYaml -}}
+{{- if not (and $mcp.spec $a2a.spec) }}{{ fail "agents.colocate: mcp-deployment.yaml or a2a-deployment.yaml did not render one Deployment" }}{{ end -}}
+{{- $ms := omit $mcp.spec.template.spec "containers" "volumes" "terminationGracePeriodSeconds" -}}
+{{- $as := omit $a2a.spec.template.spec "containers" "volumes" "terminationGracePeriodSeconds" -}}
+{{- if ne (toJson $ms) (toJson $as) }}{{ fail "agents.colocate: the mcp and a2a pod specs differ (service account, security context or scheduling); align them before colocating" }}{{ end -}}
+{{- $containers := list -}}
+{{- $volumes := dict -}}
+{{- $annotations := dict -}}
+{{- $grace := 0 -}}
+{{- range $pair := list (list "mcp" $mcp) (list "a2a" $a2a) -}}
+{{- $comp := index $pair 0 -}}
+{{- $pod := (index $pair 1).spec.template -}}
+{{- $annotations = merge $annotations ($pod.metadata.annotations | default dict) -}}
+{{- if gt (int $pod.spec.terminationGracePeriodSeconds) $grace }}{{ $grace = int $pod.spec.terminationGracePeriodSeconds }}{{ end -}}
+{{- range $v := $pod.spec.volumes | default list }}{{ $_ := set $volumes $v.name $v }}{{ end -}}
+{{- range $c := $pod.spec.containers -}}
+{{- range $p := $c.ports }}{{ if eq $p.name "http" }}{{ $_ := set $p "name" $comp }}{{ end }}{{ end -}}
+{{- range $probe := list "startupProbe" "livenessProbe" "readinessProbe" -}}
+{{- $pr := index $c $probe -}}
+{{- if $pr -}}
+{{- range $kind := list "httpGet" "tcpSocket" -}}
+{{- $h := index $pr $kind -}}
+{{- if and $h (eq (toString $h.port) "http") }}{{ $_ := set $h "port" $comp }}{{ end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- $containers = append $containers $c -}}
+{{- end -}}
+{{- end -}}
+{{- $spec := deepCopy $mcp.spec.template.spec -}}
+{{- $_ := set $spec "containers" $containers -}}
+{{- if gt $grace 0 }}{{ $_ := set $spec "terminationGracePeriodSeconds" $grace }}{{ end -}}
+{{- if $volumes }}
+{{- $vl := list }}{{ range $k := keys $volumes | sortAlpha }}{{ $vl = append $vl (index $volumes $k) }}{{ end }}
+{{- $_ := set $spec "volumes" $vl -}}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "facility-layout.agentsFullname" . }}
+  labels:
+    {{- include "facility-layout.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agents
+  annotations:
+    # Created and Healthy before the Services re-select it (wave 0); the standalone mcp/a2a Deployments
+    # carry PruneLast, so ArgoCD deletes them only after this pod serves.
+    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/sync-options: PruneLast=true
+spec:
+  replicas: {{ .Values.mcp.replicaCount }}
+  {{- with .Values.agents.strategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "facility-layout.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: agents
+  template:
+    metadata:
+      {{- with $annotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "facility-layout.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: agents
+    spec:
+      {{- toYaml $spec | nindent 6 }}
+{{- end }}

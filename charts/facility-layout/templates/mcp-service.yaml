@@ -10,10 +10,10 @@ spec:
   type: {{ .Values.mcp.service.type }}
   ports:
     - port: {{ .Values.mcp.service.port }}
-      targetPort: http
+      targetPort: {{ ternary "mcp" "http" (eq (include "facility-layout.agentsColocated" .) "true") }}
       protocol: TCP
       name: http
   selector:
     {{- include "facility-layout.selectorLabels" . | nindent 4 }}
-    app.kubernetes.io/component: mcp
+    app.kubernetes.io/component: {{ ternary "agents" "mcp" (eq (include "facility-layout.agentsColocated" .) "true") }}
 {{- end }}
