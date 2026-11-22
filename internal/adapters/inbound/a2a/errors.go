@@ -196,7 +196,7 @@ func problemFromUseCase(err error) *problem {
 	if c, ok := categoryFor(err); ok {
 		return &problem{Type: problemTypeBase + "/" + c.problem.slug, Title: c.problem.title, Detail: err.Error(), Status: c.status}
 	}
-	slog.Error("a2a skill failed", "error", err)
+	slog.Error("a2a skill failed", "error", logReplacer.Replace(err.Error()))
 	return &problem{Type: problemTypeBase + "/internal-error", Title: "An unexpected internal error occurred", Detail: internalErrorDetail, Status: http.StatusInternalServerError}
 }
 
