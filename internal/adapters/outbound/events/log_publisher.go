@@ -40,8 +40,8 @@ func (p *LogPublisher) Publish(ctx context.Context, event shared.DomainEvent) er
 		return err
 	}
 	p.logger.InfoContext(ctx, "domain event published",
-		"event_name", event.EventName(),
-		"event_type", event.EventType(),
+		"event_name", sanitizeLog(event.EventName()),
+		"event_type", sanitizeLog(event.EventType()),
 		"payload", json.RawMessage(payload),
 	)
 	return nil

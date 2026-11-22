@@ -58,7 +58,7 @@ func (l *Loop) Run(ctx context.Context) error {
 		res, err := l.Publisher.Execute(ctx)
 		switch {
 		case err != nil && ctx.Err() == nil:
-			logger.Error("site capability heartbeat failed", "error", err, "published", res.Published)
+			logger.Error("site capability heartbeat failed", "error", sanitizeErr(err), "published", res.Published)
 		case res.Published > 0:
 			logger.Info("site capability heartbeat", "published", res.Published, "skipped", res.Skipped)
 		}
