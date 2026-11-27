@@ -1,16 +1,21 @@
 {{- if and .Values.mcp.enabled .Values.mcp.route.enabled -}}
 {{- /*
-MCP exposure through Kong (fleet decision 2026-10-13: Kong config lives in
-the application charts, not warehouse-infra Terraform).
+MCP exposure through the Agent Router (Envoy Gateway), NOT Kong (warehouse-infra
+ADR 0015): the parentRefs value targets the shared `agent-router` Gateway. Kong
+serves the REST APIs only (the api and analytics reports routes).
 
-Host contract: /api/facility-layout -> Service facility-layout-mcp:8090,
-prefix rewritten to /mcp (the SDK's canonical endpoint on every cmd/mcp in
-this fleet; the healthz route deliberately stays off the host — it is a
-Kubernetes probe concern, not a public endpoint).
+Host contract: /api/mcp/<context> -> Service <context>-mcp:8090, prefix rewritten
+to /mcp (the SDK's canonical endpoint on every cmd/mcp in this fleet; the healthz
+route deliberately stays off the host - it is a Kubernetes probe concern, not a
+public endpoint).
 
-Plugins: this chart's cors + prometheus + opentelemetry KongPlugins (see
-kong-plugins.yaml), attached by annotation. NO auth plugin — endpoints are
-unauthenticated by fleet-wide decision.
+No Kong annotations: the konghq.com/plugins annotation is Kong-only and inert on
+Envoy Gateway, and this chart's KongPlugins do not apply to the route. NO auth
+of any kind - endpoints are unauthenticated by fleet-wide decision.
+
+timeouts.request: Envoy's default route timeout is 15s, which would cut MCP
+Streamable HTTP responses that stream over SSE; "0s" disables it (Gateway API:
+zero means no timeout). Set mcp.route.timeouts.request to a duration to bound it.
 */ -}}
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -19,8 +24,6 @@ metadata:
   labels:
     {{- include "facility-layout.labels" . | nindent 4 }}
     app.kubernetes.io/component: mcp
-  annotations:
-    konghq.com/plugins: {{ include "facility-layout.kongPluginNames" . | quote }}
 spec:
   parentRefs:
     {{- range .Values.mcp.route.parentRefs }}
@@ -41,6 +44,12 @@ spec:
             path:
               type: ReplacePrefixMatch
               replacePrefixMatch: /mcp
+      {{- with .Values.mcp.route.timeouts }}
+      {{- if .request }}
+      timeouts:
+        request: {{ .request | quote }}
+      {{- end }}
+      {{- end }}
       backendRefs:
         - name: {{ include "facility-layout.mcpFullname" . }}
           port: {{ .Values.mcp.service.port }}

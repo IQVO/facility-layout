@@ -1,17 +1,22 @@
 {{- if and .Values.a2a.enabled .Values.a2a.route.enabled -}}
 {{- /*
-A2A exposure through Kong (fleet decision 2026-10-13: Kong config lives in
-the application charts, not warehouse-infra Terraform).
+A2A exposure through the Agent Router (Envoy Gateway), NOT Kong (warehouse-infra
+ADR 0014): the parentRefs value targets the shared `agent-router` Gateway. Kong
+serves the REST APIs only (the api and analytics reports routes).
 
-Host contract: /api/a2a/facility-layout -> Service facility-layout-a2a:8093,
-prefix rewritten to / (the JSON-RPC root mount; /.well-known/agent-card.json
-stays reachable under the same prefix, so card discovery works through the
-gateway too). healthz deliberately stays off the host - it is a Kubernetes
-probe concern, not a public endpoint.
+Host contract: /api/a2a/<context> -> Service <context>-a2a:8093, prefix rewritten
+to / (the JSON-RPC root mount; /.well-known/agent-card.json stays reachable
+under the same prefix, so card discovery works through the gateway too).
+healthz deliberately stays off the host - it is a Kubernetes probe concern, not
+a public endpoint.
 
-Plugins: this chart's cors + prometheus + opentelemetry KongPlugins (see
-kong-plugins.yaml), attached by annotation. NO auth plugin — endpoints are
-unauthenticated by fleet-wide decision.
+No Kong annotations: the konghq.com/plugins annotation is Kong-only and inert on
+Envoy Gateway, and this chart's KongPlugins do not apply to the route. NO auth
+of any kind - endpoints are unauthenticated by fleet-wide decision.
+
+timeouts.request: Envoy's default route timeout is 15s, which would cut long
+A2A calls and streamed (SSE) responses; "0s" disables it (Gateway API: zero means
+no timeout). Set a2a.route.timeouts.request to a duration to bound it again.
 */ -}}
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -20,8 +25,6 @@ metadata:
   labels:
     {{- include "facility-layout.labels" . | nindent 4 }}
     app.kubernetes.io/component: a2a
-  annotations:
-    konghq.com/plugins: {{ include "facility-layout.kongPluginNames" . | quote }}
 spec:
   parentRefs:
     {{- range .Values.a2a.route.parentRefs }}
@@ -42,6 +45,12 @@ spec:
             path:
               type: ReplacePrefixMatch
               replacePrefixMatch: /
+      {{- with .Values.a2a.route.timeouts }}
+      {{- if .request }}
+      timeouts:
+        request: {{ .request | quote }}
+      {{- end }}
+      {{- end }}
       backendRefs:
         - name: {{ include "facility-layout.a2aFullname" . }}
           port: {{ .Values.a2a.service.port }}

@@ -93,8 +93,8 @@ mcp:
     enabled: true
     path: /api/mcp/facility-layout
     parentRefs:
-      - name: warehouse-gateway
-        namespace: kong
+      - name: agent-router
+        namespace: envoy-gateway-system
         sectionName: http
   resources:
     requests:
@@ -105,8 +105,8 @@ a2a:
     enabled: true
     path: /api/a2a/facility-layout
     parentRefs:
-      - name: warehouse-gateway
-        namespace: kong
+      - name: agent-router
+        namespace: envoy-gateway-system
         sectionName: http
 pathCatalogue:
   content: ''
